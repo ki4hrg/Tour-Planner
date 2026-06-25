@@ -1,0 +1,128 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ContactForm } from "../contacts/contact-form";
+import { createContact } from "../contacts/actions";
+import { linkContactToSite, unlinkContactFromSite } from "./actions";
+
+type LinkedContact = {
+  id: string;
+  name: string;
+  role: string | null;
+  organization: string | null;
+};
+
+export function SiteContactsManager({
+  siteId,
+  linked,
+  available,
+  canEdit,
+}: {
+  siteId: string;
+  linked: LinkedContact[];
+  available: { id: string; name: string }[];
+  canEdit: boolean;
+}) {
+  const [mode, setMode] = useState<"none" | "existing" | "new">("none");
+
+  return (
+    <div className="space-y-4">
+      <div className="divide-y">
+        {linked.map((c) => (
+          <div
+            key={c.id}
+            className="flex items-center justify-between gap-3 py-2"
+          >
+            <div className="min-w-0">
+              <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">
+                {c.name}
+              </Link>
+              <span className="text-sm text-muted-foreground">
+                {[c.role, c.organization].filter(Boolean).length
+                  ? ` — ${[c.role, c.organization].filter(Boolean).join(", ")}`
+                  : ""}
+              </span>
+            </div>
+            {canEdit ? (
+              <form action={unlinkContactFromSite}>
+                <input type="hidden" name="siteId" value={siteId} />
+                <input type="hidden" name="contactId" value={c.id} />
+                <Button variant="ghost" size="sm" className="text-destructive">
+                  Unlink
+                </Button>
+              </form>
+            ) : null}
+          </div>
+        ))}
+        {linked.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">
+            No contacts linked.
+          </p>
+        ) : null}
+      </div>
+
+      {canEdit ? (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <Button
+              variant={mode === "existing" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode(mode === "existing" ? "none" : "existing")}
+              disabled={available.length === 0}
+            >
+              Link existing
+            </Button>
+            <Button
+              variant={mode === "new" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMode(mode === "new" ? "none" : "new")}
+            >
+              Create new
+            </Button>
+          </div>
+
+          {mode === "existing" ? (
+            <form action={linkContactToSite} className="flex items-end gap-2">
+              <input type="hidden" name="siteId" value={siteId} />
+              <Select name="contactId">
+                <SelectTrigger className="w-64" size="sm">
+                  <SelectValue placeholder="Choose a contact…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="submit" size="sm">
+                Link
+              </Button>
+            </form>
+          ) : null}
+
+          {mode === "new" ? (
+            <div className="rounded-md border border-dashed p-3">
+              <ContactForm
+                action={createContact}
+                submitLabel="Create & link"
+                siteId={siteId}
+                resetOnSuccess
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
