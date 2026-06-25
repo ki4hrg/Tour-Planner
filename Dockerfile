@@ -4,7 +4,7 @@
 FROM node:24-alpine AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 # Schema must be present for the `postinstall: prisma generate` hook.
 COPY prisma ./prisma
 RUN npm ci
@@ -28,7 +28,7 @@ RUN npm run build
 FROM node:24-alpine AS prisma-cli
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /prisma-cli
-COPY package.json ./
+COPY package.json .npmrc ./
 RUN PV=$(node -p "(require('./package.json').devDependencies.prisma||'').replace(/[^0-9.]/g,'')") \
   && npm init -y >/dev/null 2>&1 \
   && npm install prisma@"$PV" --no-save --no-audit --no-fund
