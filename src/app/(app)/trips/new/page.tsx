@@ -12,34 +12,54 @@ import { createTrip } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewTripPage() {
+export default async function NewTripPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ template?: string }>;
+}) {
   await requireRole("PLANNER");
-  const tripTypes = await prisma.tripType.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const { template } = await searchParams;
+  const asTemplate = template === "1";
+
+  const [tripTypes, templates] = await Promise.all([
+    prisma.tripType.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.trip.findMany({
+      where: { isTemplate: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, tripTypeId: true },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">New trip</h1>
+        <h1 className="text-2xl font-semibold">
+          {asTemplate ? "New template" : "New trip"}
+        </h1>
         <Link
-          href="/trips"
+          href={asTemplate ? "/trips?templates=1" : "/trips"}
           className="text-sm text-muted-foreground hover:underline"
         >
-          ← All trips
+          {asTemplate ? "← All templates" : "← All trips"}
         </Link>
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Trip details</CardTitle>
+          <CardTitle className="text-base">
+            {asTemplate ? "Template details" : "Trip details"}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {tripTypes.length ? (
             <TripForm
               action={createTrip}
-              submitLabel="Create trip"
+              submitLabel={asTemplate ? "Create template" : "Create trip"}
               tripTypes={tripTypes}
+              templates={asTemplate ? undefined : templates}
+              defaultIsTemplate={asTemplate}
             />
           ) : (
             <p className="text-sm text-muted-foreground">

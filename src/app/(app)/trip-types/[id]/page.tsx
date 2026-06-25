@@ -28,6 +28,12 @@ export default async function TripTypeDetailPage({
   });
   if (!tripType) notFound();
 
+  const templates = await prisma.trip.findMany({
+    where: { tripTypeId: id, isTemplate: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, _count: { select: { days: true } } },
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -56,6 +62,42 @@ export default async function TripTypeDetailPage({
               defaultCurrency: tripType.defaultCurrency,
             }}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Template itineraries</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/trips/new?template=1">New template</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {templates.length === 0 ? (
+            <p className="text-muted-foreground">
+              No templates for this type yet. Create one, then new trips of this
+              type can start from it.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {templates.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <Link
+                    href={`/trips/${t.id}/itinerary`}
+                    className="font-medium hover:underline"
+                  >
+                    {t.name}
+                  </Link>
+                  <span className="text-muted-foreground">
+                    {t._count.days} day{t._count.days === 1 ? "" : "s"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,20 +32,37 @@ export type TripInitial = {
   isTemplate: boolean;
 };
 
+const BLANK = "__blank__";
+
 export function TripForm({
   action,
   submitLabel,
   tripTypes,
   initial,
+  templates,
+  defaultIsTemplate,
 }: {
   action: Action;
   submitLabel: string;
   tripTypes: { id: string; name: string }[];
   initial?: TripInitial;
+  // When provided (create flow), offer to instantiate from a template of the
+  // selected trip type. Omitted on edit — you don't re-instantiate an existing trip.
+  templates?: { id: string; name: string; tripTypeId: string }[];
+  defaultIsTemplate?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
     {},
+  );
+
+  const [tripTypeId, setTripTypeId] = useState(initial?.tripTypeId ?? "");
+  const [templateId, setTemplateId] = useState(BLANK);
+
+  // Templates are type-scoped: only show those matching the selected type.
+  const typeTemplates = useMemo(
+    () => (templates ?? []).filter((t) => t.tripTypeId === tripTypeId),
+    [templates, tripTypeId],
   );
 
   useEffect(() => {
@@ -65,7 +82,15 @@ export function TripForm({
 
         <div className="space-y-1.5">
           <Label htmlFor="tripTypeId">Trip type</Label>
-          <Select name="tripTypeId" defaultValue={initial?.tripTypeId}>
+          <input type="hidden" name="tripTypeId" value={tripTypeId} />
+          <Select
+            value={tripTypeId}
+            onValueChange={(v) => {
+              setTripTypeId(v);
+              // Template choices are type-scoped — reset on type change.
+              setTemplateId(BLANK);
+            }}
+          >
             <SelectTrigger id="tripTypeId">
               <SelectValue placeholder="Choose a trip type…" />
             </SelectTrigger>
@@ -78,6 +103,26 @@ export function TripForm({
             </SelectContent>
           </Select>
         </div>
+
+        {templates && typeTemplates.length ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="templateId">Start from template</Label>
+            <input type="hidden" name="templateId" value={templateId === BLANK ? "" : templateId} />
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger id="templateId">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={BLANK}>Blank itinerary</SelectItem>
+                {typeTemplates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
 
         <div className="space-y-1.5">
           <Label htmlFor="status">Status</Label>
@@ -150,7 +195,7 @@ export function TripForm({
         <label className="flex items-center gap-2 text-sm sm:col-span-2">
           <Checkbox
             name="isTemplate"
-            defaultChecked={initial?.isTemplate ?? false}
+            defaultChecked={initial?.isTemplate ?? defaultIsTemplate ?? false}
           />
           Save as a reusable template
           <span className="text-muted-foreground">

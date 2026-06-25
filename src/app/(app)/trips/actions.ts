@@ -10,6 +10,7 @@ import { tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema } from "@/lib/validators/day";
 import { stopSchema } from "@/lib/validators/stop";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
+import { instantiateDays } from "@/lib/templates";
 
 // --- Trip CRUD ---
 
@@ -48,12 +49,48 @@ export async function createTrip(
   const parsed = parseTrip(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
+  const data = toTripData(parsed.data);
+  const templateId = String(formData.get("templateId") ?? "");
+
+  // Optionally instantiate from a template: deep-copy its days/stops (dates
+  // derived from the new startDate, booking reset). Templates are snapshots.
+  let daysCreate;
+  if (templateId) {
+    const template = await prisma.trip.findUnique({
+      where: { id: templateId },
+      select: {
+        days: {
+          orderBy: { dayIndex: "asc" },
+          select: {
+            dayIndex: true,
+            title: true,
+            logisticalNotes: true,
+            stops: {
+              orderBy: { order: "asc" },
+              select: {
+                siteId: true,
+                title: true,
+                order: true,
+                startTime: true,
+                endTime: true,
+                scheduleNotes: true,
+                bookingNotes: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!template) return { error: "Selected template no longer exists." };
+    daysCreate = instantiateDays(template.days, data.startDate);
+  }
+
   const trip = await prisma.trip.create({
     data: {
-      ...toTripData(parsed.data),
-      // M5 turns templates into reusable blueprints; for now just persist the flag.
+      ...data,
       isTemplate: parsed.data.isTemplate ?? false,
       createdById: user.id,
+      ...(daysCreate ? { days: { create: daysCreate } } : {}),
     },
   });
 

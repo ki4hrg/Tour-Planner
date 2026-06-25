@@ -65,7 +65,9 @@ export default async function TripsPage({
         </div>
         {canEdit ? (
           <Button asChild>
-            <Link href="/trips/new">New trip</Link>
+            <Link href={showTemplates ? "/trips/new?template=1" : "/trips/new"}>
+              {showTemplates ? "New template" : "New trip"}
+            </Link>
           </Button>
         ) : null}
       </div>
