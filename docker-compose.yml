@@ -1,13 +1,17 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tourplanner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tourplanner}
       POSTGRES_DB: ${POSTGRES_DB:-tourplanner}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18+ expects the volume at /var/lib/postgresql (data lives in a
+      # version-subdir like /18/docker), enabling future pg_upgrade --link.
+      # Renamed from the old `pgdata` (v17, mounted at /data) so a fresh volume
+      # is created cleanly on every host — the v17 layout can't be reused here.
+      - postgres_data:/var/lib/postgresql
     ports:
       # Loopback-only: lets host-run tooling (prisma, dev server) reach the DB
       # without exposing Postgres beyond the host. Host port 5433 avoids
@@ -45,4 +49,4 @@ services:
       - "3076:3076"
 
 volumes:
-  pgdata:
+  postgres_data:
