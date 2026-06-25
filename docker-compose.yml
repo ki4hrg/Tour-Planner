@@ -28,15 +28,21 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://tourplanner:tourplanner@postgres:5432/tourplanner?schema=public}
+      # DB lives on the compose network; address it by service name. Built from
+      # the POSTGRES_* values so it stays in sync with the postgres service.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tourplanner}:${POSTGRES_PASSWORD:-tourplanner}@postgres:5432/${POSTGRES_DB:-tourplanner}?schema=public
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
-      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3076}
+      PORT: "3076"
+      # First admin is created via the in-app /setup flow on first run.
+      # Optionally pre-seed one instead by setting SEED_ON_START=true plus
+      # SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD.
       SEED_ON_START: ${SEED_ON_START:-false}
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
-      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Trip Admin}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-}
     ports:
-      - "3000:3000"
+      - "3076:3076"
 
 volumes:
   pgdata:

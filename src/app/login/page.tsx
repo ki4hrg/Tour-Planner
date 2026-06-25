@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -5,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { needsSetup } from "@/lib/setup";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -12,6 +14,11 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ callbackUrl?: string }>;
 }) {
+  // No users yet → send to first-run setup instead of an unusable login.
+  if (await needsSetup()) {
+    redirect("/setup");
+  }
+
   const { callbackUrl } = await searchParams;
 
   return (

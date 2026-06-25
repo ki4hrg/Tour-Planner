@@ -27,7 +27,7 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=3076
 
 # Non-root runtime user.
 RUN addgroup --system --gid 1001 nodejs \
@@ -49,5 +49,5 @@ COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
 USER nextjs
-EXPOSE 3000
+EXPOSE 3076
 ENTRYPOINT ["./entrypoint.sh"]
