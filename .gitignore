@@ -46,4 +46,7 @@ public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
 
+# local working notes / session handoff (not part of the project)
+HANDOFF.md
+
 /src/generated/prisma
