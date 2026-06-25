@@ -9,6 +9,9 @@ import {
 import { needsSetup } from "@/lib/setup";
 import { LoginForm } from "./login-form";
 
+// Checks live DB state (whether any user exists) — never prerender.
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage({
   searchParams,
 }: {

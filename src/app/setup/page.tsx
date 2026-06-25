@@ -9,6 +9,9 @@ import {
 import { needsSetup } from "@/lib/setup";
 import { SetupForm } from "./setup-form";
 
+// Depends on live DB state (user count) — never prerender at build time.
+export const dynamic = "force-dynamic";
+
 // First-run onboarding. Public, but locks itself once any user exists.
 export default async function SetupPage() {
   if (!(await needsSetup())) {
