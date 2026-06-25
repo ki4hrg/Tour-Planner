@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
 import { TRIP_STATUS_LABELS } from "@/lib/trips";
+import { rollUpCosts } from "@/lib/costs";
+import { formatMoney, isCostStale } from "@/lib/money";
 import { TripForm } from "../trip-form";
 import { updateTrip, deleteTrip } from "../actions";
 
@@ -49,6 +51,30 @@ export default async function TripOverviewPage({
     select: { id: true, name: true },
   });
 
+  // Cost estimate: roll up the reference costs of the distinct sites this trip's
+  // itinerary visits (estimates only — plan decision 6).
+  const referencedStops = await prisma.stop.findMany({
+    where: { day: { tripId: id }, siteId: { not: null } },
+    select: { siteId: true },
+  });
+  const siteIds = [...new Set(referencedStops.map((s) => s.siteId as string))];
+  const costSites = siteIds.length
+    ? await prisma.site.findMany({
+        where: { id: { in: siteIds } },
+        select: { costs: true },
+      })
+    : [];
+  const allCosts = costSites.flatMap((s) => s.costs);
+  const rollups = rollUpCosts(
+    allCosts.map((c) => ({
+      amount: Number(c.amount),
+      currency: c.currency,
+      unit: c.unit,
+    })),
+    trip.participantCount,
+  );
+  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -68,11 +94,16 @@ export default async function TripOverviewPage({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Itinerary</CardTitle>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/trips/${trip.id}/itinerary`}>
-              {canEdit ? "Edit itinerary" : "View itinerary"}
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/trips/${trip.id}/booking`}>Booking</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/trips/${trip.id}/itinerary`}>
+                {canEdit ? "Edit itinerary" : "View itinerary"}
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {trip.days.length === 0 ? (
@@ -151,6 +182,60 @@ export default async function TripOverviewPage({
               <dt className="text-muted-foreground">Notes</dt>
               <dd className="col-span-2">{trip.notes ?? "—"}</dd>
             </dl>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cost estimate</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {rollups.length === 0 ? (
+            <p className="text-muted-foreground">
+              No costs to estimate — add costs to the sites this trip visits.
+            </p>
+          ) : (
+            <>
+              {trip.participantCount == null ? (
+                <p className="text-muted-foreground">
+                  Set a participant count to include per-person costs. Showing
+                  per-group costs only.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  Estimated for {trip.participantCount} participant
+                  {trip.participantCount === 1 ? "" : "s"} across{" "}
+                  {siteIds.length} site{siteIds.length === 1 ? "" : "s"}.
+                </p>
+              )}
+              <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
+                {rollups.map((r) => (
+                  <div key={r.currency} className="contents">
+                    <dt className="font-medium">{r.currency}</dt>
+                    <dd className="text-muted-foreground">
+                      {formatMoney(r.perPersonPerHead, r.currency)}/person ×{" "}
+                      {r.participantCount}
+                      {r.perGroup > 0
+                        ? ` + ${formatMoney(r.perGroup, r.currency)} group`
+                        : ""}
+                    </dd>
+                    <dd className="text-right font-medium">
+                      {formatMoney(r.total, r.currency)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {hasStaleCost ? (
+                <p className="text-xs text-muted-foreground">
+                  ⚠ Some prices are unconfirmed or over a year old — verify before
+                  relying on this estimate.
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Estimate only. Counts each visited site once.
+              </p>
+            </>
           )}
         </CardContent>
       </Card>

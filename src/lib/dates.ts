@@ -44,6 +44,21 @@ const WEEKDAY_FMT = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 
+/**
+ * Whether "now" falls within [startDate, endDate] inclusive (date-only).
+ * Date.now() is isolated here (a plain helper) so component render stays pure.
+ */
+export function isOngoing(
+  startDate: Date | null,
+  endDate: Date | null,
+): boolean {
+  if (!startDate) return false;
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const end = endDate ?? startDate;
+  return startDate.getTime() <= today && today <= end.getTime();
+}
+
 /** Human-readable date, e.g. "Mon, 6 Jul 2026". Empty string when null. */
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "";
