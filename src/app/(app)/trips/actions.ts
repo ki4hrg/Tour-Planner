@@ -496,3 +496,26 @@ export async function createTripSite(
   revalidateTrip(tripId);
   return { ok: true, site };
 }
+
+// --- Inline contact creation (e.g. a presenter) from the item editor ---
+
+export type CreatedContact = { id: string; name: string };
+
+export async function createContactInline(
+  name: string,
+  organization?: string,
+): Promise<
+  { ok: true; contact: CreatedContact } | { ok: false; error: string }
+> {
+  await assertRole("PLANNER");
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "Name is required." };
+
+  const contact = await prisma.contact.create({
+    data: { name: trimmed, organization: organization?.trim() || null },
+    select: { id: true, name: true },
+  });
+
+  revalidatePath("/contacts");
+  return { ok: true, contact };
+}

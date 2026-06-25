@@ -75,3 +75,39 @@ export async function deleteCategory(formData: FormData): Promise<void> {
   await prisma.scheduleItemCategory.delete({ where: { id } });
   revalidatePath("/schedule-categories");
 }
+
+// Manual override: persist an explicit order (sortOrder 1..n).
+export async function reorderCategories(
+  orderedIds: string[],
+): Promise<FormState> {
+  await assertRole("ADMIN");
+  await prisma.$transaction(
+    orderedIds.map((id, i) =>
+      prisma.scheduleItemCategory.update({
+        where: { id },
+        data: { sortOrder: i + 1 },
+      }),
+    ),
+  );
+  revalidatePath("/schedule-categories");
+  return { ok: true };
+}
+
+// Reset to alphabetical order (renumbers sortOrder by name).
+export async function sortCategoriesAlphabetically(): Promise<FormState> {
+  await assertRole("ADMIN");
+  const cats = await prisma.scheduleItemCategory.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true },
+  });
+  await prisma.$transaction(
+    cats.map((c, i) =>
+      prisma.scheduleItemCategory.update({
+        where: { id: c.id },
+        data: { sortOrder: i + 1 },
+      }),
+    ),
+  );
+  revalidatePath("/schedule-categories");
+  return { ok: true, message: "Sorted A–Z." };
+}

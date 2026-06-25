@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ColorField } from "@/components/color-field";
 import { CURRENCIES } from "@/lib/money";
 import type { FormState } from "@/lib/forms";
 
@@ -68,16 +69,11 @@ export function TripTypeForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="color">Accent color</Label>
-        <Input
-          id="color"
-          name="color"
-          type="text"
-          placeholder="#7c3aed"
-          defaultValue={initial?.color ?? ""}
-        />
-      </div>
+      <ColorField
+        name="color"
+        label="Accent color"
+        defaultValue={initial?.color ?? ""}
+      />
       <div className="space-y-1.5 sm:col-span-2">
         <Label htmlFor="description">Description</Label>
         <Textarea

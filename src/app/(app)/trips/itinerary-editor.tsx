@@ -39,9 +39,11 @@ import {
   updateBooking,
   deleteBooking,
   createTripSite,
+  createContactInline,
   type ScheduleItemInputData,
   type BookingInputData,
   type CreatedSite,
+  type CreatedContact,
 } from "./actions";
 
 const NONE = "__none__";
@@ -72,7 +74,7 @@ export function ItineraryEditor({
   days,
   categories,
   sites: initialSites,
-  contacts,
+  contacts: initialContacts,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -82,8 +84,8 @@ export function ItineraryEditor({
   sites: Site[];
   contacts: Contact[];
 }) {
-  // Inline-created sites are held locally so they show immediately; server
-  // revalidation folds them into `initialSites` shortly after (deduped by id).
+  // Inline-created sites/contacts are held locally so they show immediately;
+  // server revalidation folds them into the props shortly after (deduped by id).
   const [extraSites, setExtraSites] = useState<Site[]>([]);
   const sites = useMemo(() => {
     const ids = new Set(initialSites.map((s) => s.id));
@@ -91,7 +93,33 @@ export function ItineraryEditor({
     return merged.sort((a, b) => a.name.localeCompare(b.name));
   }, [initialSites, extraSites]);
 
+  const [extraContacts, setExtraContacts] = useState<Contact[]>([]);
+  const contacts = useMemo(() => {
+    const ids = new Set(initialContacts.map((c) => c.id));
+    const merged = [
+      ...initialContacts,
+      ...extraContacts.filter((c) => !ids.has(c.id)),
+    ];
+    return merged.sort((a, b) => a.name.localeCompare(b.name));
+  }, [initialContacts, extraContacts]);
+
   const { pending, run } = useAction();
+
+  const addNewContact = async (
+    name: string,
+    organization: string,
+  ): Promise<CreatedContact | null> => {
+    const res = await createContactInline(name, organization);
+    if (!res.ok) {
+      toast.error(res.error);
+      return null;
+    }
+    setExtraContacts((prev) =>
+      prev.some((c) => c.id === res.contact.id) ? prev : [...prev, res.contact],
+    );
+    toast.success(`Created ${res.contact.name}.`);
+    return res.contact;
+  };
 
   const addNewSite = async (
     name: string,
@@ -140,6 +168,7 @@ export function ItineraryEditor({
           contacts={contacts}
           onMove={moveDay}
           onCreateSite={addNewSite}
+          onCreateContact={addNewContact}
         />
       ))}
 
@@ -170,6 +199,7 @@ function DayCard({
   contacts,
   onMove,
   onCreateSite,
+  onCreateContact,
 }: {
   day: SerializedDay;
   index: number;
@@ -180,6 +210,10 @@ function DayCard({
   contacts: Contact[];
   onMove: (index: number, dir: -1 | 1) => void;
   onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateContact: (
+    name: string,
+    organization: string,
+  ) => Promise<CreatedContact | null>;
 }) {
   const { pending, run } = useAction();
   const [editingDay, setEditingDay] = useState(false);
@@ -306,6 +340,7 @@ function DayCard({
                 contacts={contacts}
                 onMove={moveItem}
                 onCreateSite={onCreateSite}
+                onCreateContact={onCreateContact}
               />
             ))}
           </ol>
@@ -323,6 +358,7 @@ function DayCard({
                 contacts={contacts}
                 submitLabel="Add item"
                 onCreateSite={onCreateSite}
+                onCreateContact={onCreateContact}
                 onSubmit={(data, done) =>
                   run(() => addScheduleItem(day.id, data), () => {
                     done();
@@ -375,6 +411,7 @@ function ItemRow({
   contacts,
   onMove,
   onCreateSite,
+  onCreateContact,
 }: {
   item: SerializedScheduleItem;
   index: number;
@@ -385,6 +422,10 @@ function ItemRow({
   contacts: Contact[];
   onMove: (index: number, dir: -1 | 1) => void;
   onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateContact: (
+    name: string,
+    organization: string,
+  ) => Promise<CreatedContact | null>;
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
@@ -400,6 +441,10 @@ function ItemRow({
         : item.sites.length > 1
           ? `${item.sites.length} sites`
           : "Untitled item");
+  // The single bare site name is already the primary label; otherwise list the
+  // member sites so they're never hidden behind a title (e.g. Travel items).
+  const siteIsPrimary =
+    item.sites.length === 1 && !item.title && !item.isBlock;
 
   return (
     <li className="relative pl-5">
@@ -415,6 +460,7 @@ function ItemRow({
                 initial={item}
                 submitLabel="Save item"
                 onCreateSite={onCreateSite}
+                onCreateContact={onCreateContact}
                 onSubmit={(data, done) =>
                   run(() => updateScheduleItem(item.id, data), () => {
                     done();
@@ -454,8 +500,8 @@ function ItemRow({
                 <span className="font-medium">{primary}</span>
               </div>
 
-              {/* Member sites (when more than one, or a block). */}
-              {item.sites.length > 1 || (item.isBlock && item.sites.length > 0) ? (
+              {/* Member sites — shown unless the single site is already the title. */}
+              {item.sites.length > 0 && !siteIsPrimary ? (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {item.sites.map((s) => (
                     <span
@@ -566,6 +612,7 @@ function ItemFields({
   onSubmit,
   onCancel,
   onCreateSite,
+  onCreateContact,
 }: {
   categories: Category[];
   sites: Site[];
@@ -575,6 +622,10 @@ function ItemFields({
   onSubmit: (data: ScheduleItemInputData, done: () => void) => void;
   onCancel: () => void;
   onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateContact: (
+    name: string,
+    organization: string,
+  ) => Promise<CreatedContact | null>;
 }) {
   const [categoryId, setCategoryId] = useState<string>(
     initial?.categoryId ?? NONE,
@@ -598,6 +649,21 @@ function ItemFields({
   const [creatingSite, setCreatingSite] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRegion, setNewRegion] = useState("");
+
+  // Inline presenter (contact) creation.
+  const [creatingPresenter, setCreatingPresenter] = useState(false);
+  const [newPresenterName, setNewPresenterName] = useState("");
+  const [newPresenterOrg, setNewPresenterOrg] = useState("");
+
+  const handleCreatePresenter = async () => {
+    const created = await onCreateContact(newPresenterName, newPresenterOrg);
+    if (created) {
+      setPresenterId(created.id);
+      setCreatingPresenter(false);
+      setNewPresenterName("");
+      setNewPresenterOrg("");
+    }
+  };
 
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? id;
 
@@ -718,6 +784,41 @@ function ItemFields({
               ))}
             </SelectContent>
           </Select>
+          {creatingPresenter ? (
+            <div className="space-y-2 rounded-md border border-dashed p-2">
+              <Input
+                placeholder="Presenter name"
+                value={newPresenterName}
+                onChange={(e) => setNewPresenterName(e.target.value)}
+              />
+              <Input
+                placeholder="Organization (optional)"
+                value={newPresenterOrg}
+                onChange={(e) => setNewPresenterOrg(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={handleCreatePresenter}>
+                  Create & select
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCreatingPresenter(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setCreatingPresenter(true)}
+            >
+              + Create a new presenter
+            </button>
+          )}
         </div>
 
         <div className="flex items-end pb-1">

@@ -12,10 +12,11 @@ const LINKS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/trips", label: "Trips" },
   { href: "/sites", label: "Sites" },
   { href: "/contacts", label: "Contacts" },
-  { href: "/trip-types", label: "Trip Types" },
-  { href: "/schedule-categories", label: "Categories" },
-  { href: "/admin/users", label: "Users", adminOnly: true },
+  { href: "/admin", label: "Admin", adminOnly: true },
 ];
+
+// Admin sub-screens — keep the Admin nav item highlighted while on any of them.
+const ADMIN_PATHS = ["/admin", "/trip-types", "/schedule-categories"];
 
 export function AppNav({
   user,
@@ -37,7 +38,9 @@ export function AppNav({
             const active =
               link.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(link.href);
+                : link.href === "/admin"
+                  ? ADMIN_PATHS.some((p) => pathname.startsWith(p))
+                  : pathname.startsWith(link.href);
             return (
               <Link
                 key={link.href}

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ColorField } from "@/components/color-field";
 import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -40,16 +41,12 @@ export function CategoryForm({
         <Label htmlFor="name">Name</Label>
         <Input id="name" name="name" defaultValue={initial?.name} required />
       </div>
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="color">Accent color</Label>
-        <Input
-          id="color"
-          name="color"
-          type="text"
-          placeholder="#2e5e4e"
-          defaultValue={initial?.color ?? ""}
-        />
-      </div>
+      <ColorField
+        name="color"
+        label="Accent color"
+        defaultValue={initial?.color ?? ""}
+        className="sm:col-span-2"
+      />
       <div className="space-y-1.5">
         <Label htmlFor="sortOrder">Order</Label>
         <Input
