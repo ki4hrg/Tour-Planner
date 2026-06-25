@@ -1,0 +1,19 @@
+import { requireUser } from "@/lib/authz";
+import { AppNav } from "@/components/app-nav";
+
+// Authenticated shell. Middleware already gates these routes; we re-check here
+// so Server Components in this group can rely on a present session.
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await requireUser();
+
+  return (
+    <div className="flex min-h-full flex-1 flex-col">
+      <AppNav user={user} />
+      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</div>
+    </div>
+  );
+}

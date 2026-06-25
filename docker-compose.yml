@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tourplanner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tourplanner}
+      POSTGRES_DB: ${POSTGRES_DB:-tourplanner}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Loopback-only: lets host-run tooling (prisma, dev server) reach the DB
+      # without exposing Postgres beyond the host. Host port 5433 avoids
+      # clashing with a system Postgres on 5432.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tourplanner} -d ${POSTGRES_DB:-tourplanner}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Built & pushed by GitHub Actions; compose only pulls it.
+    image: ${APP_IMAGE:-ghcr.io/ki4hrg/tour-planner:main}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tourplanner:tourplanner@postgres:5432/tourplanner?schema=public}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      SEED_ON_START: ${SEED_ON_START:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Trip Admin}
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

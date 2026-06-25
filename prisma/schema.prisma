@@ -1,0 +1,177 @@
+// Tour Planner — Prisma schema
+// Postgres. Conventional prisma-client-js generator (client in node_modules).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PLANNER
+  VIEWER
+}
+
+enum TripStatus {
+  PLANNING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  NOT_NEEDED
+  NOT_BOOKED
+  REQUESTED
+  CONFIRMED
+}
+
+enum CostUnit {
+  PER_PERSON
+  PER_GROUP
+}
+
+enum ShareAudience {
+  STAFF
+  PARTICIPANT
+  VENUE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         Role     @default(PLANNER)
+  createdAt    DateTime @default(now())
+  trips        Trip[]   @relation("CreatedTrips")
+}
+
+model TripType {
+  id              String  @id @default(cuid())
+  name            String  @unique
+  description     String?
+  color           String?
+  defaultCurrency String  @default("USD")
+  sites           Site[] // implicit m2m (tags)
+  trips           Trip[]
+}
+
+model Site {
+  id                   String     @id @default(cuid())
+  name                 String
+  region               String?
+  address              String?
+  description          String? // itinerary-facing (shown on shared itineraries)
+  notes                String? // internal planning scratch (staff-only)
+  website              String?
+  mapUrl               String? // optional one-tap "open in maps"
+  bookingOpensLeadDays Int? // earliest bookable = startDate - this
+  bookingNotes         String?
+  scheduleLimitations  String?
+  archivedAt           DateTime? // set instead of deleting when referenced by a stop
+  tripTypes            TripType[] // tags; drives default filtering
+  contacts             Contact[] // implicit m2m
+  costs                Cost[]
+  stops                Stop[]
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+}
+
+model Contact {
+  id           String  @id @default(cuid())
+  name         String
+  organization String?
+  role         String?
+  email        String?
+  phone        String?
+  notes        String?
+  sites        Site[] // implicit m2m
+  bookedStops  Stop[]  @relation("BookedBy")
+}
+
+model Cost {
+  id          String    @id @default(cuid())
+  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId      String
+  label       String
+  amount      Decimal   @db.Decimal(10, 2)
+  currency    String    @default("USD")
+  unit        CostUnit  @default(PER_PERSON)
+  confirmedAt DateTime? // price last verified; surfaces stale pricing
+  notes       String?
+}
+
+model Trip {
+  id               String         @id @default(cuid())
+  name             String
+  tripType         TripType       @relation(fields: [tripTypeId], references: [id])
+  tripTypeId       String
+  isTemplate       Boolean        @default(false)
+  startDate        DateTime?      @db.Date
+  endDate          DateTime?      @db.Date
+  capacity         Int? // max slots
+  participantCount Int? // actual registered headcount (for cost totals)
+  status           TripStatus     @default(PLANNING)
+  notes            String?
+  createdBy        User?          @relation("CreatedTrips", fields: [createdById], references: [id])
+  createdById      String?
+  days             ItineraryDay[]
+  shareLinks       ShareLink[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model ItineraryDay {
+  id              String    @id @default(cuid())
+  trip            Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId          String
+  dayIndex        Int // 1-based ordering key (NOT unique; renumber in txn)
+  date            DateTime? @db.Date // derived from trip.startDate + (dayIndex - 1)
+  title           String?
+  logisticalNotes String? // staff-only on participant/venue shares
+  stops           Stop[]
+
+  @@index([tripId])
+}
+
+model Stop {
+  id              String        @id @default(cuid())
+  day             ItineraryDay  @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId           String
+  site            Site?         @relation(fields: [siteId], references: [id])
+  siteId          String? // null = non-site stop (lunch, transit, free time)
+  title           String? // label for non-site stops
+  order           Int // ordering within a day (NOT unique; renumber in txn)
+  startTime       String? // "HH:MM" — tz-free
+  endTime         String?
+  scheduleNotes   String?
+  bookingStatus   BookingStatus @default(NOT_BOOKED)
+  bookingNotes    String?
+  bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id])
+  bookedContactId String?
+  confirmationRef String?
+
+  @@index([dayId])
+  @@index([siteId])
+}
+
+model ShareLink {
+  id             String        @id @default(cuid())
+  trip           Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId         String
+  token          String        @unique @default(cuid()) // unguessable URL segment
+  audience       ShareAudience @default(PARTICIPANT)
+  label          String?
+  fieldOverrides Json? // optional per-link tweaks over the audience preset
+  enabled        Boolean       @default(true)
+  expiresAt      DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@index([tripId])
+}
