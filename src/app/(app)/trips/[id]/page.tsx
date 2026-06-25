@@ -39,7 +39,7 @@ export default async function TripOverviewPage({
           dayIndex: true,
           date: true,
           title: true,
-          _count: { select: { stops: true } },
+          _count: { select: { scheduleItems: true } },
         },
       },
     },
@@ -53,11 +53,11 @@ export default async function TripOverviewPage({
 
   // Cost estimate: roll up the reference costs of the distinct sites this trip's
   // itinerary visits (estimates only — plan decision 6).
-  const referencedStops = await prisma.stop.findMany({
-    where: { day: { tripId: id }, siteId: { not: null } },
+  const referencedSites = await prisma.scheduleItemSite.findMany({
+    where: { scheduleItem: { day: { tripId: id } } },
     select: { siteId: true },
   });
-  const siteIds = [...new Set(referencedStops.map((s) => s.siteId as string))];
+  const siteIds = [...new Set(referencedSites.map((s) => s.siteId))];
   const costSites = siteIds.length
     ? await prisma.site.findMany({
         where: { id: { in: siteIds } },
@@ -129,7 +129,8 @@ export default async function TripOverviewPage({
                     ) : null}
                   </span>
                   <span className="text-muted-foreground">
-                    {d._count.stops} stop{d._count.stops === 1 ? "" : "s"}
+                    {d._count.scheduleItems} item
+                    {d._count.scheduleItems === 1 ? "" : "s"}
                   </span>
                 </li>
               ))}
@@ -254,7 +255,7 @@ export default async function TripOverviewPage({
                 Delete trip
               </Button>
               <p className="mt-2 text-sm text-muted-foreground">
-                Permanently deletes this trip and all of its days and stops.
+                Permanently deletes this trip and all of its days and items.
               </p>
             </form>
           </CardContent>

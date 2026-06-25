@@ -1,35 +1,45 @@
 import { describe, it, expect } from "vitest";
-import { instantiateDays, type TemplateDay } from "./templates";
+import { instantiateDays, type TemplateScheduleItem } from "./templates";
 
-function stop(order: number, over: Partial<TemplateDay["stops"][number]> = {}) {
+function item(
+  order: number,
+  over: Partial<TemplateScheduleItem> = {},
+): TemplateScheduleItem {
   return {
-    siteId: null,
-    title: `stop ${order}`,
+    categoryId: null,
+    title: `item ${order}`,
     order,
     startTime: null,
     endTime: null,
-    scheduleNotes: null,
-    bookingNotes: null,
+    notes: null,
+    isBlock: false,
+    presenterContactId: null,
+    sites: [],
+    bookings: [],
     ...over,
   };
 }
 
-const sample: TemplateDay[] = [
+const sample = [
   {
     dayIndex: 2,
     title: "Second",
     logisticalNotes: "notes-2",
-    stops: [stop(2, { siteId: "siteB" }), stop(1, { siteId: "siteA" })],
+    scheduleItems: [
+      item(2, { sites: [{ siteId: "siteB", order: 0 }] }),
+      item(1, { sites: [{ siteId: "siteA", order: 0 }] }),
+    ],
   },
   {
     dayIndex: 1,
     title: "First",
     logisticalNotes: null,
-    stops: [
-      stop(1, {
-        siteId: "siteX",
-        bookingNotes: "call ahead",
-        scheduleNotes: "morning",
+    scheduleItems: [
+      item(1, {
+        title: "Talk",
+        notes: "morning",
+        sites: [{ siteId: "siteX", order: 0 }],
+        bookings: [{ siteId: "siteX", label: "Hall hire", notes: "call ahead" }],
       }),
     ],
   },
@@ -43,12 +53,14 @@ describe("instantiateDays", () => {
     expect(out[1].title).toBe("Second");
   });
 
-  it("sorts and renumbers stop order within each day", () => {
+  it("sorts and renumbers item order within each day", () => {
     const out = instantiateDays(sample, null);
     const day2 = out[1];
-    expect(day2.stops.create.map((s) => s.order)).toEqual([1, 2]);
+    expect(day2.scheduleItems.create.map((s) => s.order)).toEqual([1, 2]);
     // Originally order 1 was siteA, order 2 siteB — preserved relative order.
-    expect(day2.stops.create.map((s) => s.siteId)).toEqual(["siteA", "siteB"]);
+    expect(
+      day2.scheduleItems.create.map((s) => s.sites.create[0]?.siteId),
+    ).toEqual(["siteA", "siteB"]);
   });
 
   it("derives dates from startDate (day 1 == start, +1 per day)", () => {
@@ -63,15 +75,23 @@ describe("instantiateDays", () => {
     expect(out[0].date).toBeNull();
   });
 
-  it("resets booking status and carries over reusable planning text", () => {
+  it("carries over site links (renumbered) for each item", () => {
     const out = instantiateDays(sample, null);
-    const firstStop = out[0].stops.create[0];
-    expect(firstStop.bookingStatus).toBe("NOT_BOOKED");
-    expect(firstStop.bookingNotes).toBe("call ahead");
-    expect(firstStop.scheduleNotes).toBe("morning");
+    const firstItem = out[0].scheduleItems.create[0];
+    expect(firstItem.sites.create).toEqual([{ siteId: "siteX", order: 0 }]);
+  });
+
+  it("resets bookings to NOT_BOOKED and keeps reusable text", () => {
+    const out = instantiateDays(sample, null);
+    const firstItem = out[0].scheduleItems.create[0];
+    const booking = firstItem.bookings.create[0];
+    expect(booking.status).toBe("NOT_BOOKED");
+    expect(booking.label).toBe("Hall hire");
+    expect(booking.notes).toBe("call ahead");
+    expect(booking.siteId).toBe("siteX");
     // Instance-specific actuals are dropped by omission.
-    expect("bookedContactId" in firstStop).toBe(false);
-    expect("confirmationRef" in firstStop).toBe(false);
+    expect("bookedContactId" in booking).toBe(false);
+    expect("confirmationRef" in booking).toBe(false);
   });
 
   it("does not mutate the input", () => {

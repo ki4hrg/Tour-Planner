@@ -42,17 +42,23 @@ export default async function BookingDashboardPage({
         select: {
           dayIndex: true,
           date: true,
-          stops: {
+          scheduleItems: {
             orderBy: { order: "asc" },
             select: {
-              id: true,
               title: true,
-              bookingStatus: true,
-              confirmationRef: true,
-              site: {
-                select: { name: true, bookingOpensLeadDays: true },
+              bookings: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  id: true,
+                  label: true,
+                  status: true,
+                  confirmationRef: true,
+                  site: {
+                    select: { name: true, bookingOpensLeadDays: true },
+                  },
+                  bookedContact: { select: { name: true } },
+                },
               },
-              bookedContact: { select: { name: true } },
             },
           },
         },
@@ -61,33 +67,33 @@ export default async function BookingDashboardPage({
   });
   if (!trip) notFound();
 
-  // Flatten to bookable stops (drop NOT_NEEDED), enrich with the booking window.
+  // Flatten every booking, enriched with its (per-site) booking window.
   const rows = trip.days
     .flatMap((day) =>
-      day.stops.map((stop) => {
-        const win = bookingWindow(
-          trip.startDate,
-          stop.site?.bookingOpensLeadDays ?? null,
-        );
-        return {
-          id: stop.id,
-          dayIndex: day.dayIndex,
-          dayDate: day.date,
-          label: stop.site?.name ?? stop.title ?? "Untitled stop",
-          status: stop.bookingStatus,
-          confirmationRef: stop.confirmationRef,
-          contactName: stop.bookedContact?.name ?? null,
-          ...win,
-          // Action needed = window open and not yet booked.
-          actionable:
-            win.open &&
-            (stop.bookingStatus === "NOT_BOOKED" ||
-              stop.bookingStatus === "REQUESTED"),
-        };
-      }),
+      day.scheduleItems.flatMap((item) =>
+        item.bookings.map((b) => {
+          const win = bookingWindow(
+            trip.startDate,
+            b.site?.bookingOpensLeadDays ?? null,
+          );
+          return {
+            id: b.id,
+            dayIndex: day.dayIndex,
+            dayDate: day.date,
+            label: b.label ?? b.site?.name ?? item.title ?? "Untitled item",
+            status: b.status,
+            confirmationRef: b.confirmationRef,
+            contactName: b.bookedContact?.name ?? null,
+            ...win,
+            // Action needed = window open and not yet booked.
+            actionable:
+              win.open &&
+              (b.status === "NOT_BOOKED" || b.status === "REQUESTED"),
+          };
+        }),
+      ),
     )
-    .filter((r) => r.status !== "NOT_NEEDED")
-    // Sort: earliest-bookable ascending, stops with no window last.
+    // Sort: earliest-bookable ascending, bookings with no window last.
     .sort((a, b) => {
       if (a.earliest && b.earliest)
         return a.earliest.getTime() - b.earliest.getTime();
@@ -133,14 +139,14 @@ export default async function BookingDashboardPage({
         <CardContent>
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No bookable stops yet. Add stops to the itinerary and set their
-              booking status.
+              No bookings yet. Add a booking to a schedule item in the itinerary
+              to track it here.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Stop</TableHead>
+                  <TableHead>Booking</TableHead>
                   <TableHead>Day</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Window</TableHead>

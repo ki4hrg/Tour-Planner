@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   await requireUser();
 
-  const [activeTrips, candidateStops] = await Promise.all([
+  const [activeTrips, candidateBookings] = await Promise.all([
     // Trips still in play, soonest first (Postgres sorts NULL start dates last).
     prisma.trip.findMany({
       where: {
@@ -37,36 +37,49 @@ export default async function Home() {
         _count: { select: { days: true } },
       },
     }),
-    // Unbooked/requested stops whose booking window may be open.
-    prisma.stop.findMany({
+    // Unbooked/requested bookings whose window may be open.
+    prisma.booking.findMany({
       where: {
-        bookingStatus: { in: ["NOT_BOOKED", "REQUESTED"] },
+        status: { in: ["NOT_BOOKED", "REQUESTED"] },
         site: { is: { bookingOpensLeadDays: { not: null } } },
-        day: { is: { trip: { is: { isTemplate: false, startDate: { not: null } } } } },
+        scheduleItem: {
+          is: {
+            day: {
+              is: { trip: { is: { isTemplate: false, startDate: { not: null } } } },
+            },
+          },
+        },
       },
       select: {
         id: true,
+        label: true,
         site: { select: { name: true, bookingOpensLeadDays: true } },
-        day: {
+        scheduleItem: {
           select: {
-            trip: { select: { id: true, name: true, startDate: true } },
+            title: true,
+            day: {
+              select: {
+                trip: { select: { id: true, name: true, startDate: true } },
+              },
+            },
           },
         },
       },
     }),
   ]);
 
-  const alerts = candidateStops
-    .map((s) => {
+  const alerts = candidateBookings
+    .map((b) => {
+      const trip = b.scheduleItem.day.trip;
       const win = bookingWindow(
-        s.day.trip.startDate,
-        s.site?.bookingOpensLeadDays ?? null,
+        trip.startDate,
+        b.site?.bookingOpensLeadDays ?? null,
       );
       return {
-        id: s.id,
-        siteName: s.site?.name ?? "Stop",
-        tripId: s.day.trip.id,
-        tripName: s.day.trip.name,
+        id: b.id,
+        siteName: b.label ?? b.site?.name ?? b.scheduleItem.title ?? "Booking",
+        tripId: trip.id,
+        tripName: trip.name,
         earliest: win.earliest,
         open: win.open,
       };
@@ -98,7 +111,7 @@ export default async function Home() {
         <CardContent className="text-sm">
           {alerts.length === 0 ? (
             <p className="text-muted-foreground">
-              Nothing to book right now — no open windows on unbooked stops.
+              Nothing to book right now — no open windows on unbooked items.
             </p>
           ) : (
             <ul className="divide-y">

@@ -33,7 +33,7 @@ export default async function SiteDetailPage({
       tripTypes: { select: { id: true, name: true } },
       costs: { orderBy: { label: "asc" } },
       contacts: { orderBy: { name: "asc" } },
-      _count: { select: { stops: true } },
+      _count: { select: { scheduleItems: true } },
     },
   });
   if (!site) notFound();
@@ -52,7 +52,7 @@ export default async function SiteDetailPage({
   const linkedIds = new Set(site.contacts.map((c) => c.id));
   const availableContacts = allContacts.filter((c) => !linkedIds.has(c.id));
   const defaultCurrency = "USD";
-  const referenced = site._count.stops > 0;
+  const referenced = site._count.scheduleItems > 0;
 
   // Flag prices unconfirmed or confirmed over a year ago.
   const costs = site.costs.map((c) => ({
@@ -179,7 +179,7 @@ export default async function SiteDetailPage({
                 </Button>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {referenced
-                    ? `Used by ${site._count.stops} itinerary stop(s), so it will be archived (hidden from pickers) rather than deleted.`
+                    ? `Used by ${site._count.scheduleItems} itinerary item(s), so it will be archived (hidden from pickers) rather than deleted.`
                     : "Not used by any itinerary, so it will be permanently deleted."}
                 </p>
               </form>

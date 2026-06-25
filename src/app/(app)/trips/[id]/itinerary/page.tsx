@@ -25,11 +25,21 @@ export default async function ItineraryPage({
       days: {
         orderBy: { dayIndex: "asc" },
         include: {
-          stops: {
+          scheduleItems: {
             orderBy: { order: "asc" },
             include: {
-              site: { select: { id: true, name: true } },
-              bookedContact: { select: { id: true, name: true } },
+              category: { select: { id: true, name: true, color: true } },
+              presenter: { select: { id: true, name: true } },
+              sites: {
+                orderBy: { order: "asc" },
+                include: {
+                  site: { select: { id: true, name: true, region: true } },
+                },
+              },
+              bookings: {
+                orderBy: { createdAt: "asc" },
+                include: { bookedContact: { select: { id: true, name: true } } },
+              },
             },
           },
         },
@@ -37,6 +47,11 @@ export default async function ItineraryPage({
     },
   });
   if (!trip) notFound();
+
+  const categories = await prisma.scheduleItemCategory.findMany({
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, color: true },
+  });
 
   // Site picker defaults to sites tagged with this trip's type; `tagged`
   // drives the "show all" toggle in the editor.
@@ -81,6 +96,7 @@ export default async function ItineraryPage({
         canEdit={canEdit}
         hasStartDate={trip.startDate != null}
         days={trip.days.map(serializeDay)}
+        categories={categories}
         sites={sites.map((s) => ({
           id: s.id,
           name: s.name,

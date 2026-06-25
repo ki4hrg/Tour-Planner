@@ -35,6 +35,28 @@ async function main() {
     },
   });
   console.log(`Seeded trip type: ${wesley.name}`);
+
+  // --- Schedule-item categories (admin-configurable; the migration seeds these
+  // too, but upsert here keeps fresh/`db push` databases consistent). ---
+  const categories = [
+    { name: "Visit", color: "#2e5e4e", sortOrder: 10 },
+    { name: "Presentation", color: "#a9762f", sortOrder: 20 },
+    { name: "Meal", color: "#9b342b", sortOrder: 30 },
+    { name: "Travel", color: "#6b7269", sortOrder: 40 },
+    { name: "Free time", color: "#46685c", sortOrder: 50 },
+    { name: "Reception", color: "#7c5a9e", sortOrder: 60 },
+    { name: "Worship", color: "#3b6ea5", sortOrder: 70 },
+    { name: "Accommodation", color: "#8a6d3b", sortOrder: 80 },
+    { name: "Other", color: null, sortOrder: 90 },
+  ];
+  for (const c of categories) {
+    await prisma.scheduleItemCategory.upsert({
+      where: { name: c.name },
+      update: {},
+      create: c,
+    });
+  }
+  console.log(`Seeded ${categories.length} schedule-item categories.`);
 }
 
 main()

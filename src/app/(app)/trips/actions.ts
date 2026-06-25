@@ -8,7 +8,8 @@ import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema } from "@/lib/validators/day";
-import { stopSchema } from "@/lib/validators/stop";
+import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
+import { bookingSchema } from "@/lib/validators/booking";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
 import { instantiateDays } from "@/lib/templates";
 
@@ -52,8 +53,8 @@ export async function createTrip(
   const data = toTripData(parsed.data);
   const templateId = String(formData.get("templateId") ?? "");
 
-  // Optionally instantiate from a template: deep-copy its days/stops (dates
-  // derived from the new startDate, booking reset). Templates are snapshots.
+  // Optionally instantiate from a template: deep-copy its days/items (dates
+  // derived from the new startDate, bookings reset). Templates are snapshots.
   let daysCreate;
   if (templateId) {
     const template = await prisma.trip.findUnique({
@@ -65,16 +66,19 @@ export async function createTrip(
             dayIndex: true,
             title: true,
             logisticalNotes: true,
-            stops: {
+            scheduleItems: {
               orderBy: { order: "asc" },
               select: {
-                siteId: true,
+                categoryId: true,
                 title: true,
                 order: true,
                 startTime: true,
                 endTime: true,
-                scheduleNotes: true,
-                bookingNotes: true,
+                notes: true,
+                isBlock: true,
+                presenterContactId: true,
+                sites: { select: { siteId: true, order: true } },
+                bookings: { select: { siteId: true, label: true, notes: true } },
               },
             },
           },
@@ -127,7 +131,7 @@ export async function deleteTrip(formData: FormData): Promise<void> {
   await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  await prisma.trip.delete({ where: { id } }); // cascades to days → stops
+  await prisma.trip.delete({ where: { id } }); // cascades to days → items
   revalidatePath("/trips");
   redirect("/trips");
 }
@@ -163,9 +167,18 @@ async function tripIdForDay(dayId: string): Promise<string | null> {
   return day?.tripId ?? null;
 }
 
+async function tripIdForItem(itemId: string): Promise<string | null> {
+  const item = await prisma.scheduleItem.findUnique({
+    where: { id: itemId },
+    select: { day: { select: { tripId: true } } },
+  });
+  return item?.day.tripId ?? null;
+}
+
 function revalidateTrip(tripId: string) {
   revalidatePath(`/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}/itinerary`);
+  revalidatePath(`/trips/${tripId}/booking`);
 }
 
 // --- ItineraryDay CRUD + reorder ---
@@ -223,7 +236,7 @@ export async function deleteDay(dayId: string): Promise<FormState> {
   if (!day) return { error: "Day not found." };
 
   await prisma.$transaction(async (tx) => {
-    await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to stops
+    await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to items
     await recomputeDayDates(tx, day.tripId, day.trip.startDate);
   });
 
@@ -255,105 +268,124 @@ export async function reorderDays(
   return { ok: true };
 }
 
-// --- Stop CRUD + reorder ---
+// --- ScheduleItem CRUD + reorder ---
 
-export type StopInputData = {
-  siteId?: string;
+export type ScheduleItemInputData = {
+  categoryId?: string;
   title?: string;
   startTime?: string;
   endTime?: string;
-  scheduleNotes?: string;
-  bookingStatus: string;
-  bookingNotes?: string;
-  bookedContactId?: string;
-  confirmationRef?: string;
+  notes?: string;
+  isBlock?: boolean;
+  presenterContactId?: string;
+  siteIds: string[];
 };
 
-function toStopData(d: ReturnType<typeof stopSchema.parse>) {
+function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
   return {
-    siteId: d.siteId || null,
+    categoryId: d.categoryId || null,
     title: d.title || null,
     startTime: d.startTime || null,
     endTime: d.endTime || null,
-    scheduleNotes: d.scheduleNotes || null,
-    bookingStatus: d.bookingStatus as BookingStatus,
-    bookingNotes: d.bookingNotes || null,
-    bookedContactId: d.bookedContactId || null,
-    confirmationRef: d.confirmationRef || null,
+    notes: d.notes || null,
+    isBlock: d.isBlock ?? false,
+    presenterContactId: d.presenterContactId || null,
   };
 }
 
-export async function addStop(
+export async function addScheduleItem(
   dayId: string,
-  input: StopInputData,
+  input: ScheduleItemInputData,
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  const parsed = stopSchema.safeParse(input);
+  const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const count = await prisma.stop.count({ where: { dayId } });
-  await prisma.stop.create({
-    data: { dayId, order: count + 1, ...toStopData(parsed.data) },
+  const count = await prisma.scheduleItem.count({ where: { dayId } });
+  await prisma.scheduleItem.create({
+    data: {
+      dayId,
+      order: count + 1,
+      ...toItemScalars(parsed.data),
+      sites: {
+        create: parsed.data.siteIds.map((siteId, i) => ({ siteId, order: i })),
+      },
+    },
   });
 
   const tripId = await tripIdForDay(dayId);
   if (tripId) revalidateTrip(tripId);
-  return { ok: true, message: "Stop added." };
+  return { ok: true, message: "Item added." };
 }
 
-export async function updateStop(
-  stopId: string,
-  input: StopInputData,
+export async function updateScheduleItem(
+  itemId: string,
+  input: ScheduleItemInputData,
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  const parsed = stopSchema.safeParse(input);
+  const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const stop = await prisma.stop.update({
-    where: { id: stopId },
-    data: toStopData(parsed.data),
-    select: { day: { select: { tripId: true } } },
+  // Replace the site links wholesale (simple + transactional). Bookings are
+  // untouched — they reference Site directly, not the join row.
+  const item = await prisma.$transaction(async (tx) => {
+    const updated = await tx.scheduleItem.update({
+      where: { id: itemId },
+      data: toItemScalars(parsed.data),
+      select: { day: { select: { tripId: true } } },
+    });
+    await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
+    if (parsed.data.siteIds.length > 0) {
+      await tx.scheduleItemSite.createMany({
+        data: parsed.data.siteIds.map((siteId, i) => ({
+          scheduleItemId: itemId,
+          siteId,
+          order: i,
+        })),
+      });
+    }
+    return updated;
   });
 
-  revalidateTrip(stop.day.tripId);
-  return { ok: true, message: "Stop saved." };
+  revalidateTrip(item.day.tripId);
+  return { ok: true, message: "Item saved." };
 }
 
-export async function deleteStop(stopId: string): Promise<FormState> {
+export async function deleteScheduleItem(itemId: string): Promise<FormState> {
   await assertRole("PLANNER");
-  const stop = await prisma.stop.findUnique({
-    where: { id: stopId },
+  const item = await prisma.scheduleItem.findUnique({
+    where: { id: itemId },
     select: { dayId: true, day: { select: { tripId: true } } },
   });
-  if (!stop) return { error: "Stop not found." };
+  if (!item) return { error: "Item not found." };
 
   await prisma.$transaction(async (tx) => {
-    await tx.stop.delete({ where: { id: stopId } });
-    const remaining = await tx.stop.findMany({
-      where: { dayId: stop.dayId },
+    await tx.scheduleItem.delete({ where: { id: itemId } });
+    const remaining = await tx.scheduleItem.findMany({
+      where: { dayId: item.dayId },
       orderBy: { order: "asc" },
       select: { id: true },
     });
     for (let i = 0; i < remaining.length; i++) {
-      await tx.stop.update({
+      await tx.scheduleItem.update({
         where: { id: remaining[i].id },
         data: { order: i + 1 },
       });
     }
   });
 
-  revalidateTrip(stop.day.tripId);
-  return { ok: true, message: "Stop removed." };
+  revalidateTrip(item.day.tripId);
+  return { ok: true, message: "Item removed." };
 }
 
-export async function reorderStops(
+export async function reorderScheduleItems(
   dayId: string,
-  orderedStopIds: string[],
+  orderedItemIds: string[],
 ): Promise<FormState> {
   await assertRole("PLANNER");
   await prisma.$transaction(
-    orderedStopIds.map((id, i) =>
-      prisma.stop.update({ where: { id }, data: { order: i + 1 } }),
+    orderedItemIds.map((id, i) =>
+      prisma.scheduleItem.update({ where: { id }, data: { order: i + 1 } }),
     ),
   );
   const tripId = await tripIdForDay(dayId);
@@ -361,7 +393,77 @@ export async function reorderStops(
   return { ok: true };
 }
 
-// --- Inline site creation from the stop picker ---
+// --- Booking CRUD (attached to a schedule item) ---
+
+export type BookingInputData = {
+  siteId?: string;
+  label?: string;
+  status: string;
+  bookedContactId?: string;
+  confirmationRef?: string;
+  notes?: string;
+};
+
+function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
+  return {
+    siteId: d.siteId || null,
+    label: d.label || null,
+    status: d.status as BookingStatus,
+    bookedContactId: d.bookedContactId || null,
+    confirmationRef: d.confirmationRef || null,
+    notes: d.notes || null,
+  };
+}
+
+export async function addBooking(
+  itemId: string,
+  input: BookingInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = bookingSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  await prisma.booking.create({
+    data: { scheduleItemId: itemId, ...toBookingScalars(parsed.data) },
+  });
+
+  const tripId = await tripIdForItem(itemId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Booking added." };
+}
+
+export async function updateBooking(
+  bookingId: string,
+  input: BookingInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = bookingSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  const booking = await prisma.booking.update({
+    where: { id: bookingId },
+    data: toBookingScalars(parsed.data),
+    select: { scheduleItem: { select: { day: { select: { tripId: true } } } } },
+  });
+
+  revalidateTrip(booking.scheduleItem.day.tripId);
+  return { ok: true, message: "Booking saved." };
+}
+
+export async function deleteBooking(bookingId: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { scheduleItem: { select: { day: { select: { tripId: true } } } } },
+  });
+  if (!booking) return { error: "Booking not found." };
+
+  await prisma.booking.delete({ where: { id: bookingId } });
+  revalidateTrip(booking.scheduleItem.day.tripId);
+  return { ok: true, message: "Booking removed." };
+}
+
+// --- Inline site creation from the item picker ---
 
 export type CreatedSite = { id: string; name: string; region: string | null };
 

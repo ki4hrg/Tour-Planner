@@ -74,7 +74,8 @@ export async function deleteContact(formData: FormData): Promise<void> {
   await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  // m2m site links drop; stop.bookedContactId is set null automatically.
+  // m2m site links drop; bookings' bookedContactId and items' presenterContactId
+  // are set null automatically (schema onDelete: SetNull).
   await prisma.contact.delete({ where: { id } });
   revalidatePath("/contacts");
   redirect("/contacts");

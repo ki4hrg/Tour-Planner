@@ -25,7 +25,6 @@ enum TripStatus {
 }
 
 enum BookingStatus {
-  NOT_NEEDED
   NOT_BOOKED
   REQUESTED
   CONFIRMED
@@ -63,7 +62,7 @@ model TripType {
 }
 
 model Site {
-  id                   String     @id @default(cuid())
+  id                   String             @id @default(cuid())
   name                 String
   region               String?
   address              String?
@@ -74,25 +73,27 @@ model Site {
   bookingOpensLeadDays Int? // earliest bookable = startDate - this
   bookingNotes         String?
   scheduleLimitations  String?
-  archivedAt           DateTime? // set instead of deleting when referenced by a stop
+  archivedAt           DateTime? // set instead of deleting when referenced by a schedule item
   tripTypes            TripType[] // tags; drives default filtering
   contacts             Contact[] // implicit m2m
   costs                Cost[]
-  stops                Stop[]
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  scheduleItems        ScheduleItemSite[] // schedule items that visit this site
+  bookings             Booking[] // bookings made against this site
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 }
 
 model Contact {
-  id           String  @id @default(cuid())
-  name         String
-  organization String?
-  role         String?
-  email        String?
-  phone        String?
-  notes        String?
-  sites        Site[] // implicit m2m
-  bookedStops  Stop[]  @relation("BookedBy")
+  id             String         @id @default(cuid())
+  name           String
+  organization   String?
+  role           String?
+  email          String?
+  phone          String?
+  notes          String?
+  sites          Site[] // implicit m2m
+  bookings       Booking[]      @relation("BookedBy") // venue contact a booking was made with
+  presentedItems ScheduleItem[] @relation("Presenting") // items this contact presents/leads
 }
 
 model Cost {
@@ -128,36 +129,85 @@ model Trip {
 }
 
 model ItineraryDay {
-  id              String    @id @default(cuid())
-  trip            Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  trip            Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId          String
   dayIndex        Int // 1-based ordering key (NOT unique; renumber in txn)
-  date            DateTime? @db.Date // derived from trip.startDate + (dayIndex - 1)
+  date            DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
   title           String?
   logisticalNotes String? // staff-only on participant/venue shares
-  stops           Stop[]
+  scheduleItems   ScheduleItem[]
 
   @@index([tripId])
 }
 
-model Stop {
-  id              String        @id @default(cuid())
-  day             ItineraryDay  @relation(fields: [dayId], references: [id], onDelete: Cascade)
-  dayId           String
-  site            Site?         @relation(fields: [siteId], references: [id])
-  siteId          String? // null = non-site stop (lunch, transit, free time)
-  title           String? // label for non-site stops
-  order           Int // ordering within a day (NOT unique; renumber in txn)
-  startTime       String? // "HH:MM" — tz-free
-  endTime         String?
-  scheduleNotes   String?
-  bookingStatus   BookingStatus @default(NOT_BOOKED)
-  bookingNotes    String?
-  bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id])
-  bookedContactId String?
-  confirmationRef String?
+// A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).
+// Admin-managed alongside trip types; drives the itinerary label/marker.
+model ScheduleItemCategory {
+  id        String         @id @default(cuid())
+  name      String         @unique
+  color     String? // hex; tints the route-line marker
+  sortOrder Int            @default(0)
+  items     ScheduleItem[]
+  createdAt DateTime       @default(now())
+}
+
+// A timed line in a day's itinerary. Booking state lives on related Booking
+// rows (absent = informational), and 0..n sites attach via ScheduleItemSite.
+model ScheduleItem {
+  id                 String                @id @default(cuid())
+  day                ItineraryDay          @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId              String
+  category           ScheduleItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId         String?
+  title              String? // label (esp. for site-less items: Lunch, Transit)
+  order              Int // ordering within a day (NOT unique; renumber in txn)
+  startTime          String? // "HH:MM" — tz-free
+  endTime            String?
+  notes              String?
+  isBlock            Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
+  presenter          Contact?              @relation("Presenting", fields: [presenterContactId], references: [id], onDelete: SetNull)
+  presenterContactId String?
+  sites              ScheduleItemSite[]
+  bookings           Booking[]
 
   @@index([dayId])
+  @@index([categoryId])
+  @@index([presenterContactId])
+}
+
+// Join: which sites a schedule item visits. One row = ordinary stop; many = a block.
+model ScheduleItemSite {
+  id             String       @id @default(cuid())
+  scheduleItem   ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  scheduleItemId String
+  site           Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId         String
+  order          Int          @default(0) // display order within the item
+
+  @@unique([scheduleItemId, siteId])
+  @@index([scheduleItemId])
+  @@index([siteId])
+}
+
+// A booking tracked against a schedule item (and optionally a specific member site).
+// Presence of a Booking is what makes an item "bookable"; none = informational.
+model Booking {
+  id              String        @id @default(cuid())
+  scheduleItem    ScheduleItem  @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  scheduleItemId  String
+  site            Site?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  siteId          String? // which member site this booking is for (null = the item as a whole)
+  label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
+  status          BookingStatus @default(NOT_BOOKED)
+  bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
+  bookedContactId String?
+  confirmationRef String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([scheduleItemId])
   @@index([siteId])
 }
 

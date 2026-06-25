@@ -91,10 +91,10 @@ export async function deleteSite(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  // Archive if any itinerary stop references this site (preserve trip history);
+  // Archive if any itinerary item references this site (preserve trip history);
   // hard-delete only when unreferenced.
-  const stopCount = await prisma.stop.count({ where: { siteId: id } });
-  if (stopCount > 0) {
+  const refCount = await prisma.scheduleItemSite.count({ where: { siteId: id } });
+  if (refCount > 0) {
     await prisma.site.update({
       where: { id },
       data: { archivedAt: new Date() },

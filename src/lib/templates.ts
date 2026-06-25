@@ -3,34 +3,59 @@ import { computeDayDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
 // pure, unit-testable function over plain data (no Prisma row instances needed).
-export type TemplateStop = {
+export type TemplateItemSite = {
+  siteId: string;
+  order: number;
+};
+
+export type TemplateBooking = {
   siteId: string | null;
+  label: string | null;
+  notes: string | null;
+};
+
+export type TemplateScheduleItem = {
+  categoryId: string | null;
   title: string | null;
   order: number;
   startTime: string | null;
   endTime: string | null;
-  scheduleNotes: string | null;
-  bookingNotes: string | null;
+  notes: string | null;
+  isBlock: boolean;
+  presenterContactId: string | null;
+  sites: TemplateItemSite[];
+  bookings: TemplateBooking[];
 };
 
 export type TemplateDay = {
   dayIndex: number;
   title: string | null;
   logisticalNotes: string | null;
-  stops: TemplateStop[];
+  scheduleItems: TemplateScheduleItem[];
 };
 
-// Prisma nested-create payload for `Trip.days` (typed structurally so this file
-// stays importable from tests without a Prisma client).
-export type InstantiatedStop = {
+// Prisma nested-create payloads (typed structurally so this file stays
+// importable from tests without a Prisma client).
+export type InstantiatedItemSite = { siteId: string; order: number };
+
+export type InstantiatedBooking = {
   siteId: string | null;
+  label: string | null;
+  notes: string | null;
+  status: BookingStatus;
+};
+
+export type InstantiatedScheduleItem = {
+  categoryId: string | null;
   title: string | null;
   order: number;
   startTime: string | null;
   endTime: string | null;
-  scheduleNotes: string | null;
-  bookingNotes: string | null;
-  bookingStatus: BookingStatus;
+  notes: string | null;
+  isBlock: boolean;
+  presenterContactId: string | null;
+  sites: { create: InstantiatedItemSite[] };
+  bookings: { create: InstantiatedBooking[] };
 };
 
 export type InstantiatedDay = {
@@ -38,17 +63,18 @@ export type InstantiatedDay = {
   date: Date | null;
   title: string | null;
   logisticalNotes: string | null;
-  stops: { create: InstantiatedStop[] };
+  scheduleItems: { create: InstantiatedScheduleItem[] };
 };
 
 /**
- * Deep-copy a template's days/stops into create-data for a new trip.
+ * Deep-copy a template's days/items into create-data for a new trip.
  *
- * - dayIndex and stop order are renumbered 1..n (source gaps are normalised).
+ * - dayIndex and item order are renumbered 1..n (source gaps are normalised).
  * - each day's date is derived from the new trip's startDate (null if unset).
- * - booking is reset: status → NOT_BOOKED, and the instance-specific actuals
- *   (bookedContact, confirmationRef) are dropped by omission. Reusable planning
- *   text (scheduleNotes, bookingNotes) is carried over.
+ * - site links are carried over (re-ordered 0..n).
+ * - bookings are carried over as planning intent but RESET: status → NOT_BOOKED
+ *   and the instance-specific actuals (bookedContact, confirmationRef) are
+ *   dropped by omission. Reusable text (label, notes) is kept.
  *
  * Templates are snapshots: this copies values, so later edits to the template do
  * not propagate to trips already instantiated from it.
@@ -66,18 +92,31 @@ export function instantiateDays(
         date: computeDayDate(startDate, dayIndex),
         title: day.title,
         logisticalNotes: day.logisticalNotes,
-        stops: {
-          create: [...day.stops]
+        scheduleItems: {
+          create: [...day.scheduleItems]
             .sort((a, b) => a.order - b.order)
-            .map((stop, si) => ({
-              siteId: stop.siteId,
-              title: stop.title,
+            .map((item, si) => ({
+              categoryId: item.categoryId,
+              title: item.title,
               order: si + 1,
-              startTime: stop.startTime,
-              endTime: stop.endTime,
-              scheduleNotes: stop.scheduleNotes,
-              bookingNotes: stop.bookingNotes,
-              bookingStatus: "NOT_BOOKED" as BookingStatus,
+              startTime: item.startTime,
+              endTime: item.endTime,
+              notes: item.notes,
+              isBlock: item.isBlock,
+              presenterContactId: item.presenterContactId,
+              sites: {
+                create: [...item.sites]
+                  .sort((a, b) => a.order - b.order)
+                  .map((s, sj) => ({ siteId: s.siteId, order: sj })),
+              },
+              bookings: {
+                create: item.bookings.map((b) => ({
+                  siteId: b.siteId,
+                  label: b.label,
+                  notes: b.notes,
+                  status: "NOT_BOOKED" as BookingStatus,
+                })),
+              },
             })),
         },
       };

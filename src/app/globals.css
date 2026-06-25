@@ -7,9 +7,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-heading: var(--font-fraunces), Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,72 +50,75 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* "The Pilgrim's Way" — limewash stone, iron-gall ink, verdigris + brass.
+     Grounded in churchyard yews, copper-roof patina, and brass chapel fittings. */
+  --background: #ece9df; /* limewash stone */
+  --foreground: #22302e; /* iron-gall ink (green-slate near-black) */
+  --card: #f7f5ef; /* laid paper, lifts off the background */
+  --card-foreground: #22302e;
+  --popover: #f7f5ef;
+  --popover-foreground: #22302e;
+  --primary: #2e5e4e; /* verdigris / holly green */
+  --primary-foreground: #f5f3ec;
+  --secondary: #e3dfd2; /* aged paper */
+  --secondary-foreground: #2b3a36;
+  --muted: #e3dfd2;
+  --muted-foreground: #6b7269; /* faded ink / lichen grey-green */
+  --accent: #a9762f; /* brass / ochre waymarker */
+  --accent-foreground: #f7f5ef;
+  --destructive: #9b342b; /* claret */
+  --border: #d6d0c0; /* soft paper edge */
+  --input: #d6d0c0;
+  --ring: #2e5e4e;
+  --chart-1: #2e5e4e;
+  --chart-2: #a9762f;
+  --chart-3: #6b7269;
+  --chart-4: #9b342b;
+  --chart-5: #46685c;
+  --radius: 0.5rem;
+  --sidebar: #e7e3d7;
+  --sidebar-foreground: #22302e;
+  --sidebar-primary: #2e5e4e;
+  --sidebar-primary-foreground: #f5f3ec;
+  --sidebar-accent: #e3dfd2;
+  --sidebar-accent-foreground: #2b3a36;
+  --sidebar-border: #d6d0c0;
+  --sidebar-ring: #2e5e4e;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Midnight chapel — deep ink-green stone, parchment text, brighter brass. */
+  --background: #1a2421;
+  --foreground: #ece7d8;
+  --card: #212d29;
+  --card-foreground: #ece7d8;
+  --popover: #212d29;
+  --popover-foreground: #ece7d8;
+  --primary: #6fae93; /* lifted verdigris for contrast on dark */
+  --primary-foreground: #14201c;
+  --secondary: #2b3833;
+  --secondary-foreground: #ece7d8;
+  --muted: #2b3833;
+  --muted-foreground: #9aa79c;
+  --accent: #cb9a4f; /* brighter brass */
+  --accent-foreground: #1a2421;
+  --destructive: #d4685c;
+  --border: #ffffff1a;
+  --input: #ffffff26;
+  --ring: #6fae93;
+  --chart-1: #6fae93;
+  --chart-2: #cb9a4f;
+  --chart-3: #9aa79c;
+  --chart-4: #d4685c;
+  --chart-5: #46685c;
+  --sidebar: #212d29;
+  --sidebar-foreground: #ece7d8;
+  --sidebar-primary: #6fae93;
+  --sidebar-primary-foreground: #14201c;
+  --sidebar-accent: #2b3833;
+  --sidebar-accent-foreground: #ece7d8;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: #6fae93;
 }
 
 @layer base {
@@ -126,5 +130,21 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Headings carry the page's personality — set them in the display serif,
+     tightened, with old-style optical sizing where Fraunces supports it. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.012em;
+  }
+  /* Tabular data — times, dates, refs, costs — reads as a planning ledger. */
+  .font-mono,
+  time,
+  [data-ledger] {
+    font-variant-numeric: tabular-nums;
   }
 }
