@@ -54,7 +54,7 @@ export default async function TripOverviewPage({
               sites: {
                 orderBy: { order: "asc" },
                 include: {
-                  location: { select: { id: true, name: true, region: true } },
+                  location: { select: { id: true, name: true } },
                 },
               },
               bookings: {
@@ -138,11 +138,12 @@ export default async function TripOverviewPage({
       return { currency, cost, lodging, total: (cost?.total ?? 0) + lodging };
     });
 
-  // For the Lodging manager (PLANNER edits inline).
+  // For the Lodging manager (PLANNER edits inline). Only host sites flagged as
+  // providing lodging can be picked for a stay.
   const lodgingLocations = await prisma.location.findMany({
-    where: { archivedAt: null },
+    where: { archivedAt: null, hostSite: { providesLodging: true } },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, region: true },
+    select: { id: true, name: true, region: { select: { name: true } } },
   });
   const lodgingContacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
@@ -324,7 +325,11 @@ export default async function TripOverviewPage({
               <LodgingManager
                 tripId={trip.id}
                 canEdit={canEdit}
-                locations={lodgingLocations}
+                locations={lodgingLocations.map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                  region: l.region?.name ?? null,
+                }))}
                 contacts={lodgingContacts}
                 stays={stays.map(serializeStay)}
               />

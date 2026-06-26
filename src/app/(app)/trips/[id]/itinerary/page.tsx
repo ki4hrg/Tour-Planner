@@ -40,7 +40,7 @@ export default async function ItineraryPage({
               sites: {
                 orderBy: { order: "asc" },
                 include: {
-                  location: { select: { id: true, name: true, region: true } },
+                  location: { select: { id: true, name: true } },
                 },
               },
               bookings: {
@@ -68,7 +68,7 @@ export default async function ItineraryPage({
     select: {
       id: true,
       name: true,
-      region: true,
+      region: { select: { name: true } },
       tripTypes: { where: { id: trip.tripType.id }, select: { id: true } },
     },
   });
@@ -117,7 +117,7 @@ export default async function ItineraryPage({
         locations={locations.map((l) => ({
           id: l.id,
           name: l.name,
-          region: l.region,
+          region: l.region?.name ?? null,
           tagged: l.tripTypes.length > 0,
         }))}
         contacts={contacts}

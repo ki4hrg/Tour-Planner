@@ -21,6 +21,7 @@ import {
   BOOKING_STATUS_CLASSES,
   BOOKING_STATUSES,
   effectivePresenters,
+  scheduleItemPrimaryLabel,
   type SerializedDay,
   type SerializedScheduleItem,
   type SerializedBooking,
@@ -153,9 +154,8 @@ export function ItineraryEditor({
 
   const addNewLocation = async (
     name: string,
-    region: string,
   ): Promise<CreatedLocation | null> => {
-    const res = await createTripLocation(tripId, name, region);
+    const res = await createTripLocation(tripId, name);
     if (!res.ok) {
       toast.error(res.error);
       return null;
@@ -163,7 +163,7 @@ export function ItineraryEditor({
     setExtraLocations((prev) =>
       prev.some((s) => s.id === res.location.id)
         ? prev
-        : [...prev, { ...res.location, tagged: true }],
+        : [...prev, { ...res.location, region: null, tagged: true }],
     );
     toast.success(`Created ${res.location.name}.`);
     return res.location;
@@ -261,10 +261,7 @@ function DayCard({
   contacts: Contact[];
   presentations: Presentation[];
   onMove: (index: number, dir: -1 | 1) => void;
-  onCreateLocation: (
-    name: string,
-    region: string,
-  ) => Promise<CreatedLocation | null>;
+  onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
@@ -276,6 +273,9 @@ function DayCard({
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState(day.title ?? "");
   const [notes, setNotes] = useState(day.logisticalNotes ?? "");
+  const [participantNotes, setParticipantNotes] = useState(
+    day.participantNotes ?? "",
+  );
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
     const next = [...day.items];
@@ -359,6 +359,20 @@ function DayCard({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Participant notes{" "}
+              <span className="text-muted-foreground">
+                (theme, scripture, walk notes — participant-facing)
+              </span>
+            </Label>
+            <Textarea
+              rows={2}
+              value={participantNotes}
+              onChange={(e) => setParticipantNotes(e.target.value)}
+              placeholder="e.g. Theme: The Road to Emmaus · Luke 24:13–35"
+            />
+          </div>
           <Button
             size="sm"
             disabled={pending}
@@ -368,6 +382,7 @@ function DayCard({
                   updateDay(day.id, {
                     title,
                     logisticalNotes: notes,
+                    participantNotes,
                   }),
                 () => setEditingDay(false),
               )
@@ -376,6 +391,13 @@ function DayCard({
             Save day
           </Button>
         </div>
+      ) : null}
+
+      {/* Participant-facing day note (theme/scripture) — shown to everyone. */}
+      {day.participantNotes && !editingDay ? (
+        <p className="border-b px-4 py-2 text-sm italic text-muted-foreground">
+          {day.participantNotes}
+        </p>
       ) : null}
 
       {/* The day's route line: items as waymarkers on a single vertical way. */}
@@ -484,10 +506,7 @@ function ItemRow({
   contacts: Contact[];
   presentations: Presentation[];
   onMove: (index: number, dir: -1 | 1) => void;
-  onCreateLocation: (
-    name: string,
-    region: string,
-  ) => Promise<CreatedLocation | null>;
+  onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
@@ -498,21 +517,11 @@ function ItemRow({
   const [editing, setEditing] = useState(false);
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
-  const locationNames = item.sites.map((s) => s.location.name);
   const speakers = effectivePresenters(item);
-  const primary =
-    item.title ??
-    (item.sites.length === 1
-      ? locationNames[0]
-      : item.isBlock
-        ? `Choose from ${item.sites.length} location${item.sites.length === 1 ? "" : "s"}`
-        : item.sites.length > 1
-          ? `${item.sites.length} locations`
-          : "Untitled item");
   // The single bare location name is already the primary label; otherwise list
   // the member locations so they're never hidden behind a title (e.g. Travel).
-  const locationIsPrimary =
-    item.sites.length === 1 && !item.title && !item.isBlock;
+  const { primary, locationIsPrimary, presentationIsPrimary } =
+    scheduleItemPrimaryLabel(item);
 
   return (
     <li className="relative pl-5">
@@ -544,11 +553,11 @@ function ItemRow({
           ) : (
             <>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                {time ? (
-                  <time className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {time}
-                  </time>
-                ) : null}
+                {/* Fixed-width time gutter so category chips and titles align
+                    across rows whether or not an item carries an end time. */}
+                <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                  {time}
+                </time>
                 {item.category ? (
                   <span
                     className="rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
@@ -585,7 +594,7 @@ function ItemRow({
               ) : null}
 
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {item.presentation ? (
+                {item.presentation && !presentationIsPrimary ? (
                   <span className="italic">· {item.presentation.title}</span>
                 ) : null}
                 {speakers.length ? (
@@ -700,10 +709,7 @@ function ItemFields({
   submitLabel: string;
   onSubmit: (data: ScheduleItemInputData, done: () => void) => void;
   onCancel: () => void;
-  onCreateLocation: (
-    name: string,
-    region: string,
-  ) => Promise<CreatedLocation | null>;
+  onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
@@ -735,7 +741,6 @@ function ItemFields({
   // Inline location creation.
   const [creatingLocation, setCreatingLocation] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newRegion, setNewRegion] = useState("");
 
   // Inline talk (presentation) creation.
   const [creatingTalk, setCreatingTalk] = useState(false);
@@ -797,14 +802,13 @@ function ItemFields({
   };
 
   const handleCreate = async () => {
-    const created = await onCreateLocation(newName, newRegion);
+    const created = await onCreateLocation(newName);
     if (created) {
       setLocationIds((prev) =>
         prev.includes(created.id) ? prev : [...prev, created.id],
       );
       setCreatingLocation(false);
       setNewName("");
-      setNewRegion("");
     }
   };
 
@@ -893,151 +897,9 @@ function ItemFields({
             onChange={(e) => setEndTime(e.target.value)}
           />
         </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">Talk</Label>
-          <Select value={presentationId} onValueChange={setPresentationId}>
-            <SelectTrigger size="sm">
-              <SelectValue placeholder="— none —" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
-              {presentations.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {creatingTalk ? (
-            <div className="space-y-2 rounded-md border border-dashed p-2">
-              <Input
-                placeholder="Talk title"
-                value={newTalkTitle}
-                onChange={(e) => setNewTalkTitle(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Button type="button" size="sm" onClick={handleCreateTalk}>
-                  Create & select
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCreatingTalk(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => setCreatingTalk(true)}
-            >
-              + Create a new talk
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">
-            Presenters{" "}
-            <span className="text-muted-foreground">(override)</span>
-          </Label>
-          {presenterIds.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {presenterIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
-                >
-                  {contactName(id)}
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-destructive"
-                    aria-label={`Remove ${contactName(id)}`}
-                    onClick={() =>
-                      setPresenterIds((prev) => prev.filter((p) => p !== id))
-                    }
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {selectedTalk && selectedTalk.defaultPresenters.length
-                ? `Using talk defaults: ${selectedTalk.defaultPresenters
-                    .map((p) => p.name)
-                    .join(", ")}`
-                : "None — leave empty to use the talk's defaults."}
-            </p>
-          )}
-          <Select value={addPresenter} onValueChange={pickPresenter}>
-            <SelectTrigger size="sm">
-              <SelectValue placeholder="+ Add a presenter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>+ Add a presenter…</SelectItem>
-              {availablePresenters.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {creatingPresenter ? (
-            <div className="space-y-2 rounded-md border border-dashed p-2">
-              <Input
-                placeholder="Presenter name"
-                value={newPresenterName}
-                onChange={(e) => setNewPresenterName(e.target.value)}
-              />
-              <Input
-                placeholder="Organization (optional)"
-                value={newPresenterOrg}
-                onChange={(e) => setNewPresenterOrg(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Button type="button" size="sm" onClick={handleCreatePresenter}>
-                  Create & add
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCreatingPresenter(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => setCreatingPresenter(true)}
-            >
-              + Create a new presenter
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-end pb-1">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={isBlock}
-              onCheckedChange={(v) => setIsBlock(v === true)}
-            />
-            Free-choice block (subgroups pick among the locations)
-          </label>
-        </div>
       </div>
 
-      {/* Locations (0..n) */}
+      {/* Locations (0..n) — the day's "where", kept near the top. */}
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center justify-between">
           <Label className="text-xs">Locations</Label>
@@ -1099,11 +961,6 @@ function ItemFields({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
-            <Input
-              placeholder="Region (optional)"
-              value={newRegion}
-              onChange={(e) => setNewRegion(e.target.value)}
-            />
             <div className="flex gap-2">
               <Button type="button" size="sm" onClick={handleCreate}>
                 Create & add
@@ -1127,11 +984,163 @@ function ItemFields({
             + Create a new location
           </button>
         )}
+
+        {/* The free-choice block toggle governs the locations above it. */}
+        <label className="flex items-center gap-2 border-t pt-2 text-sm">
+          <Checkbox
+            checked={isBlock}
+            onCheckedChange={(v) => setIsBlock(v === true)}
+          />
+          Free-choice block (subgroups pick among the locations)
+        </label>
       </div>
 
       <div className="space-y-1.5">
         <Label className="text-xs">Notes</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </div>
+
+      {/* Talk & presenters — content/speaker detail, sectioned off (like the
+          Bookings panel) since it only applies to presentation-style items. */}
+      <div className="space-y-3 rounded-md border p-3">
+        <Label className="text-xs">Talk &amp; presenters</Label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Talk</Label>
+            <Select value={presentationId} onValueChange={setPresentationId}>
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="— none —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— none —</SelectItem>
+                {presentations.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {creatingTalk ? (
+              <div className="space-y-2 rounded-md border border-dashed p-2">
+                <Input
+                  placeholder="Talk title"
+                  value={newTalkTitle}
+                  onChange={(e) => setNewTalkTitle(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={handleCreateTalk}>
+                    Create & select
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCreatingTalk(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setCreatingTalk(true)}
+              >
+                + Create a new talk
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Presenters{" "}
+              <span className="text-muted-foreground">(override)</span>
+            </Label>
+            {presenterIds.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {presenterIds.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
+                  >
+                    {contactName(id)}
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove ${contactName(id)}`}
+                      onClick={() =>
+                        setPresenterIds((prev) => prev.filter((p) => p !== id))
+                      }
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {selectedTalk && selectedTalk.defaultPresenters.length
+                  ? `Using talk defaults: ${selectedTalk.defaultPresenters
+                      .map((p) => p.name)
+                      .join(", ")}`
+                  : "None — leave empty to use the talk's defaults."}
+              </p>
+            )}
+            <Select value={addPresenter} onValueChange={pickPresenter}>
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="+ Add a presenter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>+ Add a presenter…</SelectItem>
+                {availablePresenters.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {creatingPresenter ? (
+              <div className="space-y-2 rounded-md border border-dashed p-2">
+                <Input
+                  placeholder="Presenter name"
+                  value={newPresenterName}
+                  onChange={(e) => setNewPresenterName(e.target.value)}
+                />
+                <Input
+                  placeholder="Organization (optional)"
+                  value={newPresenterOrg}
+                  onChange={(e) => setNewPresenterOrg(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleCreatePresenter}
+                  >
+                    Create & add
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCreatingPresenter(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setCreatingPresenter(true)}
+              >
+                + Create a new presenter
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="flex gap-2">

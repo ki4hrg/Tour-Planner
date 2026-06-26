@@ -26,7 +26,12 @@ export default async function ContactDetailPage({
 
   const contact = await prisma.contact.findUnique({
     where: { id },
-    include: { locations: { orderBy: { name: "asc" } } },
+    include: {
+      locations: {
+        orderBy: { name: "asc" },
+        include: { region: { select: { name: true } } },
+      },
+    },
   });
   if (!contact) notFound();
 
@@ -88,7 +93,7 @@ export default async function ContactDetailPage({
                     {l.name}
                   </Link>
                   {l.region ? (
-                    <span className="text-muted-foreground"> · {l.region}</span>
+                    <span className="text-muted-foreground"> · {l.region.name}</span>
                   ) : null}
                 </li>
               ))}

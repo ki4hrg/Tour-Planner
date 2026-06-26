@@ -36,6 +36,7 @@ export default async function LocationsPage({
       include: {
         tripTypes: { select: { id: true, name: true, color: true } },
         hostSite: { select: { id: true } },
+        region: { select: { name: true } },
       },
     }),
     prisma.tripType.findMany({
@@ -121,7 +122,7 @@ export default async function LocationsPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              {l.region ? <p>{l.region}</p> : null}
+              {l.region ? <p>{l.region.name}</p> : null}
               <div className="flex flex-wrap gap-1.5">
                 {l.tripTypes.map((t) => (
                   <Badge key={t.id} variant="secondary">

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import {
   effectivePresenters,
+  scheduleItemPrimaryLabel,
   type SerializedDay,
   type SerializedScheduleItem,
 } from "@/lib/trips";
@@ -173,26 +174,19 @@ function TimelineItem({ item }: { item: SerializedScheduleItem }) {
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const locationNames = item.sites.map((s) => s.location.name);
   const speakers = effectivePresenters(item);
-  const primary =
-    item.title ??
-    (item.sites.length === 1
-      ? locationNames[0]
-      : item.isBlock
-        ? `Choose from ${item.sites.length} locations`
-        : item.sites.length > 1
-          ? `${item.sites.length} locations`
-          : "Untitled item");
-  const locationIsPrimary =
-    item.sites.length === 1 && !item.title && !item.isBlock;
+  const { primary, locationIsPrimary, presentationIsPrimary } =
+    scheduleItemPrimaryLabel(item);
+  const showLocation = !locationIsPrimary && locationNames.length > 0;
+  const showPresentation = item.presentation && !presentationIsPrimary;
 
   return (
     <li className="py-0.5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        {time ? (
-          <time className="font-mono text-xs tabular-nums text-muted-foreground">
-            {time}
-          </time>
-        ) : null}
+        {/* Fixed-width time gutter so category chips and titles line up across
+            rows whether or not an item carries an end time. */}
+        <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+          {time}
+        </time>
         {item.category ? (
           <span
             className="rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
@@ -208,11 +202,11 @@ function TimelineItem({ item }: { item: SerializedScheduleItem }) {
         ) : null}
         <span className="font-medium">{primary}</span>
       </div>
-      {(!locationIsPrimary && locationNames.length > 0) ||
-      speakers.length > 0 ? (
+      {showLocation || showPresentation || speakers.length > 0 ? (
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          {!locationIsPrimary && locationNames.length > 0 ? (
-            <span>{locationNames.join(" · ")}</span>
+          {showLocation ? <span>{locationNames.join(" · ")}</span> : null}
+          {showPresentation ? (
+            <span className="italic">· {item.presentation?.title}</span>
           ) : null}
           {speakers.length > 0 ? (
             <span>· {speakers.map((p) => p.name).join(", ")}</span>

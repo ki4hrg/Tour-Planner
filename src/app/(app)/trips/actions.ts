@@ -265,7 +265,7 @@ export async function addDay(tripId: string): Promise<FormState> {
 
 export async function updateDay(
   dayId: string,
-  input: { title?: string; logisticalNotes?: string },
+  input: { title?: string; logisticalNotes?: string; participantNotes?: string },
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = daySchema.safeParse(input);
@@ -276,6 +276,7 @@ export async function updateDay(
     data: {
       title: parsed.data.title || null,
       logisticalNotes: parsed.data.logisticalNotes || null,
+      participantNotes: parsed.data.participantNotes || null,
     },
   });
 
@@ -562,12 +563,13 @@ export async function deleteBooking(bookingId: string): Promise<FormState> {
 
 // --- Inline location creation from the item picker ---
 
-export type CreatedLocation = { id: string; name: string; region: string | null };
+export type CreatedLocation = { id: string; name: string };
 
+// Inline-created locations carry no region — region is an admin-managed catalog
+// now, assigned later on the location's own page.
 export async function createTripLocation(
   tripId: string,
   name: string,
-  region?: string,
 ): Promise<
   { ok: true; location: CreatedLocation } | { ok: false; error: string }
 > {
@@ -584,11 +586,10 @@ export async function createTripLocation(
   const location = await prisma.location.create({
     data: {
       name: trimmed,
-      region: region?.trim() || null,
       // Tag with the trip's type so it shows in the default (filtered) picker.
       tripTypes: { connect: { id: trip.tripTypeId } },
     },
-    select: { id: true, name: true, region: true },
+    select: { id: true, name: true },
   });
 
   revalidatePath("/locations");
