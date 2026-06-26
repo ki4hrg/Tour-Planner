@@ -47,6 +47,14 @@ export async function updateCategory(
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing category." };
 
+  const existing = await prisma.scheduleItemCategory.findUnique({
+    where: { id },
+    select: { system: true },
+  });
+  if (existing?.system) {
+    return { error: "Built-in categories can't be edited." };
+  }
+
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
@@ -71,6 +79,12 @@ export async function deleteCategory(formData: FormData): Promise<void> {
   await assertRole("ADMIN");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  // Built-ins (Free time / Break) are protected from deletion.
+  const existing = await prisma.scheduleItemCategory.findUnique({
+    where: { id },
+    select: { system: true },
+  });
+  if (existing?.system) return;
   // Items keep their other fields; their categoryId is set null (schema onDelete).
   await prisma.scheduleItemCategory.delete({ where: { id } });
   revalidatePath("/schedule-categories");

@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import {
   BOOKING_STATUS_LABELS,
-  BOOKING_STATUS_CLASSES,
   BOOKING_STATUSES,
   effectivePresenters,
   scheduleItemPrimaryLabel,
@@ -26,6 +25,11 @@ import {
   type SerializedScheduleItem,
   type SerializedBooking,
 } from "@/lib/trips";
+import {
+  TimelineGroups,
+  BookingPill,
+  CategoryChip,
+} from "./itinerary-timeline";
 import type { BookingStatus } from "@prisma/client";
 import type { FormState } from "@/lib/forms";
 import {
@@ -52,6 +56,13 @@ import {
 
 const NONE = "__none__";
 
+// Hints shown when a self-describing built-in category is chosen, clarifying the
+// distinction between similar kinds. Falls back to a generic note.
+const SYSTEM_CATEGORY_HINTS: Record<string, string> = {
+  Break: "A short on-site pause — refreshments or a stretch. Just set the time.",
+  "Free time": "Unstructured time for participants to explore on their own.",
+};
+
 type Location = {
   id: string;
   name: string;
@@ -59,7 +70,12 @@ type Location = {
   tagged: boolean;
 };
 type Contact = { id: string; name: string };
-type Category = { id: string; name: string; color: string | null };
+type Category = {
+  id: string;
+  name: string;
+  color: string | null;
+  system: boolean;
+};
 type Presentation = {
   id: string;
   title: string;
@@ -400,11 +416,12 @@ function DayCard({
         </p>
       ) : null}
 
-      {/* The day's route line: items as waymarkers on a single vertical way. */}
+      {/* Editing: the day's route line with per-item controls. Read-only viewers
+          get the grouped venue-run layout (location once per run). */}
       <div className="px-4 py-3">
         {day.items.length === 0 ? (
           <p className="py-1 text-sm text-muted-foreground">No items yet.</p>
-        ) : (
+        ) : canEdit ? (
           <ol className="relative ml-1.5 space-y-1 border-l-2 border-border">
             {day.items.map((item, si) => (
               <ItemRow
@@ -424,6 +441,8 @@ function DayCard({
               />
             ))}
           </ol>
+        ) : (
+          <TimelineGroups items={day.items} showBookings />
         )}
       </div>
 
@@ -518,9 +537,9 @@ function ItemRow({
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
-  // The single bare location name is already the primary label; otherwise list
-  // the member locations so they're never hidden behind a title (e.g. Travel).
-  const { primary, locationIsPrimary, presentationIsPrimary } =
+  // Heading is the "what" (title → talk → category); the venue is listed as
+  // member-location tags below. Drop the chip when the label IS the category.
+  const { primary, presentationIsPrimary, labelFromCategory } =
     scheduleItemPrimaryLabel(item);
 
   return (
@@ -558,29 +577,28 @@ function ItemRow({
                 <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                   {time}
                 </time>
-                {item.category ? (
-                  <span
-                    className="rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-                    style={{
-                      color: item.category.color ?? "var(--muted-foreground)",
-                      backgroundColor: item.category.color
-                        ? `color-mix(in oklab, ${item.category.color} 14%, transparent)`
-                        : "var(--muted)",
-                    }}
-                  >
-                    {item.category.name}
-                  </span>
+                {item.category && !labelFromCategory ? (
+                  <CategoryChip category={item.category} />
                 ) : null}
                 {item.isBlock ? (
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     block
                   </span>
                 ) : null}
-                <span className="font-medium">{primary}</span>
+                <span
+                  className="font-medium"
+                  style={
+                    labelFromCategory && item.category?.color
+                      ? { color: item.category.color }
+                      : undefined
+                  }
+                >
+                  {primary}
+                </span>
               </div>
 
-              {/* Member locations — shown unless the single one is the title. */}
-              {item.sites.length > 0 && !locationIsPrimary ? (
+              {/* Member locations — the item's "where" (venue is never the heading). */}
+              {item.sites.length > 0 ? (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {item.sites.map((s) => (
                     <span
@@ -654,39 +672,6 @@ function ItemRow({
   );
 }
 
-function BookingPill({
-  booking,
-  item,
-}: {
-  booking: SerializedBooking;
-  item: SerializedScheduleItem;
-}) {
-  const forLocation =
-    booking.locationId != null
-      ? item.sites.find((s) => s.locationId === booking.locationId)?.location
-          .name
-      : null;
-  const what = booking.label ?? forLocation ?? null;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <span
-        className={cn(
-          "rounded-full px-2 py-0.5 font-medium",
-          BOOKING_STATUS_CLASSES[booking.status],
-        )}
-      >
-        {BOOKING_STATUS_LABELS[booking.status]}
-      </span>
-      {what ? <span className="text-muted-foreground">{what}</span> : null}
-      {booking.bookedContact ? (
-        <span className="text-muted-foreground">· {booking.bookedContact.name}</span>
-      ) : null}
-      {booking.confirmationRef ? (
-        <span className="text-muted-foreground">· ref {booking.confirmationRef}</span>
-      ) : null}
-    </span>
-  );
-}
 
 function ItemFields({
   categories,
@@ -750,6 +735,14 @@ function ItemFields({
   const [creatingPresenter, setCreatingPresenter] = useState(false);
   const [newPresenterName, setNewPresenterName] = useState("");
   const [newPresenterOrg, setNewPresenterOrg] = useState("");
+
+  // Self-describing built-ins (Free time / Break) carry only times + notes; the
+  // rest of the form is hidden and those fields are cleared on submit.
+  const selectedCategory =
+    categoryId === NONE
+      ? null
+      : (categories.find((c) => c.id === categoryId) ?? null);
+  const selfDescribing = !!selectedCategory?.system;
 
   const selectedTalk =
     presentationId === NONE
@@ -816,14 +809,15 @@ function ItemFields({
     onSubmit(
       {
         categoryId: categoryId === NONE ? undefined : categoryId,
-        title: title.trim() || undefined,
+        title: selfDescribing ? undefined : title.trim() || undefined,
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
-        isBlock,
-        presentationId: presentationId === NONE ? undefined : presentationId,
-        presenterIds,
-        locationIds,
+        isBlock: selfDescribing ? false : isBlock,
+        presentationId:
+          selfDescribing || presentationId === NONE ? undefined : presentationId,
+        presenterIds: selfDescribing ? [] : presenterIds,
+        locationIds: selfDescribing ? [] : locationIds,
       },
       () => {
         if (!initial) {
@@ -861,25 +855,27 @@ function ItemFields({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-xs">
-            Title{" "}
-            <span className="text-muted-foreground">
-              {locationIds.length === 0
-                ? "(required without a location)"
-                : "(optional)"}
-            </span>
-          </Label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={
-              locationIds.length === 0
-                ? "e.g. Lunch, Transit, Talk"
-                : "Override label"
-            }
-          />
-        </div>
+        {selfDescribing ? null : (
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Title{" "}
+              <span className="text-muted-foreground">
+                {locationIds.length === 0
+                  ? "(required without a location)"
+                  : "(optional)"}
+              </span>
+            </Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={
+                locationIds.length === 0
+                  ? "e.g. Lunch, Transit, Talk"
+                  : "Override label"
+              }
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <Label className="text-xs">Start time</Label>
@@ -899,7 +895,15 @@ function ItemFields({
         </div>
       </div>
 
-      {/* Locations (0..n) — the day's "where", kept near the top. */}
+      {selfDescribing && selectedCategory ? (
+        <p className="text-xs text-muted-foreground">
+          {SYSTEM_CATEGORY_HINTS[selectedCategory.name] ??
+            "Just set a time (and any notes) — no title or location."}
+        </p>
+      ) : null}
+
+      {selfDescribing ? null : (
+      /* Locations (0..n) — the day's "where", kept near the top. */
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center justify-between">
           <Label className="text-xs">Locations</Label>
@@ -994,14 +998,16 @@ function ItemFields({
           Free-choice block (subgroups pick among the locations)
         </label>
       </div>
+      )}
 
       <div className="space-y-1.5">
         <Label className="text-xs">Notes</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 
-      {/* Talk & presenters — content/speaker detail, sectioned off (like the
-          Bookings panel) since it only applies to presentation-style items. */}
+      {selfDescribing ? null : (
+      /* Talk & presenters — content/speaker detail, sectioned off (like the
+         Bookings panel) since it only applies to presentation-style items. */
       <div className="space-y-3 rounded-md border p-3">
         <Label className="text-xs">Talk &amp; presenters</Label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1142,6 +1148,7 @@ function ItemFields({
           </div>
         </div>
       </div>
+      )}
 
       <div className="flex gap-2">
         <Button type="button" size="sm" onClick={submit}>

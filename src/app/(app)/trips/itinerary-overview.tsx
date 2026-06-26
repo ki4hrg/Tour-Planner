@@ -17,12 +17,8 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import {
-  effectivePresenters,
-  scheduleItemPrimaryLabel,
-  type SerializedDay,
-  type SerializedScheduleItem,
-} from "@/lib/trips";
+import { type SerializedDay } from "@/lib/trips";
+import { TimelineGroups } from "./itinerary-timeline";
 
 // Distinct location names visited across a day's items, in first-seen order.
 function daySites(day: SerializedDay): string[] {
@@ -39,11 +35,15 @@ function daySites(day: SerializedDay): string[] {
   return names;
 }
 
-// "Rome · Vatican +2" — first two distinct sites, with an overflow count.
-function siteRollup(names: string[]): string {
-  if (names.length === 0) return "";
-  const head = names.slice(0, 2).join(" · ");
-  return names.length > 2 ? `${head} +${names.length - 2}` : head;
+// The day's distinct sites split into a shown head + an overflow remainder, so
+// the header can render "Rome · Vatican · Assisi · Siena +1" with the "+1"
+// carrying a tooltip of the full list.
+const SITE_ROLLUP_MAX = 4;
+function siteRollup(names: string[]): { head: string[]; overflow: string[] } {
+  return {
+    head: names.slice(0, SITE_ROLLUP_MAX),
+    overflow: names.slice(SITE_ROLLUP_MAX),
+  };
 }
 
 export function ItineraryOverview({
@@ -123,7 +123,8 @@ function DayRow({
   open: boolean;
   onToggle: () => void;
 }) {
-  const sites = siteRollup(daySites(day));
+  const allSites = daySites(day);
+  const { head, overflow } = siteRollup(allSites);
   const count = day.items.length;
 
   return (
@@ -143,14 +144,19 @@ function DayRow({
               <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
             ) : null}
           </span>
-          {sites ? (
-            <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-              {sites}
+          {allSites.length > 0 ? (
+            <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+              <span className="truncate">{head.join(" · ")}</span>
+              {overflow.length > 0 ? (
+                <span
+                  title={allSites.join(", ")}
+                  className="shrink-0 cursor-help underline decoration-dotted underline-offset-2"
+                >
+                  +{overflow.length}
+                </span>
+              ) : null}
             </span>
           ) : null}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {count} item{count === 1 ? "" : "s"}
-          </span>
         </CollapsibleTrigger>
         <CollapsibleContent>
           {count === 0 ? (
@@ -158,11 +164,9 @@ function DayRow({
               Nothing scheduled.
             </p>
           ) : (
-            <ul className="ml-[7px] space-y-1 border-l py-1 pl-4">
-              {day.items.map((item) => (
-                <TimelineItem key={item.id} item={item} />
-              ))}
-            </ul>
+            <div className="ml-[7px] border-l pt-1 pb-4 pl-4">
+              <TimelineGroups items={day.items} />
+            </div>
           )}
         </CollapsibleContent>
       </Collapsible>
@@ -170,49 +174,3 @@ function DayRow({
   );
 }
 
-function TimelineItem({ item }: { item: SerializedScheduleItem }) {
-  const time = [item.startTime, item.endTime].filter(Boolean).join("–");
-  const locationNames = item.sites.map((s) => s.location.name);
-  const speakers = effectivePresenters(item);
-  const { primary, locationIsPrimary, presentationIsPrimary } =
-    scheduleItemPrimaryLabel(item);
-  const showLocation = !locationIsPrimary && locationNames.length > 0;
-  const showPresentation = item.presentation && !presentationIsPrimary;
-
-  return (
-    <li className="py-0.5">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        {/* Fixed-width time gutter so category chips and titles line up across
-            rows whether or not an item carries an end time. */}
-        <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-          {time}
-        </time>
-        {item.category ? (
-          <span
-            className="rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-            style={{
-              color: item.category.color ?? "var(--muted-foreground)",
-              backgroundColor: item.category.color
-                ? `color-mix(in oklab, ${item.category.color} 14%, transparent)`
-                : "var(--muted)",
-            }}
-          >
-            {item.category.name}
-          </span>
-        ) : null}
-        <span className="font-medium">{primary}</span>
-      </div>
-      {showLocation || showPresentation || speakers.length > 0 ? (
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          {showLocation ? <span>{locationNames.join(" · ")}</span> : null}
-          {showPresentation ? (
-            <span className="italic">· {item.presentation?.title}</span>
-          ) : null}
-          {speakers.length > 0 ? (
-            <span>· {speakers.map((p) => p.name).join(", ")}</span>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
-  );
-}

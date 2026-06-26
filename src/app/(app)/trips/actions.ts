@@ -340,6 +340,27 @@ export type ScheduleItemInputData = {
   locationIds: string[];
 };
 
+// A schedule item must be identifiable: it needs a title or at least one
+// location — unless its category is a self-describing built-in (Free time /
+// Break), which legitimately carries only times + notes. Returns an error
+// message when the item is under-specified, else null.
+async function identityError(
+  d: ReturnType<typeof scheduleItemSchema.parse>,
+): Promise<string | null> {
+  if (d.title || d.locationIds.length > 0) return null;
+  const selfDescribing = d.categoryId
+    ? (
+        await prisma.scheduleItemCategory.findUnique({
+          where: { id: d.categoryId },
+          select: { system: true },
+        })
+      )?.system
+    : false;
+  return selfDescribing
+    ? null
+    : "Pick at least one location or give the item a title.";
+}
+
 function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
   return {
     categoryId: d.categoryId || null,
@@ -359,6 +380,8 @@ export async function addScheduleItem(
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  const idErr = await identityError(parsed.data);
+  if (idErr) return { error: idErr };
 
   const count = await prisma.scheduleItem.count({ where: { dayId } });
   await prisma.scheduleItem.create({
@@ -388,6 +411,8 @@ export async function updateScheduleItem(
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  const idErr = await identityError(parsed.data);
+  if (idErr) return { error: idErr };
 
   // Replace the location links wholesale (simple + transactional). Bookings are
   // untouched — they reference Location directly, not the join row.

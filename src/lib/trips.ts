@@ -93,59 +93,111 @@ export type SerializedScheduleItem = {
   bookings: SerializedBooking[];
 };
 
-// The primary heading shown for a schedule item. The venue leads everywhere: a
-// linked location is the heading, with the talk/title rendered beneath it — so
-// locations render consistently whatever the item's kind. Precedence:
-//   1. an explicit title override on the item (the override label wins),
-//   2. the lone visited location's name,
-//   3. a block / multi-location fallback,
-//   4. the linked talk's title (site-less talks read by their content),
-//   5. "Untitled item".
-// `locationIsPrimary` is true only when a single bare location IS the heading, so
-// callers know not to repeat it; `presentationIsPrimary` is true only when the
-// talk title is the heading (a site-less talk), letting callers avoid echoing it.
+// The heading shown for a schedule item: always the "what", never the venue
+// (location is rendered once per venue-run subheader, see groupItemsByVenue).
+// Precedence:
+//   1. an explicit title override on the item,
+//   2. the linked talk's title,
+//   3. the category name (e.g. Free time, Break — self-describing kinds),
+//   4. "Untitled item".
+// `presentationIsPrimary` is true when the talk title IS the heading, so callers
+// avoid echoing it. `labelFromCategory` is true when the category name is the
+// heading, so callers drop the (now redundant) category chip and instead tint
+// the label in the category colour.
 export function scheduleItemPrimaryLabel(item: {
   title: string | null;
-  isBlock: boolean;
   presentation: { title: string } | null;
-  sites: { location: { name: string } }[];
+  category: { name: string } | null;
 }): {
   primary: string;
-  locationIsPrimary: boolean;
   presentationIsPrimary: boolean;
+  labelFromCategory: boolean;
 } {
   if (item.title) {
     return {
       primary: item.title,
-      locationIsPrimary: false,
       presentationIsPrimary: false,
+      labelFromCategory: false,
     };
-  }
-  if (item.sites.length === 1 && !item.isBlock) {
-    return {
-      primary: item.sites[0].location.name,
-      locationIsPrimary: true,
-      presentationIsPrimary: false,
-    };
-  }
-  if (item.sites.length >= 1) {
-    const primary = item.isBlock
-      ? `Choose from ${item.sites.length} location${item.sites.length === 1 ? "" : "s"}`
-      : `${item.sites.length} locations`;
-    return { primary, locationIsPrimary: false, presentationIsPrimary: false };
   }
   if (item.presentation) {
     return {
       primary: item.presentation.title,
-      locationIsPrimary: false,
       presentationIsPrimary: true,
+      labelFromCategory: false,
+    };
+  }
+  if (item.category) {
+    return {
+      primary: item.category.name,
+      presentationIsPrimary: false,
+      labelFromCategory: true,
     };
   }
   return {
     primary: "Untitled item",
-    locationIsPrimary: false,
     presentationIsPrimary: false,
+    labelFromCategory: false,
   };
+}
+
+// A run of consecutive (time-ordered) items sharing the same venue signature.
+// `kind`: 'single' = one venue, 'multi' = a multi-site / block stop, 'none' = no
+// location set. Read views render one subheader per run so location appears once.
+export type VenueRun = {
+  kind: "single" | "multi" | "none";
+  venues: string[];
+  items: SerializedScheduleItem[];
+};
+
+// Walk items in their given (chronological) order and segment them into venue
+// runs: a new run starts whenever the venue signature changes from the previous
+// venue item. The same venue revisited after leaving (Sarum → Cathedral → Sarum)
+// yields a fresh run, keeping the timeline in true time order.
+//
+// Location-less categories that read as "still here" and so fold into the
+// current single-venue run rather than breaking out — e.g. an on-site Break.
+// Free time is deliberately excluded: it implies leaving (be back before the
+// next event), so it always stands apart as its own group.
+const KEEPS_PLACE_CATEGORIES = new Set<string>(["Break"]);
+
+// Segment a day's (chronological) items into venue runs. A located item starts a
+// new run when its venue signature differs from the current run's; the same venue
+// revisited later (Sarum → Cathedral → Sarum) yields a fresh run.
+//
+// Location-less items default to their own headerless run (Free time, transit) so
+// they read as a departure from the venue. The exception is "keeps-place" kinds
+// (Break): an on-site pause folds back into a preceding single-venue run. Nothing
+// location-less ever tucks under a multi-site / block run.
+export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
+  const runs: VenueRun[] = [];
+  const sigOf = (venues: string[]) => [...venues].sort().join("|");
+  for (const item of items) {
+    const last = runs[runs.length - 1];
+    if (item.sites.length === 0) {
+      const keepsPlace =
+        !!item.category && KEEPS_PLACE_CATEGORIES.has(item.category.name);
+      if (keepsPlace && last && last.kind === "single") {
+        last.items.push(item);
+      } else if (last && last.kind === "none") {
+        last.items.push(item);
+      } else {
+        runs.push({ kind: "none", venues: [], items: [item] });
+      }
+      continue;
+    }
+    const venues = item.sites.map((s) => s.location.name);
+    if (last && last.venues.length > 0 && sigOf(last.venues) === sigOf(venues)) {
+      last.items.push(item);
+      continue;
+    }
+    runs.push({
+      kind: item.sites.length === 1 ? "single" : "multi",
+      venues,
+      items: [item],
+    });
+  }
+  return runs;
 }
 
 // The speaker(s) actually shown for an item: the per-occurrence override if set,

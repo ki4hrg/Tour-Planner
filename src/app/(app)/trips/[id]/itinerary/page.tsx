@@ -57,7 +57,7 @@ export default async function ItineraryPage({
 
   const categories = await prisma.scheduleItemCategory.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, color: true },
+    select: { id: true, name: true, color: true, system: true },
   });
 
   // Location picker defaults to locations tagged with this trip's type;

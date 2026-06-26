@@ -29,10 +29,9 @@ export const scheduleItemSchema = z
     // The locations this item visits (0 = informational line, 1 = stop, many = block).
     locationIds: z.array(z.string().min(1)).default([]),
   })
-  .refine((d) => d.locationIds.length > 0 || (d.title && d.title.length > 0), {
-    message: "Pick at least one location or give the item a title.",
-    path: ["title"],
-  })
+  // The "needs a title or a location" rule is enforced in the server actions,
+  // which can see whether the chosen category is a self-describing built-in
+  // (Free time / Break) that legitimately needs neither.
   .refine((d) => !d.startTime || !d.endTime || d.endTime >= d.startTime, {
     message: "End time cannot be before start time.",
     path: ["endTime"],
