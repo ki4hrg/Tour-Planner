@@ -17,7 +17,7 @@ import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
-import { updateTrip, deleteTrip } from "../actions";
+import { updateTrip, deleteTrip, saveTripAsTemplate } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -193,8 +193,16 @@ export default async function TripOverviewPage({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Details</CardTitle>
+          {canEdit && !trip.isTemplate ? (
+            <form action={saveTripAsTemplate}>
+              <input type="hidden" name="id" value={trip.id} />
+              <Button type="submit" size="sm" variant="outline">
+                Save as template
+              </Button>
+            </form>
+          ) : null}
         </CardHeader>
         <CardContent>
           {canEdit ? (

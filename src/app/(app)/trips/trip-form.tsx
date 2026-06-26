@@ -192,16 +192,17 @@ export function TripForm({
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm sm:col-span-2">
-          <Checkbox
-            name="isTemplate"
-            defaultChecked={initial?.isTemplate ?? defaultIsTemplate ?? false}
-          />
-          Save as a reusable template
-          <span className="text-muted-foreground">
-            (instantiation arrives in a later milestone)
-          </span>
-        </label>
+        {/* Marking-as-template only applies when creating. Existing trips use the
+            "Save as template" button, which snapshots the itinerary into a new template. */}
+        {!initial?.id ? (
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <Checkbox
+              name="isTemplate"
+              defaultChecked={initial?.isTemplate ?? defaultIsTemplate ?? false}
+            />
+            Save as a reusable template
+          </label>
+        ) : null}
       </div>
 
       <Button type="submit" disabled={pending}>

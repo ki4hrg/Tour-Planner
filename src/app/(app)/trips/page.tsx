@@ -35,7 +35,7 @@ export default async function TripsPage({
 
   const trips = await prisma.trip.findMany({
     where,
-    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ startDate: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
     include: {
       tripType: { select: { name: true } },
       _count: { select: { days: true } },
