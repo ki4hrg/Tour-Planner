@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ColorField } from "@/components/color-field";
+import { useEditSection } from "@/components/editable-section";
 import { CURRENCIES } from "@/lib/money";
 import type { FormState } from "@/lib/forms";
 
@@ -39,9 +40,15 @@ export function TripTypeForm({
     {},
   );
 
+  const section = useEditSection();
+
   useEffect(() => {
-    if (state.ok && state.message) toast.success(state.message);
-    else if (state.error) toast.error(state.error);
+    if (state.ok && state.message) {
+      toast.success(state.message);
+      section?.setEditing(false);
+    } else if (state.error) toast.error(state.error);
+    // section identity is stable; depend only on the action result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   return (
@@ -83,10 +90,20 @@ export function TripTypeForm({
           defaultValue={initial?.description ?? ""}
         />
       </div>
-      <div className="sm:col-span-2">
+      <div className="flex gap-2 sm:col-span-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>
+        {section ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => section.setEditing(false)}
+          >
+            Cancel
+          </Button>
+        ) : null}
       </div>
     </form>
   );

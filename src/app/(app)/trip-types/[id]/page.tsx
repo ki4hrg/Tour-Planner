@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { EditableSection } from "@/components/editable-section";
 import { TripTypeForm } from "../trip-type-form";
 import { updateTripType, deleteTripType } from "../actions";
 
@@ -48,20 +49,49 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Edit</CardTitle>
+          <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <TripTypeForm
-            action={updateTripType}
-            submitLabel="Save changes"
-            initial={{
-              id: tripType.id,
-              name: tripType.name,
-              description: tripType.description,
-              color: tripType.color,
-              defaultCurrency: tripType.defaultCurrency,
-            }}
-          />
+          <EditableSection
+            canEdit
+            view={
+              <dl className="grid grid-cols-3 gap-2 text-sm">
+                <dt className="text-muted-foreground">Default currency</dt>
+                <dd className="col-span-2">{tripType.defaultCurrency}</dd>
+                <dt className="text-muted-foreground">Accent color</dt>
+                <dd className="col-span-2 flex items-center gap-2">
+                  {tripType.color ? (
+                    <>
+                      <span
+                        aria-hidden
+                        className="inline-block size-4 rounded border"
+                        style={{ backgroundColor: tripType.color }}
+                      />
+                      <span className="font-mono text-xs">{tripType.color}</span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Description</dt>
+                <dd className="col-span-2 whitespace-pre-wrap">
+                  {tripType.description ?? "—"}
+                </dd>
+              </dl>
+            }
+          >
+            <TripTypeForm
+              action={updateTripType}
+              submitLabel="Save changes"
+              initial={{
+                id: tripType.id,
+                name: tripType.name,
+                description: tripType.description,
+                color: tripType.color,
+                defaultCurrency: tripType.defaultCurrency,
+              }}
+            />
+          </EditableSection>
         </CardContent>
       </Card>
 

@@ -11,12 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS, serializeStay } from "@/lib/trips";
+import { TRIP_STATUS_LABELS, serializeStay, serializeDay } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
+import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
+import { ItineraryOverview } from "../itinerary-overview";
 import { updateTrip, deleteTrip, saveTripAsTemplate } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +38,31 @@ export default async function TripOverviewPage({
       tripType: { select: { name: true } },
       days: {
         orderBy: { dayIndex: "asc" },
-        select: {
-          id: true,
-          dayIndex: true,
-          date: true,
-          title: true,
-          _count: { select: { scheduleItems: true } },
+        include: {
+          scheduleItems: {
+            orderBy: { order: "asc" },
+            include: {
+              category: { select: { id: true, name: true, color: true } },
+              presentation: {
+                select: {
+                  id: true,
+                  title: true,
+                  defaultPresenters: { select: { id: true, name: true } },
+                },
+              },
+              presenters: { select: { id: true, name: true } },
+              sites: {
+                orderBy: { order: "asc" },
+                include: {
+                  location: { select: { id: true, name: true, region: true } },
+                },
+              },
+              bookings: {
+                orderBy: { createdAt: "asc" },
+                include: { bookedContact: { select: { id: true, name: true } } },
+              },
+            },
+          },
         },
       },
     },
@@ -129,7 +150,9 @@ export default async function TripOverviewPage({
   });
 
   return (
-    <div className="space-y-6">
+    // This is the most information-dense screen, so let it grow past the shared
+    // max-w-5xl into the surrounding whitespace once there's room (xl/2xl).
+    <div className="space-y-6 xl:-mx-16 2xl:-mx-32">
       <div className="flex items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
           {trip.name}
@@ -144,207 +167,192 @@ export default async function TripOverviewPage({
         </Link>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Itinerary</CardTitle>
-          <div className="flex gap-2">
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/trips/${trip.id}/booking`}>Booking</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/trips/${trip.id}/itinerary`}>
-                {canEdit ? "Edit itinerary" : "View itinerary"}
-              </Link>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {trip.days.length === 0 ? (
-            <p className="text-muted-foreground">
-              No days yet.{" "}
-              {canEdit ? "Open the itinerary editor to add days." : ""}
-            </p>
-          ) : (
-            <ol className="divide-y">
-              {trip.days.map((d) => (
-                <li
-                  key={d.id}
-                  className="flex items-center justify-between gap-3 py-2"
-                >
-                  <span>
-                    <span className="font-medium">Day {d.dayIndex}</span>
-                    {d.title ? ` — ${d.title}` : ""}
-                    {d.date ? (
-                      <span className="text-muted-foreground">
-                        {" "}
-                        · {formatDate(d.date)}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {d._count.scheduleItems} item
-                    {d._count.scheduleItems === 1 ? "" : "s"}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Details</CardTitle>
-          {canEdit && !trip.isTemplate ? (
-            <form action={saveTripAsTemplate}>
-              <input type="hidden" name="id" value={trip.id} />
-              <Button type="submit" size="sm" variant="outline">
-                Save as template
-              </Button>
-            </form>
-          ) : null}
-        </CardHeader>
-        <CardContent>
-          {canEdit ? (
-            <TripForm
-              action={updateTrip}
-              submitLabel="Save changes"
-              tripTypes={allTripTypes}
-              initial={{
-                id: trip.id,
-                name: trip.name,
-                tripTypeId: trip.tripTypeId,
-                startDate: trip.startDate
-                  ? trip.startDate.toISOString().slice(0, 10)
-                  : null,
-                endDate: trip.endDate
-                  ? trip.endDate.toISOString().slice(0, 10)
-                  : null,
-                capacity: trip.capacity,
-                participantCount: trip.participantCount,
-                status: trip.status,
-                notes: trip.notes,
-                isTemplate: trip.isTemplate,
-              }}
-            />
-          ) : (
-            <dl className="grid grid-cols-3 gap-2 text-sm">
-              <dt className="text-muted-foreground">Trip type</dt>
-              <dd className="col-span-2">{trip.tripType.name}</dd>
-              <dt className="text-muted-foreground">Dates</dt>
-              <dd className="col-span-2">
-                {trip.startDate
-                  ? `${formatDate(trip.startDate)}${
-                      trip.endDate ? ` → ${formatDate(trip.endDate)}` : ""
-                    }`
-                  : "—"}
-              </dd>
-              <dt className="text-muted-foreground">Participants</dt>
-              <dd className="col-span-2">{trip.participantCount ?? "—"}</dd>
-              <dt className="text-muted-foreground">Notes</dt>
-              <dd className="col-span-2">{trip.notes ?? "—"}</dd>
-            </dl>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Cost estimate</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {estimate.length === 0 ? (
-            <p className="text-muted-foreground">
-              No costs to estimate — add costs to the locations this trip visits,
-              or lodging below.
-            </p>
-          ) : (
-            <>
-              {trip.participantCount == null ? (
-                <p className="text-muted-foreground">
-                  Set a participant count to include per-person costs. Showing
-                  per-group costs only.
-                </p>
-              ) : (
-                <p className="text-muted-foreground">
-                  Estimated for {trip.participantCount} participant
-                  {trip.participantCount === 1 ? "" : "s"} across{" "}
-                  {locationIds.length} location
-                  {locationIds.length === 1 ? "" : "s"}.
-                </p>
-              )}
-              <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
-                {estimate.map((e) => (
-                  <div key={e.currency} className="contents">
-                    <dt className="font-medium">{e.currency}</dt>
-                    <dd className="text-muted-foreground">
-                      {e.cost
-                        ? `${formatMoney(e.cost.perPersonPerHead, e.currency)}/person × ${e.cost.participantCount}${
-                            e.cost.perGroup > 0
-                              ? ` + ${formatMoney(e.cost.perGroup, e.currency)} group`
-                              : ""
-                          }`
-                        : "—"}
-                      {e.lodging > 0
-                        ? ` + ${formatMoney(e.lodging, e.currency)} lodging`
-                        : ""}
-                    </dd>
-                    <dd className="text-right font-medium">
-                      {formatMoney(e.total, e.currency)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              {hasStaleCost ? (
-                <p className="text-xs text-muted-foreground">
-                  ⚠ Some prices are unconfirmed or over a year old — verify before
-                  relying on this estimate.
-                </p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                Estimate only. Counts each visited location once; lodging is summed
-                per stay.
-              </p>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Lodging</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LodgingManager
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Itinerary — right 2/3 on desktop, below the details on mobile. */}
+        <div className="order-2 lg:col-span-2">
+          <ItineraryOverview
             tripId={trip.id}
             canEdit={canEdit}
-            locations={lodgingLocations}
-            contacts={lodgingContacts}
-            stays={stays.map(serializeStay)}
+            days={trip.days.map(serializeDay)}
           />
-        </CardContent>
-      </Card>
+        </div>
 
-      {canEdit ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-destructive">
-              Danger zone
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={deleteTrip}>
-              <input type="hidden" name="id" value={trip.id} />
-              <Button type="submit" variant="destructive">
-                Delete trip
-              </Button>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Permanently deletes this trip and all of its days and items.
-              </p>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+        {/* Trip meta — leads on mobile, left 1/3 on desktop. */}
+        <div className="order-1 space-y-6 lg:col-span-1">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-base">Details</CardTitle>
+              {canEdit && !trip.isTemplate ? (
+                <form action={saveTripAsTemplate}>
+                  <input type="hidden" name="id" value={trip.id} />
+                  <Button type="submit" size="sm" variant="outline">
+                    Save as template
+                  </Button>
+                </form>
+              ) : null}
+            </CardHeader>
+            <CardContent>
+              <EditableSection
+                canEdit={canEdit}
+                view={
+                  <dl className="grid grid-cols-3 gap-2 text-sm">
+                    <dt className="text-muted-foreground">Trip type</dt>
+                    <dd className="col-span-2">{trip.tripType.name}</dd>
+                    <dt className="text-muted-foreground">Status</dt>
+                    <dd className="col-span-2">
+                      {TRIP_STATUS_LABELS[trip.status]}
+                    </dd>
+                    <dt className="text-muted-foreground">Dates</dt>
+                    <dd className="col-span-2">
+                      {trip.startDate
+                        ? `${formatDate(trip.startDate)}${
+                            trip.endDate ? ` → ${formatDate(trip.endDate)}` : ""
+                          }`
+                        : "—"}
+                    </dd>
+                    <dt className="text-muted-foreground">Capacity</dt>
+                    <dd className="col-span-2">{trip.capacity ?? "—"}</dd>
+                    <dt className="text-muted-foreground">Participants</dt>
+                    <dd className="col-span-2">
+                      {trip.participantCount ?? "—"}
+                    </dd>
+                    {trip.isTemplate ? (
+                      <>
+                        <dt className="text-muted-foreground">Template</dt>
+                        <dd className="col-span-2">Yes</dd>
+                      </>
+                    ) : null}
+                    <dt className="text-muted-foreground">Notes</dt>
+                    <dd className="col-span-2 whitespace-pre-wrap">
+                      {trip.notes ?? "—"}
+                    </dd>
+                  </dl>
+                }
+              >
+                <TripForm
+                  action={updateTrip}
+                  submitLabel="Save changes"
+                  tripTypes={allTripTypes}
+                  initial={{
+                    id: trip.id,
+                    name: trip.name,
+                    tripTypeId: trip.tripTypeId,
+                    startDate: trip.startDate
+                      ? trip.startDate.toISOString().slice(0, 10)
+                      : null,
+                    endDate: trip.endDate
+                      ? trip.endDate.toISOString().slice(0, 10)
+                      : null,
+                    capacity: trip.capacity,
+                    participantCount: trip.participantCount,
+                    status: trip.status,
+                    notes: trip.notes,
+                    isTemplate: trip.isTemplate,
+                  }}
+                />
+              </EditableSection>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Cost estimate</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {estimate.length === 0 ? (
+                <p className="text-muted-foreground">
+                  No costs to estimate — add costs to the locations this trip
+                  visits, or lodging below.
+                </p>
+              ) : (
+                <>
+                  {trip.participantCount == null ? (
+                    <p className="text-muted-foreground">
+                      Set a participant count to include per-person costs.
+                      Showing per-group costs only.
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      Estimated for {trip.participantCount} participant
+                      {trip.participantCount === 1 ? "" : "s"} across{" "}
+                      {locationIds.length} location
+                      {locationIds.length === 1 ? "" : "s"}.
+                    </p>
+                  )}
+                  <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
+                    {estimate.map((e) => (
+                      <div key={e.currency} className="contents">
+                        <dt className="font-medium">{e.currency}</dt>
+                        <dd className="text-muted-foreground">
+                          {e.cost
+                            ? `${formatMoney(e.cost.perPersonPerHead, e.currency)}/person × ${e.cost.participantCount}${
+                                e.cost.perGroup > 0
+                                  ? ` + ${formatMoney(e.cost.perGroup, e.currency)} group`
+                                  : ""
+                              }`
+                            : "—"}
+                          {e.lodging > 0
+                            ? ` + ${formatMoney(e.lodging, e.currency)} lodging`
+                            : ""}
+                        </dd>
+                        <dd className="text-right font-medium">
+                          {formatMoney(e.total, e.currency)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {hasStaleCost ? (
+                    <p className="text-xs text-muted-foreground">
+                      ⚠ Some prices are unconfirmed or over a year old — verify
+                      before relying on this estimate.
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Estimate only. Counts each visited location once; lodging is
+                    summed per stay.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Lodging</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <LodgingManager
+                tripId={trip.id}
+                canEdit={canEdit}
+                locations={lodgingLocations}
+                contacts={lodgingContacts}
+                stays={stays.map(serializeStay)}
+              />
+            </CardContent>
+          </Card>
+
+          {canEdit ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base text-destructive">
+                  Danger zone
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form action={deleteTrip}>
+                  <input type="hidden" name="id" value={trip.id} />
+                  <Button type="submit" variant="destructive">
+                    Delete trip
+                  </Button>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Permanently deletes this trip and all of its days and items.
+                  </p>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
