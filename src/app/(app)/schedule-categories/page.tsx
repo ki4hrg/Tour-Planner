@@ -26,6 +26,7 @@ export default async function ScheduleCategoriesPage() {
     name: c.name,
     color: c.color,
     sortOrder: c.sortOrder,
+    system: c.system,
     itemCount: c._count.items,
   }));
 

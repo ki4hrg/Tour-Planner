@@ -181,6 +181,9 @@ model ScheduleItemCategory {
   name      String         @unique
   color     String? // hex; tints the route-line marker
   sortOrder Int            @default(0)
+  // Built-in, self-describing kinds (Free time, Break): protected from
+  // edit/delete and special-cased in the item form (times + notes only).
+  system    Boolean        @default(false)
   items     ScheduleItem[]
   createdAt DateTime       @default(now())
 }

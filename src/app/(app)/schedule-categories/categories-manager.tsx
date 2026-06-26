@@ -16,6 +16,7 @@ type Category = {
   name: string;
   color: string | null;
   sortOrder: number;
+  system: boolean;
   itemCount: number;
 };
 
@@ -61,6 +62,11 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                   aria-hidden
                 />
                 <span className="font-medium">{c.name}</span>
+                {c.system ? (
+                  <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Built-in
+                  </span>
+                ) : null}
                 <span className="text-xs text-muted-foreground">
                   · {c.itemCount} item{c.itemCount === 1 ? "" : "s"}
                 </span>
@@ -84,29 +90,34 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 >
                   ↓
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setEditingId((id) => (id === c.id ? null : c.id))
-                  }
-                >
-                  {editingId === c.id ? "Close" : "Edit"}
-                </Button>
-                <form action={deleteCategory}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                  >
-                    Delete
-                  </Button>
-                </form>
+                {/* Built-ins are protected: no edit/delete (only reorder). */}
+                {c.system ? null : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setEditingId((id) => (id === c.id ? null : c.id))
+                      }
+                    >
+                      {editingId === c.id ? "Close" : "Edit"}
+                    </Button>
+                    <form action={deleteCategory}>
+                      <input type="hidden" name="id" value={c.id} />
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                      >
+                        Delete
+                      </Button>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
-            {editingId === c.id ? (
+            {editingId === c.id && !c.system ? (
               <div className="mt-3">
                 <CategoryForm
                   action={updateCategory}
