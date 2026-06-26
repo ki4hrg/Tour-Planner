@@ -19,7 +19,7 @@ export default async function TripTypesPage() {
 
   const tripTypes = await prisma.tripType.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { sites: true, trips: true } } },
+    include: { _count: { select: { locations: true, trips: true } } },
   });
 
   return (
@@ -28,7 +28,7 @@ export default async function TripTypesPage() {
         <h1 className="text-2xl font-semibold">Trip Types</h1>
         <p className="text-sm text-muted-foreground">
           Categories like &ldquo;Wesley Pilgrimage.&rdquo; Each sets a default
-          currency and groups its sites and templates.
+          currency and groups its locations and templates.
         </p>
       </div>
 
@@ -68,7 +68,7 @@ export default async function TripTypesPage() {
               {t.description ? <p>{t.description}</p> : null}
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{t.defaultCurrency}</Badge>
-                <Badge variant="outline">{t._count.sites} sites</Badge>
+                <Badge variant="outline">{t._count.locations} locations</Badge>
                 <Badge variant="outline">{t._count.trips} trips</Badge>
               </div>
             </CardContent>

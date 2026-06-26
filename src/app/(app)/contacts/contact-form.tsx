@@ -24,13 +24,13 @@ export function ContactForm({
   action,
   initial,
   submitLabel,
-  siteId,
+  locationId,
   resetOnSuccess,
 }: {
   action: Action;
   initial?: ContactInitial;
   submitLabel: string;
-  siteId?: string;
+  locationId?: string;
   resetOnSuccess?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
@@ -55,7 +55,7 @@ export function ContactForm({
       className="grid grid-cols-1 gap-4 sm:grid-cols-2"
     >
       {initial?.id ? <input type="hidden" name="id" value={initial.id} /> : null}
-      {siteId ? <input type="hidden" name="siteId" value={siteId} /> : null}
+      {locationId ? <input type="hidden" name="locationId" value={locationId} /> : null}
       <div className="space-y-1.5">
         <Label htmlFor="name">Name</Label>
         <Input id="name" name="name" defaultValue={initial?.name} required />

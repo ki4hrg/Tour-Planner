@@ -13,7 +13,7 @@ const SECTIONS = [
   {
     href: "/trip-types",
     title: "Trip Types",
-    desc: "Trip categories, default currency, and each type's sites and templates.",
+    desc: "Trip categories, default currency, and each type's locations and templates.",
   },
   {
     href: "/schedule-categories",

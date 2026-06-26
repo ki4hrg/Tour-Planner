@@ -7,8 +7,8 @@ const optionalId = z.preprocess(
 );
 
 export const bookingSchema = z.object({
-  // Which member site this booking is for (empty = the item as a whole).
-  siteId: optionalId,
+  // Which member location this booking is for (empty = the item as a whole).
+  locationId: optionalId,
   label: z.string().trim().optional(),
   status: z.enum(BOOKING_STATUSES as [string, ...string[]]),
   bookedContactId: optionalId,

@@ -1,7 +1,7 @@
 import { addDays } from "./dates";
 
 // Booking timing for v1 models only WHEN booking opens (earliest-bookable),
-// not a deadline (see plan decision 1). A site's `bookingOpensLeadDays` means
+// not a deadline (see plan decision 1). A location's `bookingOpensLeadDays` means
 // "bookable from `trip.startDate − leadDays`".
 
 const DAY_MS = 24 * 60 * 60 * 1000;

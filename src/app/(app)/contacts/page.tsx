@@ -19,7 +19,7 @@ export default async function ContactsPage() {
 
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { sites: true } } },
+    include: { _count: { select: { locations: true } } },
   });
 
   return (
@@ -27,7 +27,7 @@ export default async function ContactsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Contacts</h1>
         <p className="text-sm text-muted-foreground">
-          A reusable directory. A contact can serve several sites.
+          A reusable directory. A contact can serve several locations.
         </p>
       </div>
 
@@ -71,7 +71,7 @@ export default async function ContactsPage() {
                   {c.phone ? ` · ${c.phone}` : ""}
                 </div>
               </div>
-              <Badge variant="outline">{c._count.sites} sites</Badge>
+              <Badge variant="outline">{c._count.locations} locations</Badge>
             </div>
           ))}
           {contacts.length === 0 ? (

@@ -37,19 +37,19 @@ export async function createContact(
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  // Optionally link to a site when created from a site page.
-  const siteId = formData.get("siteId");
+  // Optionally link to a location when created from a location page.
+  const locationId = formData.get("locationId");
   await prisma.contact.create({
     data: {
       ...toData(parsed.data),
-      ...(typeof siteId === "string" && siteId
-        ? { sites: { connect: { id: siteId } } }
+      ...(typeof locationId === "string" && locationId
+        ? { locations: { connect: { id: locationId } } }
         : {}),
     },
   });
 
   revalidatePath("/contacts");
-  if (typeof siteId === "string" && siteId) revalidatePath(`/sites/${siteId}`);
+  if (typeof locationId === "string" && locationId) revalidatePath(`/locations/${locationId}`);
   return { ok: true, message: `Added ${parsed.data.name}.` };
 }
 
@@ -74,7 +74,7 @@ export async function deleteContact(formData: FormData): Promise<void> {
   await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  // m2m site links drop; bookings' bookedContactId and items' presenterContactId
+  // m2m location links drop; bookings' bookedContactId and items' presenterContactId
   // are set null automatically (schema onDelete: SetNull).
   await prisma.contact.delete({ where: { id } });
   revalidatePath("/contacts");

@@ -24,7 +24,7 @@ export default async function TripTypeDetailPage({
 
   const tripType = await prisma.tripType.findUnique({
     where: { id },
-    include: { _count: { select: { sites: true, trips: true } } },
+    include: { _count: { select: { locations: true, trips: true } } },
   });
   if (!tripType) notFound();
 

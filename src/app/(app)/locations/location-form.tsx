@@ -11,7 +11,7 @@ import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
-export type SiteInitial = {
+export type LocationInitial = {
   id?: string;
   name: string;
   region: string | null;
@@ -26,7 +26,7 @@ export type SiteInitial = {
   tripTypeIds: string[];
 };
 
-export function SiteForm({
+export function LocationForm({
   action,
   submitLabel,
   tripTypes,
@@ -35,7 +35,7 @@ export function SiteForm({
   action: Action;
   submitLabel: string;
   tripTypes: { id: string; name: string }[];
-  initial?: SiteInitial;
+  initial?: LocationInitial;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
@@ -113,7 +113,7 @@ export function SiteForm({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No trip types yet — create one first to tag sites.
+            No trip types yet — create one first to tag locations.
           </p>
         )}
       </div>

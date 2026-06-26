@@ -17,7 +17,7 @@ const optionalLeadDays = z.preprocess(
     .optional(),
 );
 
-export const siteSchema = z.object({
+export const locationSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
   region: z.string().trim().optional(),
   address: z.string().trim().optional(),
@@ -31,4 +31,4 @@ export const siteSchema = z.object({
   tripTypeIds: z.array(z.string()).optional(),
 });
 
-export type SiteInput = z.infer<typeof siteSchema>;
+export type LocationInput = z.infer<typeof locationSchema>;

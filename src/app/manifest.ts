@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Tour Planner",
     short_name: "Tours",
-    description: "Plan pilgrimage trips, sites, and itineraries.",
+    description: "Plan pilgrimage trips, locations, and itineraries.",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

@@ -27,7 +27,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Tour Planner",
-  description: "Plan pilgrimage trips, sites, and itineraries.",
+  description: "Plan pilgrimage trips, locations, and itineraries.",
   applicationName: "Tour Planner",
   appleWebApp: { capable: true, title: "Tours", statusBarStyle: "default" },
 };

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ContactForm } from "../contacts/contact-form";
 import { createContact } from "../contacts/actions";
-import { linkContactToSite, unlinkContactFromSite } from "./actions";
+import { linkContactToLocation, unlinkContactFromLocation } from "./actions";
 
 type LinkedContact = {
   id: string;
@@ -21,13 +21,13 @@ type LinkedContact = {
   organization: string | null;
 };
 
-export function SiteContactsManager({
-  siteId,
+export function LocationContactsManager({
+  locationId,
   linked,
   available,
   canEdit,
 }: {
-  siteId: string;
+  locationId: string;
   linked: LinkedContact[];
   available: { id: string; name: string }[];
   canEdit: boolean;
@@ -53,8 +53,8 @@ export function SiteContactsManager({
               </span>
             </div>
             {canEdit ? (
-              <form action={unlinkContactFromSite}>
-                <input type="hidden" name="siteId" value={siteId} />
+              <form action={unlinkContactFromLocation}>
+                <input type="hidden" name="locationId" value={locationId} />
                 <input type="hidden" name="contactId" value={c.id} />
                 <Button variant="ghost" size="sm" className="text-destructive">
                   Unlink
@@ -91,8 +91,8 @@ export function SiteContactsManager({
           </div>
 
           {mode === "existing" ? (
-            <form action={linkContactToSite} className="flex items-end gap-2">
-              <input type="hidden" name="siteId" value={siteId} />
+            <form action={linkContactToLocation} className="flex items-end gap-2">
+              <input type="hidden" name="locationId" value={locationId} />
               <Select name="contactId">
                 <SelectTrigger className="w-64" size="sm">
                   <SelectValue placeholder="Choose a contact…" />
@@ -116,7 +116,7 @@ export function SiteContactsManager({
               <ContactForm
                 action={createContact}
                 submitLabel="Create & link"
-                siteId={siteId}
+                locationId={locationId}
                 resetOnSuccess
               />
             </div>

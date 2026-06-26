@@ -7,12 +7,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { SiteForm } from "../site-form";
-import { createSite } from "../actions";
+import { LocationForm } from "../location-form";
+import { createLocation } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewSitePage() {
+export default async function NewLocationPage() {
   await requireRole("PLANNER");
   const tripTypes = await prisma.tripType.findMany({
     orderBy: { name: "asc" },
@@ -22,22 +22,22 @@ export default async function NewSitePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">New site</h1>
+        <h1 className="text-2xl font-semibold">New location</h1>
         <Link
-          href="/sites"
+          href="/locations"
           className="text-sm text-muted-foreground hover:underline"
         >
-          ← All sites
+          ← All locations
         </Link>
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Site details</CardTitle>
+          <CardTitle className="text-base">Location details</CardTitle>
         </CardHeader>
         <CardContent>
-          <SiteForm
-            action={createSite}
-            submitLabel="Create site"
+          <LocationForm
+            action={createLocation}
+            submitLabel="Create location"
             tripTypes={tripTypes}
           />
         </CardContent>

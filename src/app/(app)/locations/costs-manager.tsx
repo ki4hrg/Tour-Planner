@@ -28,14 +28,14 @@ type CostView = SerializedCost & { stale: boolean };
 
 function CostFields({
   action,
-  siteId,
+  locationId,
   defaultCurrency,
   initial,
   submitLabel,
   onSuccess,
 }: {
   action: Action;
-  siteId: string;
+  locationId: string;
   defaultCurrency: string;
   initial?: SerializedCost;
   submitLabel: string;
@@ -57,7 +57,7 @@ function CostFields({
 
   return (
     <form action={formAction} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <input type="hidden" name="siteId" value={siteId} />
+      <input type="hidden" name="locationId" value={locationId} />
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <div className="col-span-2 space-y-1.5">
         <Label className="text-xs">Label</Label>
@@ -127,12 +127,12 @@ function CostFields({
 
 function CostRow({
   cost,
-  siteId,
+  locationId,
   defaultCurrency,
   canEdit,
 }: {
   cost: CostView;
-  siteId: string;
+  locationId: string;
   defaultCurrency: string;
   canEdit: boolean;
 }) {
@@ -143,7 +143,7 @@ function CostRow({
       <div className="rounded-md border p-3">
         <CostFields
           action={updateCost}
-          siteId={siteId}
+          locationId={locationId}
           defaultCurrency={defaultCurrency}
           initial={cost}
           submitLabel="Save"
@@ -186,7 +186,7 @@ function CostRow({
           </Button>
           <form action={deleteCost}>
             <input type="hidden" name="id" value={cost.id} />
-            <input type="hidden" name="siteId" value={siteId} />
+            <input type="hidden" name="locationId" value={locationId} />
             <Button variant="ghost" size="sm" className="text-destructive">
               Delete
             </Button>
@@ -198,12 +198,12 @@ function CostRow({
 }
 
 export function CostsManager({
-  siteId,
+  locationId,
   costs,
   defaultCurrency,
   canEdit,
 }: {
-  siteId: string;
+  locationId: string;
   costs: CostView[];
   defaultCurrency: string;
   canEdit: boolean;
@@ -215,7 +215,7 @@ export function CostsManager({
           <CostRow
             key={c.id}
             cost={c}
-            siteId={siteId}
+            locationId={locationId}
             defaultCurrency={defaultCurrency}
             canEdit={canEdit}
           />
@@ -229,7 +229,7 @@ export function CostsManager({
           <p className="mb-2 text-sm font-medium">Add a cost</p>
           <CostFields
             action={addCost}
-            siteId={siteId}
+            locationId={locationId}
             defaultCurrency={defaultCurrency}
             submitLabel="Add cost"
           />

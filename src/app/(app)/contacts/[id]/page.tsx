@@ -25,7 +25,7 @@ export default async function ContactDetailPage({
 
   const contact = await prisma.contact.findUnique({
     where: { id },
-    include: { sites: { orderBy: { name: "asc" } } },
+    include: { locations: { orderBy: { name: "asc" } } },
   });
   if (!contact) notFound();
 
@@ -72,26 +72,26 @@ export default async function ContactDetailPage({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Sites served ({contact.sites.length})
+            Locations served ({contact.locations.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm">
-          {contact.sites.length ? (
+          {contact.locations.length ? (
             <ul className="space-y-1">
-              {contact.sites.map((s) => (
-                <li key={s.id}>
-                  <Link href={`/sites/${s.id}`} className="hover:underline">
-                    {s.name}
+              {contact.locations.map((l) => (
+                <li key={l.id}>
+                  <Link href={`/locations/${l.id}`} className="hover:underline">
+                    {l.name}
                   </Link>
-                  {s.region ? (
-                    <span className="text-muted-foreground"> · {s.region}</span>
+                  {l.region ? (
+                    <span className="text-muted-foreground"> · {l.region}</span>
                   ) : null}
                 </li>
               ))}
             </ul>
           ) : (
             <p className="text-muted-foreground">
-              Not linked to any sites. Link from a site&apos;s page.
+              Not linked to any locations. Link from a location&apos;s page.
             </p>
           )}
         </CardContent>

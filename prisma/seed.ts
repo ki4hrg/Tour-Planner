@@ -22,7 +22,7 @@ async function main() {
     console.log("No SEED_ADMIN_* provided — first admin will be created via /setup.");
   }
 
-  // --- Wesley Pilgrimage trip type (GBP). Starter sites land in M8. ---
+  // --- Wesley Pilgrimage trip type (GBP). Starter locations land in M8. ---
   const wesley = await prisma.tripType.upsert({
     where: { name: "Wesley Pilgrimage" },
     update: {},
