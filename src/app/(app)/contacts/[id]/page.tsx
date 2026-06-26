@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
 
@@ -46,26 +47,29 @@ export default async function ContactDetailPage({
           <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {canEdit ? (
+          <EditableSection
+            canEdit={canEdit}
+            view={
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <dt className="text-muted-foreground">Organization</dt>
+                <dd>{contact.organization ?? "—"}</dd>
+                <dt className="text-muted-foreground">Role</dt>
+                <dd>{contact.role ?? "—"}</dd>
+                <dt className="text-muted-foreground">Email</dt>
+                <dd>{contact.email ?? "—"}</dd>
+                <dt className="text-muted-foreground">Phone</dt>
+                <dd>{contact.phone ?? "—"}</dd>
+                <dt className="text-muted-foreground">Notes</dt>
+                <dd className="whitespace-pre-wrap">{contact.notes ?? "—"}</dd>
+              </dl>
+            }
+          >
             <ContactForm
               action={updateContact}
               submitLabel="Save changes"
               initial={contact}
             />
-          ) : (
-            <dl className="grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-muted-foreground">Organization</dt>
-              <dd>{contact.organization ?? "—"}</dd>
-              <dt className="text-muted-foreground">Role</dt>
-              <dd>{contact.role ?? "—"}</dd>
-              <dt className="text-muted-foreground">Email</dt>
-              <dd>{contact.email ?? "—"}</dd>
-              <dt className="text-muted-foreground">Phone</dt>
-              <dd>{contact.phone ?? "—"}</dd>
-              <dt className="text-muted-foreground">Notes</dt>
-              <dd>{contact.notes ?? "—"}</dd>
-            </dl>
-          )}
+          </EditableSection>
         </CardContent>
       </Card>
 

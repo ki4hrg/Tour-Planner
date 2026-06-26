@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useEditSection } from "@/components/editable-section";
 import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -42,9 +43,15 @@ export function LocationForm({
     {},
   );
 
+  const section = useEditSection();
+
   useEffect(() => {
-    if (state.ok && state.message) toast.success(state.message);
-    else if (state.error) toast.error(state.error);
+    if (state.ok && state.message) {
+      toast.success(state.message);
+      section?.setEditing(false);
+    } else if (state.error) toast.error(state.error);
+    // section identity is stable; depend only on the action result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   const selected = new Set(initial?.tripTypeIds ?? []);
@@ -174,9 +181,21 @@ export function LocationForm({
         </div>
       </div>
 
-      <Button type="submit" disabled={pending}>
-        {pending ? "Saving…" : submitLabel}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : submitLabel}
+        </Button>
+        {section ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => section.setEditing(false)}
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

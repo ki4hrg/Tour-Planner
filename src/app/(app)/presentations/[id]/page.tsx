@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EditableSection } from "@/components/editable-section";
 import { PresentationForm } from "../presentation-form";
 import {
   updatePresentation,
@@ -66,7 +67,27 @@ export default async function PresentationDetailPage({
           <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {canEdit ? (
+          <EditableSection
+            canEdit={canEdit}
+            view={
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <dt className="text-muted-foreground">Duration</dt>
+                <dd>
+                  {presentation.durationMinutes
+                    ? `${presentation.durationMinutes} minutes`
+                    : "—"}
+                </dd>
+                <dt className="text-muted-foreground">Description</dt>
+                <dd className="whitespace-pre-wrap">
+                  {presentation.description ?? "—"}
+                </dd>
+                <dt className="text-muted-foreground">Notes</dt>
+                <dd className="whitespace-pre-wrap">
+                  {presentation.notes ?? "—"}
+                </dd>
+              </dl>
+            }
+          >
             <PresentationForm
               action={updatePresentation}
               submitLabel="Save changes"
@@ -82,20 +103,7 @@ export default async function PresentationDetailPage({
               }}
               contacts={allContacts}
             />
-          ) : (
-            <dl className="grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-muted-foreground">Duration</dt>
-              <dd>
-                {presentation.durationMinutes
-                  ? `${presentation.durationMinutes} minutes`
-                  : "—"}
-              </dd>
-              <dt className="text-muted-foreground">Description</dt>
-              <dd>{presentation.description ?? "—"}</dd>
-              <dt className="text-muted-foreground">Notes</dt>
-              <dd>{presentation.notes ?? "—"}</dd>
-            </dl>
-          )}
+          </EditableSection>
         </CardContent>
       </Card>
 

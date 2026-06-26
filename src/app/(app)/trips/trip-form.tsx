@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TRIP_STATUS_LABELS, TRIP_STATUSES } from "@/lib/trips";
+import { useEditSection } from "@/components/editable-section";
 import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -56,6 +57,7 @@ export function TripForm({
     {},
   );
 
+  const section = useEditSection();
   const [tripTypeId, setTripTypeId] = useState(initial?.tripTypeId ?? "");
   const [templateId, setTemplateId] = useState(BLANK);
 
@@ -66,8 +68,12 @@ export function TripForm({
   );
 
   useEffect(() => {
-    if (state.ok && state.message) toast.success(state.message);
-    else if (state.error) toast.error(state.error);
+    if (state.ok && state.message) {
+      toast.success(state.message);
+      section?.setEditing(false);
+    } else if (state.error) toast.error(state.error);
+    // section identity is stable; depend only on the action result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   return (
@@ -205,9 +211,21 @@ export function TripForm({
         ) : null}
       </div>
 
-      <Button type="submit" disabled={pending}>
-        {pending ? "Saving…" : submitLabel}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : submitLabel}
+        </Button>
+        {section ? (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => section.setEditing(false)}
+          >
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

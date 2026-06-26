@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale } from "@/lib/money";
+import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
 import { LocationContactsManager } from "../location-contacts-manager";
@@ -95,7 +96,56 @@ export default async function LocationDetailPage({
           <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {canEdit ? (
+          <EditableSection
+            canEdit={canEdit}
+            view={
+              <dl className="grid grid-cols-3 gap-2 text-sm">
+                <dt className="text-muted-foreground">Region</dt>
+                <dd className="col-span-2">{location.region ?? "—"}</dd>
+                <dt className="text-muted-foreground">Address</dt>
+                <dd className="col-span-2">{location.address ?? "—"}</dd>
+                <dt className="text-muted-foreground">Trip types</dt>
+                <dd className="col-span-2">
+                  {location.tripTypes.length
+                    ? location.tripTypes.map((t) => t.name).join(", ")
+                    : "—"}
+                </dd>
+                <dt className="text-muted-foreground">Website</dt>
+                <dd className="col-span-2 truncate">
+                  {location.website ? (
+                    <a
+                      href={location.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:underline"
+                    >
+                      {location.website}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Description</dt>
+                <dd className="col-span-2 whitespace-pre-wrap">
+                  {location.description ?? "—"}
+                </dd>
+                <dt className="text-muted-foreground">Schedule</dt>
+                <dd className="col-span-2">
+                  {location.scheduleLimitations ?? "—"}
+                </dd>
+                <dt className="text-muted-foreground">Booking opens</dt>
+                <dd className="col-span-2">
+                  {location.bookingOpensLeadDays != null
+                    ? `${location.bookingOpensLeadDays} days before`
+                    : "—"}
+                </dd>
+                <dt className="text-muted-foreground">Notes</dt>
+                <dd className="col-span-2 whitespace-pre-wrap">
+                  {location.notes ?? "—"}
+                </dd>
+              </dl>
+            }
+          >
             <LocationForm
               action={updateLocation}
               submitLabel="Save changes"
@@ -115,22 +165,7 @@ export default async function LocationDetailPage({
                 tripTypeIds: location.tripTypes.map((t) => t.id),
               }}
             />
-          ) : (
-            <dl className="grid grid-cols-3 gap-2 text-sm">
-              <dt className="text-muted-foreground">Region</dt>
-              <dd className="col-span-2">{location.region ?? "—"}</dd>
-              <dt className="text-muted-foreground">Description</dt>
-              <dd className="col-span-2">{location.description ?? "—"}</dd>
-              <dt className="text-muted-foreground">Schedule</dt>
-              <dd className="col-span-2">{location.scheduleLimitations ?? "—"}</dd>
-              <dt className="text-muted-foreground">Booking opens</dt>
-              <dd className="col-span-2">
-                {location.bookingOpensLeadDays != null
-                  ? `${location.bookingOpensLeadDays} days before`
-                  : "—"}
-              </dd>
-            </dl>
-          )}
+          </EditableSection>
         </CardContent>
       </Card>
 
