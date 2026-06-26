@@ -48,6 +48,30 @@ function toTripData(d: TripInput) {
   };
 }
 
+// Field selection for deep-copying a trip's itinerary (template ⇄ trip). The
+// shapes feed instantiateDays, which renumbers/derives dates and resets bookings.
+const TEMPLATE_DAYS_SELECT = {
+  dayIndex: true,
+  title: true,
+  logisticalNotes: true,
+  scheduleItems: {
+    orderBy: { order: "asc" },
+    select: {
+      categoryId: true,
+      title: true,
+      order: true,
+      startTime: true,
+      endTime: true,
+      notes: true,
+      isBlock: true,
+      presentationId: true,
+      presenters: { select: { id: true } },
+      sites: { select: { locationId: true, order: true } },
+      bookings: { select: { locationId: true, label: true, notes: true } },
+    },
+  },
+} satisfies Prisma.ItineraryDaySelect;
+
 export async function createTrip(
   _prev: FormState,
   formData: FormData,
@@ -65,32 +89,7 @@ export async function createTrip(
   if (templateId) {
     const template = await prisma.trip.findUnique({
       where: { id: templateId },
-      select: {
-        days: {
-          orderBy: { dayIndex: "asc" },
-          select: {
-            dayIndex: true,
-            title: true,
-            logisticalNotes: true,
-            scheduleItems: {
-              orderBy: { order: "asc" },
-              select: {
-                categoryId: true,
-                title: true,
-                order: true,
-                startTime: true,
-                endTime: true,
-                notes: true,
-                isBlock: true,
-                presentationId: true,
-                presenters: { select: { id: true } },
-                sites: { select: { locationId: true, order: true } },
-                bookings: { select: { locationId: true, label: true, notes: true } },
-              },
-            },
-          },
-        },
-      },
+      select: { days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT } },
     });
     if (!template) return { error: "Selected template no longer exists." };
     daysCreate = instantiateDays(template.days, data.startDate);
@@ -132,6 +131,49 @@ export async function updateTrip(
   revalidatePath(`/trips/${id}`);
   revalidatePath(`/trips/${id}/itinerary`);
   return { ok: true, message: "Saved." };
+}
+
+// Snapshot an existing trip as a reusable template: deep-copy its itinerary
+// (bookings reset to NOT_BOOKED, dates re-derived from the trip's startDate) and
+// drop the planner into the new template's editor.
+export async function saveTripAsTemplate(formData: FormData): Promise<void> {
+  const user = await assertRole("PLANNER");
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const source = await prisma.trip.findUnique({
+    where: { id },
+    select: {
+      name: true,
+      tripTypeId: true,
+      startDate: true,
+      endDate: true,
+      capacity: true,
+      participantCount: true,
+      notes: true,
+      days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
+    },
+  });
+  if (!source) return;
+
+  const template = await prisma.trip.create({
+    data: {
+      name: `${source.name} (template)`,
+      tripTypeId: source.tripTypeId,
+      startDate: source.startDate,
+      endDate: source.endDate,
+      capacity: source.capacity,
+      participantCount: source.participantCount,
+      notes: source.notes,
+      status: "PLANNING",
+      isTemplate: true,
+      createdById: user.id,
+      days: { create: instantiateDays(source.days, source.startDate) },
+    },
+  });
+
+  revalidatePath("/trips");
+  redirect(`/trips/${template.id}`);
 }
 
 export async function deleteTrip(formData: FormData): Promise<void> {
