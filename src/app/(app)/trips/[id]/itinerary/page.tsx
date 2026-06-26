@@ -29,11 +29,18 @@ export default async function ItineraryPage({
             orderBy: { order: "asc" },
             include: {
               category: { select: { id: true, name: true, color: true } },
-              presenter: { select: { id: true, name: true } },
+              presentation: {
+                select: {
+                  id: true,
+                  title: true,
+                  defaultPresenters: { select: { id: true, name: true } },
+                },
+              },
+              presenters: { select: { id: true, name: true } },
               sites: {
                 orderBy: { order: "asc" },
                 include: {
-                  site: { select: { id: true, name: true, region: true } },
+                  location: { select: { id: true, name: true, region: true } },
                 },
               },
               bookings: {
@@ -53,9 +60,9 @@ export default async function ItineraryPage({
     select: { id: true, name: true, color: true },
   });
 
-  // Site picker defaults to sites tagged with this trip's type; `tagged`
-  // drives the "show all" toggle in the editor.
-  const sites = await prisma.site.findMany({
+  // Location picker defaults to locations tagged with this trip's type;
+  // `tagged` drives the "show all" toggle in the editor.
+  const locations = await prisma.location.findMany({
     where: { archivedAt: null },
     orderBy: { name: "asc" },
     select: {
@@ -68,6 +75,16 @@ export default async function ItineraryPage({
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
+  });
+  // Catalogued talks for the item "talk" picker.
+  const presentations = await prisma.presentation.findMany({
+    where: { archivedAt: null },
+    orderBy: { title: "asc" },
+    select: {
+      id: true,
+      title: true,
+      defaultPresenters: { select: { id: true, name: true } },
+    },
   });
 
   return (
@@ -97,13 +114,14 @@ export default async function ItineraryPage({
         hasStartDate={trip.startDate != null}
         days={trip.days.map(serializeDay)}
         categories={categories}
-        sites={sites.map((s) => ({
-          id: s.id,
-          name: s.name,
-          region: s.region,
-          tagged: s.tripTypes.length > 0,
+        locations={locations.map((l) => ({
+          id: l.id,
+          name: l.name,
+          region: l.region,
+          tagged: l.tripTypes.length > 0,
         }))}
         contacts={contacts}
+        presentations={presentations}
       />
     </div>
   );

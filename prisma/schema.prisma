@@ -38,7 +38,14 @@ enum CostUnit {
 enum ShareAudience {
   STAFF
   PARTICIPANT
-  VENUE
+  HOST_SITE
+}
+
+enum BoardType {
+  NONE
+  BED_AND_BREAKFAST
+  HALF_BOARD
+  FULL_BOARD
 }
 
 model User {
@@ -52,16 +59,16 @@ model User {
 }
 
 model TripType {
-  id              String  @id @default(cuid())
-  name            String  @unique
+  id              String     @id @default(cuid())
+  name            String     @unique
   description     String?
   color           String?
-  defaultCurrency String  @default("USD")
-  sites           Site[] // implicit m2m (tags)
+  defaultCurrency String     @default("USD")
+  locations       Location[] // implicit m2m (tags)
   trips           Trip[]
 }
 
-model Site {
+model Location {
   id                   String             @id @default(cuid())
   name                 String
   region               String?
@@ -78,28 +85,31 @@ model Site {
   contacts             Contact[] // implicit m2m
   costs                Cost[]
   scheduleItems        ScheduleItemSite[] // schedule items that visit this site
-  bookings             Booking[] // bookings made against this site
+  bookings             Booking[] // bookings made against this location
+  hostSite             HostSite? // 1:1 extension; presence ⇒ this location can host/lodge
+  stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 }
 
 model Contact {
-  id             String         @id @default(cuid())
-  name           String
-  organization   String?
-  role           String?
-  email          String?
-  phone          String?
-  notes          String?
-  sites          Site[] // implicit m2m
-  bookings       Booking[]      @relation("BookedBy") // venue contact a booking was made with
-  presentedItems ScheduleItem[] @relation("Presenting") // items this contact presents/leads
+  id                   String         @id @default(cuid())
+  name                 String
+  organization         String?
+  role                 String?
+  email                String?
+  phone                String?
+  notes                String?
+  locations            Location[] // implicit m2m
+  bookings             Booking[]      @relation("BookedBy") // venue contact a booking was made with
+  presentedItems       ScheduleItem[] @relation("Presenting") // occurrences this contact speaks at (override)
+  presentationDefaults Presentation[] @relation("PresentationDefaults") // talks they're the usual speaker for
 }
 
 model Cost {
   id          String    @id @default(cuid())
-  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  siteId      String
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
   label       String
   amount      Decimal   @db.Decimal(10, 2)
   currency    String    @default("USD")
@@ -124,19 +134,21 @@ model Trip {
   createdById      String?
   days             ItineraryDay[]
   shareLinks       ShareLink[]
+  stays            Stay[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
 
 model ItineraryDay {
-  id              String         @id @default(cuid())
-  trip            Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  tripId          String
-  dayIndex        Int // 1-based ordering key (NOT unique; renumber in txn)
-  date            DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
-  title           String?
-  logisticalNotes String? // staff-only on participant/venue shares
-  scheduleItems   ScheduleItem[]
+  id               String         @id @default(cuid())
+  trip             Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId           String
+  dayIndex         Int // 1-based ordering key (NOT unique; renumber in txn)
+  date             DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
+  title            String?
+  logisticalNotes  String? // staff-only on participant/host-site shares
+  participantNotes String? // participant-facing free text (devotional theme, scripture, walk notes)
+  scheduleItems    ScheduleItem[]
 
   @@index([tripId])
 }
@@ -155,49 +167,53 @@ model ScheduleItemCategory {
 // A timed line in a day's itinerary. Booking state lives on related Booking
 // rows (absent = informational), and 0..n sites attach via ScheduleItemSite.
 model ScheduleItem {
-  id                 String                @id @default(cuid())
-  day                ItineraryDay          @relation(fields: [dayId], references: [id], onDelete: Cascade)
-  dayId              String
-  category           ScheduleItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId         String?
-  title              String? // label (esp. for site-less items: Lunch, Transit)
-  order              Int // ordering within a day (NOT unique; renumber in txn)
-  startTime          String? // "HH:MM" — tz-free
-  endTime            String?
-  notes              String?
-  isBlock            Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
-  presenter          Contact?              @relation("Presenting", fields: [presenterContactId], references: [id], onDelete: SetNull)
-  presenterContactId String?
-  sites              ScheduleItemSite[]
-  bookings           Booking[]
+  id             String                @id @default(cuid())
+  day            ItineraryDay          @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId          String
+  category       ScheduleItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId     String?
+  title          String? // label (esp. for site-less items: Lunch, Transit)
+  order          Int // ordering within a day (NOT unique; renumber in txn)
+  startTime      String? // "HH:MM" — tz-free
+  endTime        String?
+  notes          String?
+  isBlock        Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
+  presentation   Presentation?         @relation(fields: [presentationId], references: [id], onDelete: SetNull)
+  presentationId String? // the catalogued talk this item delivers (optional)
+  presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters
+  sites          ScheduleItemSite[]
+  bookings       Booking[]
 
   @@index([dayId])
   @@index([categoryId])
-  @@index([presenterContactId])
+  @@index([presentationId])
 }
 
-// Join: which sites a schedule item visits. One row = ordinary stop; many = a block.
+// Join: which locations a schedule item visits. One row = ordinary stop; many = a block.
 model ScheduleItemSite {
   id             String       @id @default(cuid())
   scheduleItem   ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
   scheduleItemId String
-  site           Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  siteId         String
+  location       Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId     String
   order          Int          @default(0) // display order within the item
 
-  @@unique([scheduleItemId, siteId])
+  @@unique([scheduleItemId, locationId])
   @@index([scheduleItemId])
-  @@index([siteId])
+  @@index([locationId])
 }
 
-// A booking tracked against a schedule item (and optionally a specific member site).
+// A booking tracked against a schedule item (and optionally a specific member location).
 // Presence of a Booking is what makes an item "bookable"; none = informational.
+// Targets exactly one of a schedule item or a stay (DB CHECK in the migration).
 model Booking {
   id              String        @id @default(cuid())
-  scheduleItem    ScheduleItem  @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
-  scheduleItemId  String
-  site            Site?         @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  siteId          String? // which member site this booking is for (null = the item as a whole)
+  scheduleItem    ScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  scheduleItemId  String?
+  stay            Stay?         @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  stayId          String?       @unique
+  location        Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId      String? // which member location this booking is for (null = the item as a whole)
   label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
   status          BookingStatus @default(NOT_BOOKED)
   bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
@@ -208,7 +224,7 @@ model Booking {
   updatedAt       DateTime      @updatedAt
 
   @@index([scheduleItemId])
-  @@index([siteId])
+  @@index([locationId])
 }
 
 model ShareLink {
@@ -224,4 +240,65 @@ model ShareLink {
   createdAt      DateTime      @default(now())
 
   @@index([tripId])
+}
+
+// 1:1 extension of a Location. Presence ⇒ the location can host/lodge the group
+// (richer staff-facing matrix; future M7 host-site share target). Host-site-ness
+// is a property of the place, global across trips; whether THIS trip lodges there
+// is derived from a Stay.
+model HostSite {
+  id                   String   @id @default(cuid())
+  location             Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId           String   @unique
+  providesLodging      Boolean  @default(false)
+  providesMeals        Boolean  @default(false)
+  providesMeetingSpace Boolean  @default(false)
+  staffNotes           String?
+  logisticsNotes       String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// Reusable catalog of CONTENT (a talk/session). One talk can recur across trips
+// and span multiple items ("…(cont.)"). Per-occurrence speaker override lives on
+// ScheduleItem.presenters; empty there ⇒ fall back to defaultPresenters.
+model Presentation {
+  id                String         @id @default(cuid())
+  title             String
+  description       String? // itinerary-facing abstract
+  notes             String? // staff-only
+  durationMinutes   Int?
+  archivedAt        DateTime?
+  defaultPresenters Contact[]      @relation("PresentationDefaults") // usual speaker(s); pre-fill
+  items             ScheduleItem[] // occurrences (1 talk → many items)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+// Per-trip lodging span. MULTIPLE per trip; stays MAY OVERLAP (a base stay spans
+// the trip while an excursion stay overrides occupancy for a night — resolved by
+// `priority`). Costs are per-Stay and independent (do NOT dedupe nights).
+model Stay {
+  id                    String    @id @default(cuid())
+  trip                  Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId                String
+  location              Location  @relation("Lodging", fields: [locationId], references: [id], onDelete: Restrict)
+  locationId            String
+  label                 String?
+  checkIn               DateTime  @db.Date
+  checkOut              DateTime  @db.Date
+  arrivalTime           String? // "HH:MM"
+  departureTime         String?
+  board                 BoardType @default(NONE)
+  headcount             Int?
+  costPerPersonPerNight Decimal?  @db.Decimal(10, 2)
+  currency              String    @default("USD")
+  priority              Int       @default(0) // higher wins for "tonight's bed" when stays overlap (base=0, excursion>0)
+  notes                 String?
+  booking               Booking? // via Booking.stayId
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([tripId])
+  @@index([locationId])
 }

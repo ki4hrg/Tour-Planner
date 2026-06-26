@@ -53,7 +53,7 @@ export default async function BookingDashboardPage({
                   label: true,
                   status: true,
                   confirmationRef: true,
-                  site: {
+                  location: {
                     select: { name: true, bookingOpensLeadDays: true },
                   },
                   bookedContact: { select: { name: true } },
@@ -63,44 +63,84 @@ export default async function BookingDashboardPage({
           },
         },
       },
+      stays: {
+        orderBy: { checkIn: "asc" },
+        select: {
+          checkIn: true,
+          label: true,
+          location: { select: { name: true, bookingOpensLeadDays: true } },
+          booking: {
+            select: {
+              id: true,
+              label: true,
+              status: true,
+              confirmationRef: true,
+              bookedContact: { select: { name: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!trip) notFound();
 
-  // Flatten every booking, enriched with its (per-site) booking window.
-  const rows = trip.days
-    .flatMap((day) =>
-      day.scheduleItems.flatMap((item) =>
-        item.bookings.map((b) => {
-          const win = bookingWindow(
-            trip.startDate,
-            b.site?.bookingOpensLeadDays ?? null,
-          );
-          return {
-            id: b.id,
-            dayIndex: day.dayIndex,
-            dayDate: day.date,
-            label: b.label ?? b.site?.name ?? item.title ?? "Untitled item",
-            status: b.status,
-            confirmationRef: b.confirmationRef,
-            contactName: b.bookedContact?.name ?? null,
-            ...win,
-            // Action needed = window open and not yet booked.
-            actionable:
-              win.open &&
-              (b.status === "NOT_BOOKED" || b.status === "REQUESTED"),
-          };
-        }),
-      ),
-    )
-    // Sort: earliest-bookable ascending, bookings with no window last.
-    .sort((a, b) => {
-      if (a.earliest && b.earliest)
-        return a.earliest.getTime() - b.earliest.getTime();
-      if (a.earliest) return -1;
-      if (b.earliest) return 1;
-      return a.dayIndex - b.dayIndex;
+  // Item bookings — window keyed off the trip start date.
+  const itemRows = trip.days.flatMap((day) =>
+    day.scheduleItems.flatMap((item) =>
+      item.bookings.map((b) => {
+        const win = bookingWindow(
+          trip.startDate,
+          b.location?.bookingOpensLeadDays ?? null,
+        );
+        return {
+          id: b.id,
+          whenLabel: `Day ${day.dayIndex}`,
+          whenDate: day.date,
+          order: day.dayIndex,
+          label: b.label ?? b.location?.name ?? item.title ?? "Untitled item",
+          status: b.status,
+          confirmationRef: b.confirmationRef,
+          contactName: b.bookedContact?.name ?? null,
+          ...win,
+          actionable:
+            win.open && (b.status === "NOT_BOOKED" || b.status === "REQUESTED"),
+        };
+      }),
+    ),
+  );
+
+  // Stay (lodging) bookings — window keyed off the stay's check-in date.
+  const stayRows = trip.stays
+    .filter((s) => s.booking)
+    .map((s) => {
+      const b = s.booking!;
+      const win = bookingWindow(
+        s.checkIn,
+        s.location.bookingOpensLeadDays ?? null,
+      );
+      return {
+        id: b.id,
+        whenLabel: "Lodging",
+        whenDate: s.checkIn,
+        order: Number.MAX_SAFE_INTEGER,
+        label: b.label ?? s.label ?? `Lodging — ${s.location.name}`,
+        status: b.status,
+        confirmationRef: b.confirmationRef,
+        contactName: b.bookedContact?.name ?? null,
+        ...win,
+        actionable:
+          win.open && (b.status === "NOT_BOOKED" || b.status === "REQUESTED"),
+      };
     });
+
+  // Sort: earliest-bookable ascending, bookings with no window last.
+  const rows = [...itemRows, ...stayRows].sort((a, b) => {
+    if (a.earliest && b.earliest)
+      return a.earliest.getTime() - b.earliest.getTime();
+    if (a.earliest) return -1;
+    if (b.earliest) return 1;
+    return a.order - b.order;
+  });
 
   const actionCount = rows.filter((r) => r.actionable).length;
 
@@ -161,10 +201,10 @@ export default async function BookingDashboardPage({
                   >
                     <TableCell className="font-medium">{r.label}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      Day {r.dayIndex}
-                      {r.dayDate ? (
+                      {r.whenLabel}
+                      {r.whenDate ? (
                         <span className="block text-xs">
-                          {formatDate(r.dayDate)}
+                          {formatDate(r.whenDate)}
                         </span>
                       ) : null}
                     </TableCell>

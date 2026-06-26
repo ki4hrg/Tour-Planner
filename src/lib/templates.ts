@@ -3,13 +3,13 @@ import { computeDayDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
 // pure, unit-testable function over plain data (no Prisma row instances needed).
-export type TemplateItemSite = {
-  siteId: string;
+export type TemplateItemLocation = {
+  locationId: string;
   order: number;
 };
 
 export type TemplateBooking = {
-  siteId: string | null;
+  locationId: string | null;
   label: string | null;
   notes: string | null;
 };
@@ -22,8 +22,8 @@ export type TemplateScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
-  presenterContactId: string | null;
-  sites: TemplateItemSite[];
+  presentationId: string | null;
+  sites: TemplateItemLocation[];
   bookings: TemplateBooking[];
 };
 
@@ -36,10 +36,10 @@ export type TemplateDay = {
 
 // Prisma nested-create payloads (typed structurally so this file stays
 // importable from tests without a Prisma client).
-export type InstantiatedItemSite = { siteId: string; order: number };
+export type InstantiatedItemLocation = { locationId: string; order: number };
 
 export type InstantiatedBooking = {
-  siteId: string | null;
+  locationId: string | null;
   label: string | null;
   notes: string | null;
   status: BookingStatus;
@@ -53,8 +53,8 @@ export type InstantiatedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
-  presenterContactId: string | null;
-  sites: { create: InstantiatedItemSite[] };
+  presentationId: string | null; // catalog link survives; presenters reset (omitted)
+  sites: { create: InstantiatedItemLocation[] };
   bookings: { create: InstantiatedBooking[] };
 };
 
@@ -71,7 +71,7 @@ export type InstantiatedDay = {
  *
  * - dayIndex and item order are renumbered 1..n (source gaps are normalised).
  * - each day's date is derived from the new trip's startDate (null if unset).
- * - site links are carried over (re-ordered 0..n).
+ * - location links are carried over (re-ordered 0..n).
  * - bookings are carried over as planning intent but RESET: status → NOT_BOOKED
  *   and the instance-specific actuals (bookedContact, confirmationRef) are
  *   dropped by omission. Reusable text (label, notes) is kept.
@@ -103,15 +103,17 @@ export function instantiateDays(
               endTime: item.endTime,
               notes: item.notes,
               isBlock: item.isBlock,
-              presenterContactId: item.presenterContactId,
+              // The shared catalog link survives; the per-occurrence speaker
+              // override is reset (next trip assigns its own — like bookings).
+              presentationId: item.presentationId,
               sites: {
                 create: [...item.sites]
                   .sort((a, b) => a.order - b.order)
-                  .map((s, sj) => ({ siteId: s.siteId, order: sj })),
+                  .map((s, sj) => ({ locationId: s.locationId, order: sj })),
               },
               bookings: {
                 create: item.bookings.map((b) => ({
-                  siteId: b.siteId,
+                  locationId: b.locationId,
                   label: b.label,
                   notes: b.notes,
                   status: "NOT_BOOKED" as BookingStatus,

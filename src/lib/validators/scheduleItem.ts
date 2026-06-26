@@ -22,12 +22,15 @@ export const scheduleItemSchema = z
     endTime: optionalTime,
     notes: z.string().trim().optional(),
     isBlock: z.boolean().optional(),
-    presenterContactId: optionalId,
-    // The sites this item visits (0 = informational line, 1 = stop, many = block).
-    siteIds: z.array(z.string().min(1)).default([]),
+    // The catalogued talk this item delivers (optional).
+    presentationId: optionalId,
+    // Per-occurrence speaker override; empty ⇒ use the talk's default presenters.
+    presenterIds: z.array(z.string().min(1)).default([]),
+    // The locations this item visits (0 = informational line, 1 = stop, many = block).
+    locationIds: z.array(z.string().min(1)).default([]),
   })
-  .refine((d) => d.siteIds.length > 0 || (d.title && d.title.length > 0), {
-    message: "Pick at least one site or give the item a title.",
+  .refine((d) => d.locationIds.length > 0 || (d.title && d.title.length > 0), {
+    message: "Pick at least one location or give the item a title.",
     path: ["title"],
   })
   .refine((d) => !d.startTime || !d.endTime || d.endTime >= d.startTime, {

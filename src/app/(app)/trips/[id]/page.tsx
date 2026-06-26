@@ -11,10 +11,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS } from "@/lib/trips";
+import { TRIP_STATUS_LABELS, serializeStay } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
+import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import { TripForm } from "../trip-form";
+import { LodgingManager } from "../lodging-manager";
 import { updateTrip, deleteTrip } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -51,20 +53,22 @@ export default async function TripOverviewPage({
     select: { id: true, name: true },
   });
 
-  // Cost estimate: roll up the reference costs of the distinct sites this trip's
-  // itinerary visits (estimates only — plan decision 6).
-  const referencedSites = await prisma.scheduleItemSite.findMany({
+  // Cost estimate: roll up the reference costs of the distinct locations this
+  // trip's itinerary visits (estimates only — plan decision 6).
+  const referencedLocations = await prisma.scheduleItemSite.findMany({
     where: { scheduleItem: { day: { tripId: id } } },
-    select: { siteId: true },
+    select: { locationId: true },
   });
-  const siteIds = [...new Set(referencedSites.map((s) => s.siteId))];
-  const costSites = siteIds.length
-    ? await prisma.site.findMany({
-        where: { id: { in: siteIds } },
+  const locationIds = [
+    ...new Set(referencedLocations.map((s) => s.locationId)),
+  ];
+  const costLocations = locationIds.length
+    ? await prisma.location.findMany({
+        where: { id: { in: locationIds } },
         select: { costs: true },
       })
     : [];
-  const allCosts = costSites.flatMap((s) => s.costs);
+  const allCosts = costLocations.flatMap((s) => s.costs);
   const rollups = rollUpCosts(
     allCosts.map((c) => ({
       amount: Number(c.amount),
@@ -74,6 +78,55 @@ export default async function TripOverviewPage({
     trip.participantCount,
   );
   const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
+
+  // Lodging (Stay) data — feeds the cost estimate and the Lodging section.
+  const stays = await prisma.stay.findMany({
+    where: { tripId: id },
+    orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
+    include: {
+      location: { select: { id: true, name: true } },
+      booking: {
+        include: { bookedContact: { select: { id: true, name: true } } },
+      },
+    },
+  });
+  const stayRollups = rollUpStays(
+    stays.map((s) => ({
+      checkIn: s.checkIn,
+      checkOut: s.checkOut,
+      headcount: s.headcount,
+      costPerPersonPerNight:
+        s.costPerPersonPerNight == null
+          ? null
+          : Number(s.costPerPersonPerNight),
+      currency: s.currency,
+    })),
+  );
+  const lodgingByCurrency = new Map(stayRollups.map((r) => [r.currency, r.total]));
+  // Unified per-currency estimate = visited-location costs + lodging.
+  const estimate = [
+    ...new Set([
+      ...rollups.map((r) => r.currency),
+      ...stayRollups.map((r) => r.currency),
+    ]),
+  ]
+    .sort()
+    .map((currency) => {
+      const cost = rollups.find((r) => r.currency === currency) ?? null;
+      const lodging = lodgingByCurrency.get(currency) ?? 0;
+      return { currency, cost, lodging, total: (cost?.total ?? 0) + lodging };
+    });
+
+  // For the Lodging manager (PLANNER edits inline).
+  const lodgingLocations = await prisma.location.findMany({
+    where: { archivedAt: null },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, region: true },
+  });
+  const lodgingContacts = await prisma.contact.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 
   return (
     <div className="space-y-6">
@@ -192,9 +245,10 @@ export default async function TripOverviewPage({
           <CardTitle className="text-base">Cost estimate</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          {rollups.length === 0 ? (
+          {estimate.length === 0 ? (
             <p className="text-muted-foreground">
-              No costs to estimate — add costs to the sites this trip visits.
+              No costs to estimate — add costs to the locations this trip visits,
+              or lodging below.
             </p>
           ) : (
             <>
@@ -207,22 +261,28 @@ export default async function TripOverviewPage({
                 <p className="text-muted-foreground">
                   Estimated for {trip.participantCount} participant
                   {trip.participantCount === 1 ? "" : "s"} across{" "}
-                  {siteIds.length} site{siteIds.length === 1 ? "" : "s"}.
+                  {locationIds.length} location
+                  {locationIds.length === 1 ? "" : "s"}.
                 </p>
               )}
               <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
-                {rollups.map((r) => (
-                  <div key={r.currency} className="contents">
-                    <dt className="font-medium">{r.currency}</dt>
+                {estimate.map((e) => (
+                  <div key={e.currency} className="contents">
+                    <dt className="font-medium">{e.currency}</dt>
                     <dd className="text-muted-foreground">
-                      {formatMoney(r.perPersonPerHead, r.currency)}/person ×{" "}
-                      {r.participantCount}
-                      {r.perGroup > 0
-                        ? ` + ${formatMoney(r.perGroup, r.currency)} group`
+                      {e.cost
+                        ? `${formatMoney(e.cost.perPersonPerHead, e.currency)}/person × ${e.cost.participantCount}${
+                            e.cost.perGroup > 0
+                              ? ` + ${formatMoney(e.cost.perGroup, e.currency)} group`
+                              : ""
+                          }`
+                        : "—"}
+                      {e.lodging > 0
+                        ? ` + ${formatMoney(e.lodging, e.currency)} lodging`
                         : ""}
                     </dd>
                     <dd className="text-right font-medium">
-                      {formatMoney(r.total, r.currency)}
+                      {formatMoney(e.total, e.currency)}
                     </dd>
                   </div>
                 ))}
@@ -234,10 +294,26 @@ export default async function TripOverviewPage({
                 </p>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                Estimate only. Counts each visited site once.
+                Estimate only. Counts each visited location once; lodging is summed
+                per stay.
               </p>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Lodging</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LodgingManager
+            tripId={trip.id}
+            canEdit={canEdit}
+            locations={lodgingLocations}
+            contacts={lodgingContacts}
+            stays={stays.map(serializeStay)}
+          />
         </CardContent>
       </Card>
 

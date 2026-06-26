@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Prisma, TripStatus, BookingStatus } from "@prisma/client";
+import type {
+  Prisma,
+  TripStatus,
+  BookingStatus,
+  BoardType,
+} from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
@@ -10,6 +15,7 @@ import { tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema } from "@/lib/validators/day";
 import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
 import { bookingSchema } from "@/lib/validators/booking";
+import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
 import { instantiateDays } from "@/lib/templates";
 
@@ -76,9 +82,10 @@ export async function createTrip(
                 endTime: true,
                 notes: true,
                 isBlock: true,
-                presenterContactId: true,
-                sites: { select: { siteId: true, order: true } },
-                bookings: { select: { siteId: true, label: true, notes: true } },
+                presentationId: true,
+                presenters: { select: { id: true } },
+                sites: { select: { locationId: true, order: true } },
+                bookings: { select: { locationId: true, label: true, notes: true } },
               },
             },
           },
@@ -173,6 +180,14 @@ async function tripIdForItem(itemId: string): Promise<string | null> {
     select: { day: { select: { tripId: true } } },
   });
   return item?.day.tripId ?? null;
+}
+
+async function tripIdForStay(stayId: string): Promise<string | null> {
+  const stay = await prisma.stay.findUnique({
+    where: { id: stayId },
+    select: { tripId: true },
+  });
+  return stay?.tripId ?? null;
 }
 
 function revalidateTrip(tripId: string) {
@@ -277,8 +292,9 @@ export type ScheduleItemInputData = {
   endTime?: string;
   notes?: string;
   isBlock?: boolean;
-  presenterContactId?: string;
-  siteIds: string[];
+  presentationId?: string;
+  presenterIds: string[];
+  locationIds: string[];
 };
 
 function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
@@ -289,7 +305,7 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     endTime: d.endTime || null,
     notes: d.notes || null,
     isBlock: d.isBlock ?? false,
-    presenterContactId: d.presenterContactId || null,
+    presentationId: d.presentationId || null,
   };
 }
 
@@ -307,8 +323,12 @@ export async function addScheduleItem(
       dayId,
       order: count + 1,
       ...toItemScalars(parsed.data),
+      presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
       sites: {
-        create: parsed.data.siteIds.map((siteId, i) => ({ siteId, order: i })),
+        create: parsed.data.locationIds.map((locationId, i) => ({
+          locationId,
+          order: i,
+        })),
       },
     },
   });
@@ -326,20 +346,24 @@ export async function updateScheduleItem(
   const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  // Replace the site links wholesale (simple + transactional). Bookings are
-  // untouched — they reference Site directly, not the join row.
+  // Replace the location links wholesale (simple + transactional). Bookings are
+  // untouched — they reference Location directly, not the join row.
   const item = await prisma.$transaction(async (tx) => {
     const updated = await tx.scheduleItem.update({
       where: { id: itemId },
-      data: toItemScalars(parsed.data),
+      data: {
+        ...toItemScalars(parsed.data),
+        // Wholesale-replace the per-occurrence speaker override (set semantics).
+        presenters: { set: parsed.data.presenterIds.map((id) => ({ id })) },
+      },
       select: { day: { select: { tripId: true } } },
     });
     await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
-    if (parsed.data.siteIds.length > 0) {
+    if (parsed.data.locationIds.length > 0) {
       await tx.scheduleItemSite.createMany({
-        data: parsed.data.siteIds.map((siteId, i) => ({
+        data: parsed.data.locationIds.map((locationId, i) => ({
           scheduleItemId: itemId,
-          siteId,
+          locationId,
           order: i,
         })),
       });
@@ -396,7 +420,7 @@ export async function reorderScheduleItems(
 // --- Booking CRUD (attached to a schedule item) ---
 
 export type BookingInputData = {
-  siteId?: string;
+  locationId?: string;
   label?: string;
   status: string;
   bookedContactId?: string;
@@ -406,7 +430,7 @@ export type BookingInputData = {
 
 function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
   return {
-    siteId: d.siteId || null,
+    locationId: d.locationId || null,
     label: d.label || null,
     status: d.status as BookingStatus,
     bookedContactId: d.bookedContactId || null,
@@ -432,6 +456,40 @@ export async function addBooking(
   return { ok: true, message: "Booking added." };
 }
 
+// A stay holds at most one booking (Booking.stayId is unique). Lodging-specific,
+// so no member location applies — locationId is dropped.
+export async function addStayBooking(
+  stayId: string,
+  input: BookingInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = bookingSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  const tripId = await tripIdForStay(stayId);
+  if (!tripId) return { error: "Stay not found." };
+
+  await prisma.booking.create({
+    data: { stayId, ...toBookingScalars(parsed.data), locationId: null },
+  });
+
+  revalidateTrip(tripId);
+  return { ok: true, message: "Booking added." };
+}
+
+// Resolve the owning trip whether the booking targets an item or a stay.
+async function tripIdForBooking(bookingId: string): Promise<string | null> {
+  const b = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      scheduleItem: { select: { day: { select: { tripId: true } } } },
+      stay: { select: { tripId: true } },
+    },
+  });
+  if (!b) return null;
+  return b.scheduleItem?.day.tripId ?? b.stay?.tripId ?? null;
+}
+
 export async function updateBooking(
   bookingId: string,
   input: BookingInputData,
@@ -440,38 +498,37 @@ export async function updateBooking(
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const booking = await prisma.booking.update({
+  await prisma.booking.update({
     where: { id: bookingId },
     data: toBookingScalars(parsed.data),
-    select: { scheduleItem: { select: { day: { select: { tripId: true } } } } },
   });
 
-  revalidateTrip(booking.scheduleItem.day.tripId);
+  const tripId = await tripIdForBooking(bookingId);
+  if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Booking saved." };
 }
 
 export async function deleteBooking(bookingId: string): Promise<FormState> {
   await assertRole("PLANNER");
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    select: { scheduleItem: { select: { day: { select: { tripId: true } } } } },
-  });
-  if (!booking) return { error: "Booking not found." };
+  const tripId = await tripIdForBooking(bookingId);
+  if (!tripId) return { error: "Booking not found." };
 
   await prisma.booking.delete({ where: { id: bookingId } });
-  revalidateTrip(booking.scheduleItem.day.tripId);
+  revalidateTrip(tripId);
   return { ok: true, message: "Booking removed." };
 }
 
-// --- Inline site creation from the item picker ---
+// --- Inline location creation from the item picker ---
 
-export type CreatedSite = { id: string; name: string; region: string | null };
+export type CreatedLocation = { id: string; name: string; region: string | null };
 
-export async function createTripSite(
+export async function createTripLocation(
   tripId: string,
   name: string,
   region?: string,
-): Promise<{ ok: true; site: CreatedSite } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; location: CreatedLocation } | { ok: false; error: string }
+> {
   await assertRole("PLANNER");
   const trimmed = name.trim();
   if (!trimmed) return { ok: false, error: "Name is required." };
@@ -482,7 +539,7 @@ export async function createTripSite(
   });
   if (!trip) return { ok: false, error: "Trip not found." };
 
-  const site = await prisma.site.create({
+  const location = await prisma.location.create({
     data: {
       name: trimmed,
       region: region?.trim() || null,
@@ -492,9 +549,9 @@ export async function createTripSite(
     select: { id: true, name: true, region: true },
   });
 
-  revalidatePath("/sites");
+  revalidatePath("/locations");
   revalidateTrip(tripId);
-  return { ok: true, site };
+  return { ok: true, location };
 }
 
 // --- Inline contact creation (e.g. a presenter) from the item editor ---
@@ -518,4 +575,101 @@ export async function createContactInline(
 
   revalidatePath("/contacts");
   return { ok: true, contact };
+}
+
+// --- Inline presentation (talk) creation from the item editor ---
+
+export type CreatedPresentation = { id: string; title: string };
+
+export async function createPresentationInline(
+  title: string,
+  description?: string,
+): Promise<
+  { ok: true; presentation: CreatedPresentation } | { ok: false; error: string }
+> {
+  await assertRole("PLANNER");
+  const trimmed = title.trim();
+  if (!trimmed) return { ok: false, error: "Title is required." };
+
+  const presentation = await prisma.presentation.create({
+    data: { title: trimmed, description: description?.trim() || null },
+    select: { id: true, title: true },
+  });
+
+  revalidatePath("/presentations");
+  return { ok: true, presentation };
+}
+
+// --- Stay CRUD (per-trip lodging) ---
+
+export type StayInputData = {
+  locationId: string;
+  label?: string;
+  checkIn: string;
+  checkOut: string;
+  arrivalTime?: string;
+  departureTime?: string;
+  board?: string;
+  headcount?: string;
+  costPerPersonPerNight?: string;
+  currency?: string;
+  priority?: string;
+  notes?: string;
+};
+
+function toStayData(d: ReturnType<typeof staySchema.parse>) {
+  return {
+    locationId: d.locationId,
+    label: d.label || null,
+    checkIn: parseDateInput(d.checkIn)!,
+    checkOut: parseDateInput(d.checkOut)!,
+    arrivalTime: d.arrivalTime || null,
+    departureTime: d.departureTime || null,
+    board: d.board as BoardType,
+    headcount: d.headcount ?? null,
+    costPerPersonPerNight: d.costPerPersonPerNight ?? null,
+    currency: d.currency,
+    priority: d.priority ?? 0,
+    notes: d.notes || null,
+  };
+}
+
+export async function addStay(
+  tripId: string,
+  input: StayInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = staySchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  await prisma.stay.create({ data: { tripId, ...toStayData(parsed.data) } });
+  revalidateTrip(tripId);
+  return { ok: true, message: "Stay added." };
+}
+
+export async function updateStay(
+  stayId: string,
+  input: StayInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = staySchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  await prisma.stay.update({
+    where: { id: stayId },
+    data: toStayData(parsed.data),
+  });
+  const tripId = await tripIdForStay(stayId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Stay saved." };
+}
+
+export async function deleteStay(stayId: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const tripId = await tripIdForStay(stayId);
+  if (!tripId) return { error: "Stay not found." };
+
+  await prisma.stay.delete({ where: { id: stayId } }); // cascades to its booking
+  revalidateTrip(tripId);
+  return { ok: true, message: "Stay removed." };
 }

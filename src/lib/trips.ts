@@ -1,12 +1,21 @@
 import type {
   BookingStatus,
+  BoardType,
   Booking,
   ItineraryDay,
   ScheduleItem,
+  Stay,
   Trip,
   TripStatus,
 } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
+
+export const BOARD_LABELS: Record<BoardType, string> = {
+  NONE: "No meals",
+  BED_AND_BREAKFAST: "B&B",
+  HALF_BOARD: "Half board",
+  FULL_BOARD: "Full board",
+};
 
 export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
   PLANNING: "Planning",
@@ -38,23 +47,32 @@ export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---
 
-export type SerializedItemSite = {
+export type SerializedItemLocation = {
   id: string;
-  siteId: string;
+  locationId: string;
   order: number;
-  site: { id: string; name: string; region: string | null };
+  location: { id: string; name: string; region: string | null };
 };
+
+export type SerializedPerson = { id: string; name: string };
 
 export type SerializedBooking = {
   id: string;
-  scheduleItemId: string;
-  siteId: string | null;
+  scheduleItemId: string | null;
+  stayId: string | null;
+  locationId: string | null;
   label: string | null;
   status: BookingStatus;
   bookedContactId: string | null;
-  bookedContact: { id: string; name: string } | null;
+  bookedContact: SerializedPerson | null;
   confirmationRef: string | null;
   notes: string | null;
+};
+
+export type SerializedItemPresentation = {
+  id: string;
+  title: string;
+  defaultPresenters: SerializedPerson[];
 };
 
 export type SerializedScheduleItem = {
@@ -68,11 +86,23 @@ export type SerializedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
-  presenterContactId: string | null;
-  presenter: { id: string; name: string } | null;
-  sites: SerializedItemSite[];
+  presentationId: string | null;
+  presentation: SerializedItemPresentation | null;
+  presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
+  sites: SerializedItemLocation[];
   bookings: SerializedBooking[];
 };
+
+// The speaker(s) actually shown for an item: the per-occurrence override if set,
+// otherwise the catalogued talk's default speaker(s).
+export function effectivePresenters(item: {
+  presenters: SerializedPerson[];
+  presentation: { defaultPresenters: SerializedPerson[] } | null;
+}): SerializedPerson[] {
+  return item.presenters.length
+    ? item.presenters
+    : (item.presentation?.defaultPresenters ?? []);
+}
 
 export type SerializedDay = Omit<ItineraryDay, "date"> & {
   date: string | null;
@@ -85,11 +115,11 @@ export type SerializedTrip = Omit<Trip, "startDate" | "endDate"> & {
 };
 
 // The relational shapes the serializers expect (a subset of the Prisma rows).
-type ItemSiteRow = {
+type ItemLocationRow = {
   id: string;
-  siteId: string;
+  locationId: string;
   order: number;
-  site: { id: string; name: string; region: string | null };
+  location: { id: string; name: string; region: string | null };
 };
 
 type BookingRow = Booking & {
@@ -98,8 +128,13 @@ type BookingRow = Booking & {
 
 type ScheduleItemWithRelations = ScheduleItem & {
   category: { id: string; name: string; color: string | null } | null;
-  presenter: { id: string; name: string } | null;
-  sites: ItemSiteRow[];
+  presentation: {
+    id: string;
+    title: string;
+    defaultPresenters: SerializedPerson[];
+  } | null;
+  presenters: SerializedPerson[];
+  sites: ItemLocationRow[];
   bookings: BookingRow[];
 };
 
@@ -107,7 +142,8 @@ export function serializeBooking(b: BookingRow): SerializedBooking {
   return {
     id: b.id,
     scheduleItemId: b.scheduleItemId,
-    siteId: b.siteId,
+    stayId: b.stayId,
+    locationId: b.locationId,
     label: b.label,
     status: b.status,
     bookedContactId: b.bookedContactId,
@@ -135,17 +171,29 @@ export function serializeScheduleItem(
     endTime: item.endTime,
     notes: item.notes,
     isBlock: item.isBlock,
-    presenterContactId: item.presenterContactId,
-    presenter: item.presenter
-      ? { id: item.presenter.id, name: item.presenter.name }
+    presentationId: item.presentationId,
+    presentation: item.presentation
+      ? {
+          id: item.presentation.id,
+          title: item.presentation.title,
+          defaultPresenters: item.presentation.defaultPresenters.map((p) => ({
+            id: p.id,
+            name: p.name,
+          })),
+        }
       : null,
+    presenters: item.presenters.map((p) => ({ id: p.id, name: p.name })),
     sites: [...item.sites]
       .sort((a, b) => a.order - b.order)
       .map((s) => ({
         id: s.id,
-        siteId: s.siteId,
+        locationId: s.locationId,
         order: s.order,
-        site: { id: s.site.id, name: s.site.name, region: s.site.region },
+        location: {
+          id: s.location.id,
+          name: s.location.name,
+          region: s.location.region,
+        },
       })),
     bookings: item.bookings.map(serializeBooking),
   };
@@ -166,5 +214,54 @@ export function serializeTrip(trip: Trip): SerializedTrip {
     ...trip,
     startDate: trip.startDate ? toDateInput(trip.startDate) : null,
     endDate: trip.endDate ? toDateInput(trip.endDate) : null,
+  };
+}
+
+// --- Stay (lodging) serialization ---
+
+export type SerializedStay = {
+  id: string;
+  locationId: string;
+  location: { id: string; name: string };
+  label: string | null;
+  checkIn: string;
+  checkOut: string;
+  arrivalTime: string | null;
+  departureTime: string | null;
+  board: BoardType;
+  headcount: number | null;
+  costPerPersonPerNight: number | null;
+  currency: string;
+  priority: number;
+  notes: string | null;
+  booking: SerializedBooking | null;
+};
+
+type StayRow = Stay & {
+  location: { id: string; name: string };
+  booking: BookingRow | null;
+};
+
+export function serializeStay(stay: StayRow): SerializedStay {
+  return {
+    id: stay.id,
+    locationId: stay.locationId,
+    location: { id: stay.location.id, name: stay.location.name },
+    label: stay.label,
+    checkIn: toDateInput(stay.checkIn),
+    checkOut: toDateInput(stay.checkOut),
+    arrivalTime: stay.arrivalTime,
+    departureTime: stay.departureTime,
+    board: stay.board,
+    headcount: stay.headcount,
+    // Prisma Decimal → number at the server/client boundary (never pass Decimal).
+    costPerPersonPerNight:
+      stay.costPerPersonPerNight == null
+        ? null
+        : Number(stay.costPerPersonPerNight),
+    currency: stay.currency,
+    priority: stay.priority,
+    notes: stay.notes,
+    booking: stay.booking ? serializeBooking(stay.booking) : null,
   };
 }

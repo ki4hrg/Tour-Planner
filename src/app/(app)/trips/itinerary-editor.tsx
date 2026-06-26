@@ -20,6 +20,7 @@ import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_CLASSES,
   BOOKING_STATUSES,
+  effectivePresenters,
   type SerializedDay,
   type SerializedScheduleItem,
   type SerializedBooking,
@@ -38,19 +39,31 @@ import {
   addBooking,
   updateBooking,
   deleteBooking,
-  createTripSite,
+  createTripLocation,
   createContactInline,
+  createPresentationInline,
   type ScheduleItemInputData,
   type BookingInputData,
-  type CreatedSite,
+  type CreatedLocation,
   type CreatedContact,
+  type CreatedPresentation,
 } from "./actions";
 
 const NONE = "__none__";
 
-type Site = { id: string; name: string; region: string | null; tagged: boolean };
+type Location = {
+  id: string;
+  name: string;
+  region: string | null;
+  tagged: boolean;
+};
 type Contact = { id: string; name: string };
 type Category = { id: string; name: string; color: string | null };
+type Presentation = {
+  id: string;
+  title: string;
+  defaultPresenters: { id: string; name: string }[];
+};
 
 // Run a FormState-returning action, surfacing the result as a toast.
 function useAction() {
@@ -73,25 +86,30 @@ export function ItineraryEditor({
   hasStartDate,
   days,
   categories,
-  sites: initialSites,
+  locations: initialLocations,
   contacts: initialContacts,
+  presentations: initialPresentations,
 }: {
   tripId: string;
   canEdit: boolean;
   hasStartDate: boolean;
   days: SerializedDay[];
   categories: Category[];
-  sites: Site[];
+  locations: Location[];
   contacts: Contact[];
+  presentations: Presentation[];
 }) {
-  // Inline-created sites/contacts are held locally so they show immediately;
+  // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
-  const [extraSites, setExtraSites] = useState<Site[]>([]);
-  const sites = useMemo(() => {
-    const ids = new Set(initialSites.map((s) => s.id));
-    const merged = [...initialSites, ...extraSites.filter((s) => !ids.has(s.id))];
+  const [extraLocations, setExtraLocations] = useState<Location[]>([]);
+  const locations = useMemo(() => {
+    const ids = new Set(initialLocations.map((s) => s.id));
+    const merged = [
+      ...initialLocations,
+      ...extraLocations.filter((s) => !ids.has(s.id)),
+    ];
     return merged.sort((a, b) => a.name.localeCompare(b.name));
-  }, [initialSites, extraSites]);
+  }, [initialLocations, extraLocations]);
 
   const [extraContacts, setExtraContacts] = useState<Contact[]>([]);
   const contacts = useMemo(() => {
@@ -102,6 +120,18 @@ export function ItineraryEditor({
     ];
     return merged.sort((a, b) => a.name.localeCompare(b.name));
   }, [initialContacts, extraContacts]);
+
+  const [extraPresentations, setExtraPresentations] = useState<Presentation[]>(
+    [],
+  );
+  const presentations = useMemo(() => {
+    const ids = new Set(initialPresentations.map((p) => p.id));
+    const merged = [
+      ...initialPresentations,
+      ...extraPresentations.filter((p) => !ids.has(p.id)),
+    ];
+    return merged.sort((a, b) => a.title.localeCompare(b.title));
+  }, [initialPresentations, extraPresentations]);
 
   const { pending, run } = useAction();
 
@@ -121,22 +151,39 @@ export function ItineraryEditor({
     return res.contact;
   };
 
-  const addNewSite = async (
+  const addNewLocation = async (
     name: string,
     region: string,
-  ): Promise<CreatedSite | null> => {
-    const res = await createTripSite(tripId, name, region);
+  ): Promise<CreatedLocation | null> => {
+    const res = await createTripLocation(tripId, name, region);
     if (!res.ok) {
       toast.error(res.error);
       return null;
     }
-    setExtraSites((prev) =>
-      prev.some((s) => s.id === res.site.id)
+    setExtraLocations((prev) =>
+      prev.some((s) => s.id === res.location.id)
         ? prev
-        : [...prev, { ...res.site, tagged: true }],
+        : [...prev, { ...res.location, tagged: true }],
     );
-    toast.success(`Created ${res.site.name}.`);
-    return res.site;
+    toast.success(`Created ${res.location.name}.`);
+    return res.location;
+  };
+
+  const addNewPresentation = async (
+    title: string,
+  ): Promise<CreatedPresentation | null> => {
+    const res = await createPresentationInline(title);
+    if (!res.ok) {
+      toast.error(res.error);
+      return null;
+    }
+    setExtraPresentations((prev) =>
+      prev.some((p) => p.id === res.presentation.id)
+        ? prev
+        : [...prev, { ...res.presentation, defaultPresenters: [] }],
+    );
+    toast.success(`Created ${res.presentation.title}.`);
+    return res.presentation;
   };
 
   const moveDay = (index: number, dir: -1 | 1) => {
@@ -164,11 +211,13 @@ export function ItineraryEditor({
           total={days.length}
           canEdit={canEdit}
           categories={categories}
-          sites={sites}
+          locations={locations}
           contacts={contacts}
+          presentations={presentations}
           onMove={moveDay}
-          onCreateSite={addNewSite}
+          onCreateLocation={addNewLocation}
           onCreateContact={addNewContact}
+          onCreatePresentation={addNewPresentation}
         />
       ))}
 
@@ -195,25 +244,32 @@ function DayCard({
   total,
   canEdit,
   categories,
-  sites,
+  locations,
   contacts,
+  presentations,
   onMove,
-  onCreateSite,
+  onCreateLocation,
   onCreateContact,
+  onCreatePresentation,
 }: {
   day: SerializedDay;
   index: number;
   total: number;
   canEdit: boolean;
   categories: Category[];
-  sites: Site[];
+  locations: Location[];
   contacts: Contact[];
+  presentations: Presentation[];
   onMove: (index: number, dir: -1 | 1) => void;
-  onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateLocation: (
+    name: string,
+    region: string,
+  ) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
   ) => Promise<CreatedContact | null>;
+  onCreatePresentation: (title: string) => Promise<CreatedPresentation | null>;
 }) {
   const { pending, run } = useAction();
   const [editingDay, setEditingDay] = useState(false);
@@ -336,11 +392,13 @@ function DayCard({
                 total={day.items.length}
                 canEdit={canEdit}
                 categories={categories}
-                sites={sites}
+                locations={locations}
                 contacts={contacts}
+                presentations={presentations}
                 onMove={moveItem}
-                onCreateSite={onCreateSite}
+                onCreateLocation={onCreateLocation}
                 onCreateContact={onCreateContact}
+                onCreatePresentation={onCreatePresentation}
               />
             ))}
           </ol>
@@ -354,11 +412,13 @@ function DayCard({
               <p className="mb-2 text-sm font-medium">Add an item</p>
               <ItemFields
                 categories={categories}
-                sites={sites}
+                locations={locations}
                 contacts={contacts}
+                presentations={presentations}
                 submitLabel="Add item"
-                onCreateSite={onCreateSite}
+                onCreateLocation={onCreateLocation}
                 onCreateContact={onCreateContact}
+                onCreatePresentation={onCreatePresentation}
                 onSubmit={(data, done) =>
                   run(() => addScheduleItem(day.id, data), () => {
                     done();
@@ -407,43 +467,51 @@ function ItemRow({
   total,
   canEdit,
   categories,
-  sites,
+  locations,
   contacts,
+  presentations,
   onMove,
-  onCreateSite,
+  onCreateLocation,
   onCreateContact,
+  onCreatePresentation,
 }: {
   item: SerializedScheduleItem;
   index: number;
   total: number;
   canEdit: boolean;
   categories: Category[];
-  sites: Site[];
+  locations: Location[];
   contacts: Contact[];
+  presentations: Presentation[];
   onMove: (index: number, dir: -1 | 1) => void;
-  onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateLocation: (
+    name: string,
+    region: string,
+  ) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
   ) => Promise<CreatedContact | null>;
+  onCreatePresentation: (title: string) => Promise<CreatedPresentation | null>;
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
-  const siteNames = item.sites.map((s) => s.site.name);
+  const locationNames = item.sites.map((s) => s.location.name);
+  const speakers = effectivePresenters(item);
   const primary =
     item.title ??
     (item.sites.length === 1
-      ? siteNames[0]
+      ? locationNames[0]
       : item.isBlock
-        ? `Choose from ${item.sites.length} site${item.sites.length === 1 ? "" : "s"}`
+        ? `Choose from ${item.sites.length} location${item.sites.length === 1 ? "" : "s"}`
         : item.sites.length > 1
-          ? `${item.sites.length} sites`
+          ? `${item.sites.length} locations`
           : "Untitled item");
-  // The single bare site name is already the primary label; otherwise list the
-  // member sites so they're never hidden behind a title (e.g. Travel items).
-  const siteIsPrimary =
+  // The single bare location name is already the primary label; otherwise list
+  // the member locations so they're never hidden behind a title (e.g. Travel).
+  const locationIsPrimary =
     item.sites.length === 1 && !item.title && !item.isBlock;
 
   return (
@@ -455,12 +523,14 @@ function ItemRow({
             <div className="space-y-4 rounded-md border bg-background p-3">
               <ItemFields
                 categories={categories}
-                sites={sites}
+                locations={locations}
                 contacts={contacts}
+                presentations={presentations}
                 initial={item}
                 submitLabel="Save item"
-                onCreateSite={onCreateSite}
+                onCreateLocation={onCreateLocation}
                 onCreateContact={onCreateContact}
+                onCreatePresentation={onCreatePresentation}
                 onSubmit={(data, done) =>
                   run(() => updateScheduleItem(item.id, data), () => {
                     done();
@@ -500,22 +570,27 @@ function ItemRow({
                 <span className="font-medium">{primary}</span>
               </div>
 
-              {/* Member sites — shown unless the single site is already the title. */}
-              {item.sites.length > 0 && !siteIsPrimary ? (
+              {/* Member locations — shown unless the single one is the title. */}
+              {item.sites.length > 0 && !locationIsPrimary ? (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {item.sites.map((s) => (
                     <span
                       key={s.id}
                       className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground"
                     >
-                      {s.site.name}
+                      {s.location.name}
                     </span>
                   ))}
                 </div>
               ) : null}
 
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {item.presenter ? <span>· {item.presenter.name}</span> : null}
+                {item.presentation ? (
+                  <span className="italic">· {item.presentation.title}</span>
+                ) : null}
+                {speakers.length ? (
+                  <span>· {speakers.map((p) => p.name).join(", ")}</span>
+                ) : null}
                 {item.notes ? <span>· {item.notes}</span> : null}
               </div>
 
@@ -577,11 +652,12 @@ function BookingPill({
   booking: SerializedBooking;
   item: SerializedScheduleItem;
 }) {
-  const forSite =
-    booking.siteId != null
-      ? item.sites.find((s) => s.siteId === booking.siteId)?.site.name
+  const forLocation =
+    booking.locationId != null
+      ? item.sites.find((s) => s.locationId === booking.locationId)?.location
+          .name
       : null;
-  const what = booking.label ?? forSite ?? null;
+  const what = booking.label ?? forLocation ?? null;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs">
       <span
@@ -605,27 +681,34 @@ function BookingPill({
 
 function ItemFields({
   categories,
-  sites,
+  locations,
   contacts,
+  presentations,
   initial,
   submitLabel,
   onSubmit,
   onCancel,
-  onCreateSite,
+  onCreateLocation,
   onCreateContact,
+  onCreatePresentation,
 }: {
   categories: Category[];
-  sites: Site[];
+  locations: Location[];
   contacts: Contact[];
+  presentations: Presentation[];
   initial?: SerializedScheduleItem;
   submitLabel: string;
   onSubmit: (data: ScheduleItemInputData, done: () => void) => void;
   onCancel: () => void;
-  onCreateSite: (name: string, region: string) => Promise<CreatedSite | null>;
+  onCreateLocation: (
+    name: string,
+    region: string,
+  ) => Promise<CreatedLocation | null>;
   onCreateContact: (
     name: string,
     organization: string,
   ) => Promise<CreatedContact | null>;
+  onCreatePresentation: (title: string) => Promise<CreatedPresentation | null>;
 }) {
   const [categoryId, setCategoryId] = useState<string>(
     initial?.categoryId ?? NONE,
@@ -635,55 +718,91 @@ function ItemFields({
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [presenterId, setPresenterId] = useState<string>(
-    initial?.presenterContactId ?? NONE,
+  const [presentationId, setPresentationId] = useState<string>(
+    initial?.presentationId ?? NONE,
   );
-  const [siteIds, setSiteIds] = useState<string[]>(
-    initial?.sites.map((s) => s.siteId) ?? [],
+  const [presenterIds, setPresenterIds] = useState<string[]>(
+    initial?.presenters.map((p) => p.id) ?? [],
+  );
+  const [addPresenter, setAddPresenter] = useState<string>(NONE);
+  const [locationIds, setLocationIds] = useState<string[]>(
+    initial?.sites.map((s) => s.locationId) ?? [],
   );
 
   const [showAll, setShowAll] = useState(false);
-  const [addSite, setAddSite] = useState<string>(NONE);
+  const [addLocation, setAddLocation] = useState<string>(NONE);
 
-  // Inline site creation.
-  const [creatingSite, setCreatingSite] = useState(false);
+  // Inline location creation.
+  const [creatingLocation, setCreatingLocation] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRegion, setNewRegion] = useState("");
+
+  // Inline talk (presentation) creation.
+  const [creatingTalk, setCreatingTalk] = useState(false);
+  const [newTalkTitle, setNewTalkTitle] = useState("");
 
   // Inline presenter (contact) creation.
   const [creatingPresenter, setCreatingPresenter] = useState(false);
   const [newPresenterName, setNewPresenterName] = useState("");
   const [newPresenterOrg, setNewPresenterOrg] = useState("");
 
+  const selectedTalk =
+    presentationId === NONE
+      ? null
+      : (presentations.find((p) => p.id === presentationId) ?? null);
+  const contactName = (id: string) =>
+    contacts.find((c) => c.id === id)?.name ?? id;
+  const availablePresenters = contacts.filter(
+    (c) => !presenterIds.includes(c.id),
+  );
+
+  const pickPresenter = (id: string) => {
+    if (id === NONE || presenterIds.includes(id)) return;
+    setPresenterIds((prev) => [...prev, id]);
+    setAddPresenter(NONE);
+  };
+
+  const handleCreateTalk = async () => {
+    const created = await onCreatePresentation(newTalkTitle);
+    if (created) {
+      setPresentationId(created.id);
+      setCreatingTalk(false);
+      setNewTalkTitle("");
+    }
+  };
+
   const handleCreatePresenter = async () => {
     const created = await onCreateContact(newPresenterName, newPresenterOrg);
     if (created) {
-      setPresenterId(created.id);
+      setPresenterIds((prev) =>
+        prev.includes(created.id) ? prev : [...prev, created.id],
+      );
       setCreatingPresenter(false);
       setNewPresenterName("");
       setNewPresenterOrg("");
     }
   };
 
-  const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? id;
+  const locationName = (id: string) =>
+    locations.find((s) => s.id === id)?.name ?? id;
 
-  const availableSites = (showAll ? sites : sites.filter((s) => s.tagged)).filter(
-    (s) => !siteIds.includes(s.id),
-  );
+  const availableLocations = (
+    showAll ? locations : locations.filter((s) => s.tagged)
+  ).filter((s) => !locationIds.includes(s.id));
 
-  const pickSite = (id: string) => {
-    if (id === NONE || siteIds.includes(id)) return;
-    setSiteIds((prev) => [...prev, id]);
-    setAddSite(NONE);
+  const pickLocation = (id: string) => {
+    if (id === NONE || locationIds.includes(id)) return;
+    setLocationIds((prev) => [...prev, id]);
+    setAddLocation(NONE);
   };
 
   const handleCreate = async () => {
-    const created = await onCreateSite(newName, newRegion);
+    const created = await onCreateLocation(newName, newRegion);
     if (created) {
-      setSiteIds((prev) =>
+      setLocationIds((prev) =>
         prev.includes(created.id) ? prev : [...prev, created.id],
       );
-      setCreatingSite(false);
+      setCreatingLocation(false);
       setNewName("");
       setNewRegion("");
     }
@@ -698,8 +817,9 @@ function ItemFields({
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
         isBlock,
-        presenterContactId: presenterId === NONE ? undefined : presenterId,
-        siteIds,
+        presentationId: presentationId === NONE ? undefined : presentationId,
+        presenterIds,
+        locationIds,
       },
       () => {
         if (!initial) {
@@ -709,8 +829,9 @@ function ItemFields({
           setStartTime("");
           setEndTime("");
           setNotes("");
-          setPresenterId(NONE);
-          setSiteIds([]);
+          setPresentationId(NONE);
+          setPresenterIds([]);
+          setLocationIds([]);
         }
       },
     );
@@ -740,14 +861,18 @@ function ItemFields({
           <Label className="text-xs">
             Title{" "}
             <span className="text-muted-foreground">
-              {siteIds.length === 0 ? "(required without a site)" : "(optional)"}
+              {locationIds.length === 0
+                ? "(required without a location)"
+                : "(optional)"}
             </span>
           </Label>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder={
-              siteIds.length === 0 ? "e.g. Lunch, Transit, Talk" : "Override label"
+              locationIds.length === 0
+                ? "e.g. Lunch, Transit, Talk"
+                : "Override label"
             }
           />
         </div>
@@ -770,14 +895,94 @@ function ItemFields({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs">Presenter</Label>
-          <Select value={presenterId} onValueChange={setPresenterId}>
+          <Label className="text-xs">Talk</Label>
+          <Select value={presentationId} onValueChange={setPresentationId}>
             <SelectTrigger size="sm">
-              <SelectValue />
+              <SelectValue placeholder="— none —" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>— none —</SelectItem>
-              {contacts.map((c) => (
+              {presentations.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {creatingTalk ? (
+            <div className="space-y-2 rounded-md border border-dashed p-2">
+              <Input
+                placeholder="Talk title"
+                value={newTalkTitle}
+                onChange={(e) => setNewTalkTitle(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={handleCreateTalk}>
+                  Create & select
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCreatingTalk(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setCreatingTalk(true)}
+            >
+              + Create a new talk
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">
+            Presenters{" "}
+            <span className="text-muted-foreground">(override)</span>
+          </Label>
+          {presenterIds.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {presenterIds.map((id) => (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
+                >
+                  {contactName(id)}
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove ${contactName(id)}`}
+                    onClick={() =>
+                      setPresenterIds((prev) => prev.filter((p) => p !== id))
+                    }
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {selectedTalk && selectedTalk.defaultPresenters.length
+                ? `Using talk defaults: ${selectedTalk.defaultPresenters
+                    .map((p) => p.name)
+                    .join(", ")}`
+                : "None — leave empty to use the talk's defaults."}
+            </p>
+          )}
+          <Select value={addPresenter} onValueChange={pickPresenter}>
+            <SelectTrigger size="sm">
+              <SelectValue placeholder="+ Add a presenter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>+ Add a presenter…</SelectItem>
+              {availablePresenters.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.name}
                 </SelectItem>
@@ -798,7 +1003,7 @@ function ItemFields({
               />
               <div className="flex gap-2">
                 <Button type="button" size="sm" onClick={handleCreatePresenter}>
-                  Create & select
+                  Create & add
                 </Button>
                 <Button
                   type="button"
@@ -827,38 +1032,38 @@ function ItemFields({
               checked={isBlock}
               onCheckedChange={(v) => setIsBlock(v === true)}
             />
-            Free-choice block (subgroups pick among the sites)
+            Free-choice block (subgroups pick among the locations)
           </label>
         </div>
       </div>
 
-      {/* Sites (0..n) */}
+      {/* Locations (0..n) */}
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Sites</Label>
+          <Label className="text-xs">Locations</Label>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Checkbox
               checked={showAll}
               onCheckedChange={(v) => setShowAll(v === true)}
             />
-            Show all sites
+            Show all locations
           </label>
         </div>
 
-        {siteIds.length > 0 ? (
+        {locationIds.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
-            {siteIds.map((id) => (
+            {locationIds.map((id) => (
               <span
                 key={id}
                 className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
               >
-                {siteName(id)}
+                {locationName(id)}
                 <button
                   type="button"
                   className="text-muted-foreground hover:text-destructive"
-                  aria-label={`Remove ${siteName(id)}`}
+                  aria-label={`Remove ${locationName(id)}`}
                   onClick={() =>
-                    setSiteIds((prev) => prev.filter((s) => s !== id))
+                    setLocationIds((prev) => prev.filter((s) => s !== id))
                   }
                 >
                   ✕
@@ -868,17 +1073,17 @@ function ItemFields({
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No sites — this is an informational line (give it a title).
+            No locations — this is an informational line (give it a title).
           </p>
         )}
 
-        <Select value={addSite} onValueChange={pickSite}>
+        <Select value={addLocation} onValueChange={pickLocation}>
           <SelectTrigger size="sm">
-            <SelectValue placeholder="+ Add a site" />
+            <SelectValue placeholder="+ Add a location" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>+ Add a site…</SelectItem>
-            {availableSites.map((s) => (
+            <SelectItem value={NONE}>+ Add a location…</SelectItem>
+            {availableLocations.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
                 {s.region ? ` · ${s.region}` : ""}
@@ -887,10 +1092,10 @@ function ItemFields({
           </SelectContent>
         </Select>
 
-        {creatingSite ? (
+        {creatingLocation ? (
           <div className="space-y-2 rounded-md border border-dashed p-2">
             <Input
-              placeholder="New site name"
+              placeholder="New location name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
@@ -907,7 +1112,7 @@ function ItemFields({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setCreatingSite(false)}
+                onClick={() => setCreatingLocation(false)}
               >
                 Cancel
               </Button>
@@ -917,9 +1122,9 @@ function ItemFields({
           <button
             type="button"
             className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => setCreatingSite(true)}
+            onClick={() => setCreatingLocation(true)}
           >
-            + Create a new site
+            + Create a new location
           </button>
         )}
       </div>
@@ -1054,7 +1259,9 @@ function BookingFields({
   onSubmit: (data: BookingInputData, done: () => void) => void;
   onCancel: () => void;
 }) {
-  const [siteId, setSiteId] = useState<string>(initial?.siteId ?? NONE);
+  const [locationId, setLocationId] = useState<string>(
+    initial?.locationId ?? NONE,
+  );
   const [label, setLabel] = useState(initial?.label ?? "");
   const [status, setStatus] = useState<BookingStatus>(
     initial?.status ?? "NOT_BOOKED",
@@ -1070,7 +1277,7 @@ function BookingFields({
   const submit = () => {
     onSubmit(
       {
-        siteId: siteId === NONE ? undefined : siteId,
+        locationId: locationId === NONE ? undefined : locationId,
         label: label.trim() || undefined,
         status,
         bookedContactId: bookedContactId === NONE ? undefined : bookedContactId,
@@ -1079,7 +1286,7 @@ function BookingFields({
       },
       () => {
         if (!initial) {
-          setSiteId(NONE);
+          setLocationId(NONE);
           setLabel("");
           setStatus("NOT_BOOKED");
           setBookedContactId(NONE);
@@ -1094,16 +1301,16 @@ function BookingFields({
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label className="text-xs">For site</Label>
-          <Select value={siteId} onValueChange={setSiteId}>
+          <Label className="text-xs">For location</Label>
+          <Select value={locationId} onValueChange={setLocationId}>
             <SelectTrigger size="sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>The whole item</SelectItem>
               {item.sites.map((s) => (
-                <SelectItem key={s.siteId} value={s.siteId}>
-                  {s.site.name}
+                <SelectItem key={s.locationId} value={s.locationId}>
+                  {s.location.name}
                 </SelectItem>
               ))}
             </SelectContent>

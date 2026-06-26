@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function SitesPage({
+export default async function LocationsPage({
   searchParams,
 }: {
   searchParams: Promise<{ type?: string; archived?: string }>;
@@ -24,16 +24,19 @@ export default async function SitesPage({
   const { type, archived } = await searchParams;
   const showArchived = archived === "1";
 
-  const where: Prisma.SiteWhereInput = {
+  const where: Prisma.LocationWhereInput = {
     archivedAt: showArchived ? { not: null } : null,
     ...(type ? { tripTypes: { some: { id: type } } } : {}),
   };
 
-  const [sites, tripTypes] = await Promise.all([
-    prisma.site.findMany({
+  const [locations, tripTypes] = await Promise.all([
+    prisma.location.findMany({
       where,
       orderBy: { name: "asc" },
-      include: { tripTypes: { select: { id: true, name: true, color: true } } },
+      include: {
+        tripTypes: { select: { id: true, name: true, color: true } },
+        hostSite: { select: { id: true } },
+      },
     }),
     prisma.tripType.findMany({
       orderBy: { name: "asc" },
@@ -46,21 +49,21 @@ export default async function SitesPage({
     if (params.type) sp.set("type", params.type);
     if (params.archived) sp.set("archived", params.archived);
     const s = sp.toString();
-    return s ? `/sites?${s}` : "/sites";
+    return s ? `/locations?${s}` : "/locations";
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Sites</h1>
+          <h1 className="text-2xl font-semibold">Locations</h1>
           <p className="text-sm text-muted-foreground">
-            The global site library. Filter by trip type.
+            The global location library. Filter by trip type.
           </p>
         </div>
         {canEdit ? (
           <Button asChild>
-            <Link href="/sites/new">New site</Link>
+            <Link href="/locations/new">New location</Link>
           </Button>
         ) : null}
       </div>
@@ -92,30 +95,35 @@ export default async function SitesPage({
             href={qs({ type, archived: showArchived ? undefined : "1" })}
             className="text-sm text-muted-foreground underline-offset-2 hover:underline"
           >
-            {showArchived ? "← Active sites" : "Show archived"}
+            {showArchived ? "← Active locations" : "Show archived"}
           </Link>
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {sites.map((s) => (
-          <Card key={s.id} className={s.archivedAt ? "opacity-70" : undefined}>
+        {locations.map((l) => (
+          <Card key={l.id} className={l.archivedAt ? "opacity-70" : undefined}>
             <CardHeader>
               <CardTitle className="text-base">
-                <Link href={`/sites/${s.id}`} className="hover:underline">
-                  {s.name}
+                <Link href={`/locations/${l.id}`} className="hover:underline">
+                  {l.name}
                 </Link>
-                {s.archivedAt ? (
+                {l.archivedAt ? (
                   <Badge variant="outline" className="ml-2 align-middle">
                     archived
+                  </Badge>
+                ) : null}
+                {l.hostSite ? (
+                  <Badge variant="secondary" className="ml-2 align-middle">
+                    Host site
                   </Badge>
                 ) : null}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              {s.region ? <p>{s.region}</p> : null}
+              {l.region ? <p>{l.region}</p> : null}
               <div className="flex flex-wrap gap-1.5">
-                {s.tripTypes.map((t) => (
+                {l.tripTypes.map((t) => (
                   <Badge key={t.id} variant="secondary">
                     {t.name}
                   </Badge>
@@ -124,9 +132,9 @@ export default async function SitesPage({
             </CardContent>
           </Card>
         ))}
-        {sites.length === 0 ? (
+        {locations.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {showArchived ? "No archived sites." : "No sites yet."}
+            {showArchived ? "No archived locations." : "No locations yet."}
           </p>
         ) : null}
       </div>
