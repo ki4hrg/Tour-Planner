@@ -14,10 +14,16 @@ export const dynamic = "force-dynamic";
 
 export default async function NewLocationPage() {
   await requireRole("PLANNER");
-  const tripTypes = await prisma.tripType.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
+  const [tripTypes, regions] = await Promise.all([
+    prisma.tripType.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.region.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, parentId: true },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -39,6 +45,7 @@ export default async function NewLocationPage() {
             action={createLocation}
             submitLabel="Create location"
             tripTypes={tripTypes}
+            regions={regions}
           />
         </CardContent>
       </Card>

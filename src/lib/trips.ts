@@ -51,7 +51,7 @@ export type SerializedItemLocation = {
   id: string;
   locationId: string;
   order: number;
-  location: { id: string; name: string; region: string | null };
+  location: { id: string; name: string };
 };
 
 export type SerializedPerson = { id: string; name: string };
@@ -93,6 +93,61 @@ export type SerializedScheduleItem = {
   bookings: SerializedBooking[];
 };
 
+// The primary heading shown for a schedule item. The venue leads everywhere: a
+// linked location is the heading, with the talk/title rendered beneath it — so
+// locations render consistently whatever the item's kind. Precedence:
+//   1. an explicit title override on the item (the override label wins),
+//   2. the lone visited location's name,
+//   3. a block / multi-location fallback,
+//   4. the linked talk's title (site-less talks read by their content),
+//   5. "Untitled item".
+// `locationIsPrimary` is true only when a single bare location IS the heading, so
+// callers know not to repeat it; `presentationIsPrimary` is true only when the
+// talk title is the heading (a site-less talk), letting callers avoid echoing it.
+export function scheduleItemPrimaryLabel(item: {
+  title: string | null;
+  isBlock: boolean;
+  presentation: { title: string } | null;
+  sites: { location: { name: string } }[];
+}): {
+  primary: string;
+  locationIsPrimary: boolean;
+  presentationIsPrimary: boolean;
+} {
+  if (item.title) {
+    return {
+      primary: item.title,
+      locationIsPrimary: false,
+      presentationIsPrimary: false,
+    };
+  }
+  if (item.sites.length === 1 && !item.isBlock) {
+    return {
+      primary: item.sites[0].location.name,
+      locationIsPrimary: true,
+      presentationIsPrimary: false,
+    };
+  }
+  if (item.sites.length >= 1) {
+    const primary = item.isBlock
+      ? `Choose from ${item.sites.length} location${item.sites.length === 1 ? "" : "s"}`
+      : `${item.sites.length} locations`;
+    return { primary, locationIsPrimary: false, presentationIsPrimary: false };
+  }
+  if (item.presentation) {
+    return {
+      primary: item.presentation.title,
+      locationIsPrimary: false,
+      presentationIsPrimary: true,
+    };
+  }
+  return {
+    primary: "Untitled item",
+    locationIsPrimary: false,
+    presentationIsPrimary: false,
+  };
+}
+
 // The speaker(s) actually shown for an item: the per-occurrence override if set,
 // otherwise the catalogued talk's default speaker(s).
 export function effectivePresenters(item: {
@@ -119,7 +174,7 @@ type ItemLocationRow = {
   id: string;
   locationId: string;
   order: number;
-  location: { id: string; name: string; region: string | null };
+  location: { id: string; name: string };
 };
 
 type BookingRow = Booking & {
@@ -192,7 +247,6 @@ export function serializeScheduleItem(
         location: {
           id: s.location.id,
           name: s.location.name,
-          region: s.location.region,
         },
       })),
     bookings: item.bookings.map(serializeBooking),

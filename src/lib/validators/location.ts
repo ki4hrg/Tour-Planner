@@ -19,7 +19,7 @@ const optionalLeadDays = z.preprocess(
 
 export const locationSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
-  region: z.string().trim().optional(),
+  regionId: z.string().trim().optional(),
   address: z.string().trim().optional(),
   description: z.string().trim().optional(),
   notes: z.string().trim().optional(),

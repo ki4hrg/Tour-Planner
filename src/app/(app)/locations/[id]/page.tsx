@@ -33,6 +33,7 @@ export default async function LocationDetailPage({
     where: { id },
     include: {
       tripTypes: { select: { id: true, name: true } },
+      region: { select: { id: true, name: true, parentId: true } },
       costs: { orderBy: { label: "asc" } },
       contacts: { orderBy: { name: "asc" } },
       hostSite: {
@@ -50,7 +51,7 @@ export default async function LocationDetailPage({
   });
   if (!location) notFound();
 
-  const [allTripTypes, allContacts] = await Promise.all([
+  const [allTripTypes, allContacts, allRegions] = await Promise.all([
     prisma.tripType.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -58,6 +59,10 @@ export default async function LocationDetailPage({
     prisma.contact.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
+    }),
+    prisma.region.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, parentId: true },
     }),
   ]);
 
@@ -101,7 +106,7 @@ export default async function LocationDetailPage({
             view={
               <dl className="grid grid-cols-3 gap-2 text-sm">
                 <dt className="text-muted-foreground">Region</dt>
-                <dd className="col-span-2">{location.region ?? "—"}</dd>
+                <dd className="col-span-2">{location.region?.name ?? "—"}</dd>
                 <dt className="text-muted-foreground">Address</dt>
                 <dd className="col-span-2">{location.address ?? "—"}</dd>
                 <dt className="text-muted-foreground">Trip types</dt>
@@ -150,10 +155,11 @@ export default async function LocationDetailPage({
               action={updateLocation}
               submitLabel="Save changes"
               tripTypes={allTripTypes}
+              regions={allRegions}
               initial={{
                 id: location.id,
                 name: location.name,
-                region: location.region,
+                regionId: location.regionId,
                 address: location.address,
                 description: location.description,
                 notes: location.notes,

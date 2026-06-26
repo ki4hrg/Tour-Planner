@@ -1,21 +1,31 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useEditSection } from "@/components/editable-section";
+import { regionOptions, type RegionNode } from "@/lib/regions";
 import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
+const NO_REGION = "__none__";
+
 export type LocationInitial = {
   id?: string;
   name: string;
-  region: string | null;
+  regionId: string | null;
   address: string | null;
   description: string | null;
   notes: string | null;
@@ -31,17 +41,24 @@ export function LocationForm({
   action,
   submitLabel,
   tripTypes,
+  regions,
   initial,
 }: {
   action: Action;
   submitLabel: string;
   tripTypes: { id: string; name: string }[];
+  regions: RegionNode[];
   initial?: LocationInitial;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
     {},
   );
+
+  // Region posts via a hidden input so "— none —" can clear it (a Select can't
+  // post an empty value cleanly).
+  const [regionId, setRegionId] = useState(initial?.regionId ?? NO_REGION);
+  const options = regionOptions(regions);
 
   const section = useEditSection();
 
@@ -66,13 +83,30 @@ export function LocationForm({
           <Input id="name" name="name" defaultValue={initial?.name} required />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="region">Region</Label>
-          <Input
-            id="region"
-            name="region"
-            placeholder="e.g. Lincolnshire"
-            defaultValue={initial?.region ?? ""}
+          <Label htmlFor="regionId">Region</Label>
+          <input
+            type="hidden"
+            name="regionId"
+            value={regionId === NO_REGION ? "" : regionId}
           />
+          <Select value={regionId} onValueChange={setRegionId}>
+            <SelectTrigger id="regionId" className="w-full">
+              <SelectValue placeholder="— none —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_REGION}>— none —</SelectItem>
+              {options.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {regions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No regions yet — add them in Admin → Regions.
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="address">Address</Label>

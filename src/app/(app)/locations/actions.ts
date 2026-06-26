@@ -12,7 +12,7 @@ import { hostSiteSchema } from "@/lib/validators/hostSite";
 function parseLocation(formData: FormData) {
   return locationSchema.safeParse({
     name: formData.get("name"),
-    region: formData.get("region") || undefined,
+    regionId: formData.get("regionId") || undefined,
     address: formData.get("address") || undefined,
     description: formData.get("description") || undefined,
     notes: formData.get("notes") || undefined,
@@ -28,7 +28,6 @@ function parseLocation(formData: FormData) {
 function toLocationData(d: LocationInput) {
   return {
     name: d.name,
-    region: d.region || null,
     address: d.address || null,
     description: d.description || null,
     notes: d.notes || null,
@@ -51,6 +50,9 @@ export async function createLocation(
   const location = await prisma.location.create({
     data: {
       ...toLocationData(parsed.data),
+      ...(parsed.data.regionId
+        ? { region: { connect: { id: parsed.data.regionId } } }
+        : {}),
       tripTypes: {
         connect: (parsed.data.tripTypeIds ?? []).map((id) => ({ id })),
       },
@@ -76,6 +78,9 @@ export async function updateLocation(
     where: { id },
     data: {
       ...toLocationData(parsed.data),
+      region: parsed.data.regionId
+        ? { connect: { id: parsed.data.regionId } }
+        : { disconnect: true },
       tripTypes: {
         set: (parsed.data.tripTypeIds ?? []).map((tid) => ({ id: tid })),
       },

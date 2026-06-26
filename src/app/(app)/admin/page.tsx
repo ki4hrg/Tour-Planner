@@ -21,6 +21,11 @@ const SECTIONS = [
     desc: "Kinds of itinerary item and the accent colors that tint the route line.",
   },
   {
+    href: "/admin/regions",
+    title: "Regions",
+    desc: "Hierarchical place catalog (e.g. England → London), tagged per trip type.",
+  },
+  {
     href: "/admin/users",
     title: "Users",
     desc: "People with access and their roles (Admin / Planner / Viewer).",

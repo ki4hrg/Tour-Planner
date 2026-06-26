@@ -83,60 +83,50 @@ export function LodgingManager({
   const [adding, setAdding] = useState(false);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-card">
-        <div className="border-b bg-muted/40 px-4 py-2">
-          <span className="font-medium">Lodging</span>
+    <div className="space-y-3">
+      {stays.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No stays yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {stays.map((stay) => (
+            <StayRow
+              key={stay.id}
+              stay={stay}
+              canEdit={canEdit}
+              locations={locations}
+              contacts={contacts}
+            />
+          ))}
         </div>
+      )}
 
-        <div className="px-4 py-3 space-y-3">
-          {stays.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No stays yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {stays.map((stay) => (
-                <StayRow
-                  key={stay.id}
-                  stay={stay}
-                  canEdit={canEdit}
-                  locations={locations}
-                  contacts={contacts}
-                />
-              ))}
-            </div>
-          )}
-
-          {canEdit ? (
-            <div className="border-t pt-3">
-              {adding ? (
-                <div className="rounded-md border border-dashed p-3">
-                  <p className="mb-2 text-sm font-medium">Add a stay</p>
-                  <StayFields
-                    locations={locations}
-                    submitLabel="Add stay"
-                    onSubmit={(data, done) =>
-                      run(() => addStay(tripId, data), () => {
-                        done();
-                        setAdding(false);
-                      })
-                    }
-                    onCancel={() => setAdding(false)}
-                  />
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => setAdding(true)}
-                >
-                  + Add stay
-                </Button>
-              )}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      {canEdit ? (
+        adding ? (
+          <div className="rounded-md border border-dashed p-3">
+            <p className="mb-2 text-sm font-medium">Add a stay</p>
+            <StayFields
+              locations={locations}
+              submitLabel="Add stay"
+              onSubmit={(data, done) =>
+                run(() => addStay(tripId, data), () => {
+                  done();
+                  setAdding(false);
+                })
+              }
+              onCancel={() => setAdding(false)}
+            />
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => setAdding(true)}
+          >
+            + Add stay
+          </Button>
+        )
+      ) : null}
     </div>
   );
 }
@@ -301,27 +291,29 @@ function StayBookingPanel({
 
   const booking = stay.booking;
 
+  // Compact empty state: a single inline row instead of a bordered sub-panel,
+  // so informational stays (the common case) stay tidy.
+  if (!booking && !adding) {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          No booking — informational lodging.
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setAdding(true)}
+        >
+          + Add booking
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">Booking</Label>
-        {!adding && !booking ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setAdding(true)}
-          >
-            + Add booking
-          </Button>
-        ) : null}
-      </div>
-
-      {!booking && !adding ? (
-        <p className="text-xs text-muted-foreground">
-          No booking — leave empty for informational lodging.
-        </p>
-      ) : null}
+      <Label className="text-xs">Booking</Label>
 
       {booking && editingId !== booking.id ? (
         <div className="flex items-center justify-between gap-2 rounded border px-2 py-1.5">

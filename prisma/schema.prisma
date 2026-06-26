@@ -65,13 +65,32 @@ model TripType {
   color           String?
   defaultCurrency String     @default("USD")
   locations       Location[] // implicit m2m (tags)
+  regions         Region[]   @relation("RegionTripTypes") // regions this type plans in
   trips           Trip[]
+}
+
+// Admin-managed, hierarchical place catalog (e.g. England → London). A region can
+// apply to several trip types, and a Location belongs to at most one region.
+model Region {
+  id        String     @id @default(cuid())
+  name      String
+  parent    Region?    @relation("RegionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  parentId  String?
+  children  Region[]   @relation("RegionTree")
+  tripTypes TripType[] @relation("RegionTripTypes")
+  locations Location[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([parentId, name])
+  @@index([parentId])
 }
 
 model Location {
   id                   String             @id @default(cuid())
   name                 String
-  region               String?
+  region               Region?            @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  regionId             String?
   address              String?
   description          String? // itinerary-facing (shown on shared itineraries)
   notes                String? // internal planning scratch (staff-only)
@@ -90,6 +109,8 @@ model Location {
   stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+
+  @@index([regionId])
 }
 
 model Contact {
