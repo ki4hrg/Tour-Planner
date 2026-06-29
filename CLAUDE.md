@@ -99,9 +99,28 @@ npm test                          # vitest
   `/api/{auth,mcp,oauth,well-known}`. The `src/proxy.ts` matcher excludes those + assets.
 - **Data model**: `prisma/schema.prisma` is the source of truth. Key shapes: `Trip` →
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
-  `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block) +
-  `Booking` (targets item XOR stay). `Location` (renamed from `Site`) has a 1:1
-  `HostSite` extension; `Stay` is per-trip lodging; `Region` is a hierarchical catalog.
+  `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).
+  `Location` (renamed from `Site`) has a 1:1 `HostSite` extension; `Stay` is per-trip
+  lodging; `Region` is a hierarchical catalog.
+- **Bookings = venue engagements**: a `Booking` targets **exactly one of** a `(trip,
+  location)` engagement OR a `ScheduleItem` (DB CHECK `num_nonnulls(scheduleItemId,
+  tripId) = 1`, plus `tripId ⇒ locationId`). The engagement is the normal case: ONE
+  booking per `(trip, location)` (`@@unique([tripId, locationId])`) that **auto-covers
+  every schedule item the trip runs at that location, plus any `Stay` there** — so a
+  host site visited across many sessions is one booking, not one per session. Lodging
+  has **no** booking of its own; the `Stay`'s booking state is its venue engagement.
+  The item target is only for **site-less** bookings (a coach, a label-only reservation).
+  `Location.bookable` (default true) marks never-bookable walk-by stops (no booking
+  allowed; hidden from the dashboard's attention filters); `BookingStatus.NOT_NEEDED`
+  is a per-trip "skip this one". Row-building lives in `src/lib/booking-dashboard.ts`
+  (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
+  the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
+  in `src/app/(app)/trips/actions.ts`.
+- **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
+  **exactly one of** Location / Booking / Trip / Stay (DB CHECK
+  `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
+  `Contact`, `contactedOn`, follow-up + `dueDate`, and `createdBy`. Reusable
+  `<NotesThread>` (`src/app/(app)/notes/`); primary surface is the Location page.
 
 ## Database & migrations
 
@@ -117,8 +136,10 @@ prisma migrate diff --from-migrations prisma/migrations \
 ```
 
 Prisma can't model CHECK constraints, so they're invisible to migrate-diff (e.g. the
-`Booking` item-XOR-stay CHECK) — verify those manually. Production applies migrations
-via `migrate deploy` on container boot.
+`Booking` target CHECKs and the `Note` exactly-one-target CHECK) — verify those
+manually. Note a Postgres gotcha for enum changes: `ALTER TYPE … ADD VALUE` must not
+be **used** in the same transaction it's added (keep it in its own migration step).
+Production applies migrations via `migrate deploy` on container boot.
 
 ## Critical gotchas (already solved — do NOT regress)
 
