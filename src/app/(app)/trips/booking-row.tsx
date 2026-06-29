@@ -124,17 +124,16 @@ export function VenueRow({
     .filter(Boolean)
     .join(" · ");
 
+  // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
-    run(
-      () =>
-        upsertVenueBooking(tripId, row.locationId, {
-          status: row.status,
-          label: label.trim() || undefined,
-          bookedContactId: contactId === NONE ? undefined : contactId,
-          confirmationRef: confirmationRef.trim() || undefined,
-          notes: notes.trim() || undefined,
-        }),
-      () => setOpen(false),
+    run(() =>
+      upsertVenueBooking(tripId, row.locationId, {
+        status: row.status,
+        label: label.trim() || undefined,
+        bookedContactId: contactId === NONE ? undefined : contactId,
+        confirmationRef: confirmationRef.trim() || undefined,
+        notes: notes.trim() || undefined,
+      }),
     );
 
   return (
@@ -240,7 +239,9 @@ export function VenueRow({
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Booked with</Label>
+                    <Label className="text-xs">
+                      Contact booked with
+                    </Label>
                     <Select value={contactId} onValueChange={setContactId}>
                       <SelectTrigger size="sm">
                         <SelectValue />

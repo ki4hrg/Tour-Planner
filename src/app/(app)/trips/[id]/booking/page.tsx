@@ -107,8 +107,6 @@ export default async function BookingDashboardPage({
     locations,
   });
 
-  const actionCount = venueRows.filter((r) => r.needsInfo).length;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -126,19 +124,7 @@ export default async function BookingDashboardPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            {actionCount > 0 ? (
-              <span>
-                {actionCount} venue{actionCount === 1 ? "" : "s"} need attention
-                <span className="text-muted-foreground">
-                  {" "}
-                  — window open, missing price, or unconfirmed
-                </span>
-              </span>
-            ) : (
-              "Nothing needs booking right now"
-            )}
-          </CardTitle>
+          <CardTitle className="text-base">Bookings</CardTitle>
         </CardHeader>
         <CardContent>
           <BookingDashboard

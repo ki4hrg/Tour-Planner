@@ -42,6 +42,24 @@ export default async function TripsPage({
     },
   });
 
+  // Trip types with more than one trip can be compared across years.
+  const grouped = await prisma.trip.groupBy({
+    by: ["tripTypeId"],
+    where: { isTemplate: false },
+    _count: { _all: true },
+  });
+  const multiYearIds = grouped
+    .filter((g) => g._count._all > 1)
+    .map((g) => g.tripTypeId);
+  const multiYearTypes =
+    !showTemplates && multiYearIds.length
+      ? await prisma.tripType.findMany({
+          where: { id: { in: multiYearIds } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : [];
+
   const qs = (params: Record<string, string | undefined>) => {
     const sp = new URLSearchParams();
     if (params.status) sp.set("status", params.status);
@@ -103,6 +121,21 @@ export default async function TripsPage({
           </Link>
         </span>
       </div>
+
+      {multiYearTypes.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Compare years</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {multiYearTypes.map((tt) => (
+              <Button key={tt.id} asChild variant="outline" size="sm">
+                <Link href={`/trips/compare?type=${tt.id}`}>{tt.name}</Link>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {trips.map((t) => (

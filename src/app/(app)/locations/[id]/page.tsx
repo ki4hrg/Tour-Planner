@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale } from "@/lib/money";
 import { serializeNote } from "@/lib/notes";
-import { todayUtc, toDateInput } from "@/lib/dates";
+import { todayUtc, toDateInput, formatDate } from "@/lib/dates";
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
@@ -87,6 +87,48 @@ export default async function LocationDetailPage({
     stale: isCostStale(c.confirmedAt),
   }));
 
+  // Visit history: which non-template trips this venue appears in, newest first.
+  const visitRows = await prisma.scheduleItemSite.findMany({
+    where: {
+      locationId: id,
+      scheduleItem: { day: { trip: { isTemplate: false } } },
+    },
+    select: {
+      scheduleItem: {
+        select: {
+          day: {
+            select: {
+              trip: { select: { id: true, name: true, startDate: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  const visitMap = new Map<
+    string,
+    { id: string; name: string; startDate: Date | null; count: number }
+  >();
+  for (const v of visitRows) {
+    const t = v.scheduleItem.day.trip;
+    const existing = visitMap.get(t.id);
+    if (existing) existing.count += 1;
+    else visitMap.set(t.id, { id: t.id, name: t.name, startDate: t.startDate, count: 1 });
+  }
+  const visits = [...visitMap.values()].sort(
+    (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
+  );
+
+  const hostSiteSummary = location.hostSite
+    ? [
+        location.hostSite.providesLodging ? "lodging" : null,
+        location.hostSite.providesMeals ? "meals" : null,
+        location.hostSite.providesMeetingSpace ? "meeting space" : null,
+      ]
+        .filter(Boolean)
+        .join(", ") || "yes"
+    : null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -106,6 +148,9 @@ export default async function LocationDetailPage({
         </Link>
       </div>
 
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        {/* Left column: what this place is */}
+        <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
@@ -154,6 +199,14 @@ export default async function LocationDetailPage({
                     ? `${location.bookingOpensLeadDays} days before`
                     : "—"}
                 </dd>
+                <dt className="text-muted-foreground">Host site</dt>
+                <dd className="col-span-2">
+                  {hostSiteSummary
+                    ? hostSiteSummary === "yes"
+                      ? "Yes"
+                      : `Yes — ${hostSiteSummary}`
+                    : "No"}
+                </dd>
                 <dt className="text-muted-foreground">Notes</dt>
                 <dd className="col-span-2 whitespace-pre-wrap">
                   {location.notes ?? "—"}
@@ -199,6 +252,24 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
+      {location.hostSite || canEdit ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Host site</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <HostSitePanel
+              locationId={location.id}
+              hostSite={location.hostSite}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+        </div>
+
+        {/* Right column: who we talk to & how it's been used */}
+        <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
@@ -234,20 +305,37 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
-      {location.hostSite || canEdit ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Host site</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HostSitePanel
-              locationId={location.id}
-              hostSite={location.hostSite}
-              canEdit={canEdit}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Visit history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {visits.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Not used by any trip yet.
+            </p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {visits.map((v) => (
+                <li
+                  key={v.id}
+                  className="flex items-baseline justify-between gap-2"
+                >
+                  <Link href={`/trips/${v.id}`} className="hover:underline">
+                    {v.name}
+                  </Link>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {v.startDate ? formatDate(v.startDate) : "—"} · {v.count}{" "}
+                    visit{v.count === 1 ? "" : "s"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+        </div>
+      </div>
 
       {canEdit ? (
         <Card>
