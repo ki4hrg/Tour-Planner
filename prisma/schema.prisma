@@ -28,6 +28,7 @@ enum BookingStatus {
   NOT_BOOKED
   REQUESTED
   CONFIRMED
+  NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 
 enum CostUnit {
@@ -97,6 +98,7 @@ model Location {
   notes                String? // internal planning scratch (staff-only)
   website              String?
   mapUrl               String? // optional one-tap "open in maps"
+  bookable             Boolean            @default(true) // false = never booked (walk-by stops); hidden from booking attention
   bookingOpensLeadDays Int? // earliest bookable = startDate - this
   bookingNotes         String?
   scheduleLimitations  String?

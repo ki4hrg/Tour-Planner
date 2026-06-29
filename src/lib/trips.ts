@@ -32,6 +32,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   NOT_BOOKED: "Not booked",
   REQUESTED: "Requested",
   CONFIRMED: "Confirmed",
+  NOT_NEEDED: "Not needed",
 };
 
 export const BOOKING_STATUSES = Object.keys(
@@ -44,6 +45,7 @@ export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
   REQUESTED: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
   CONFIRMED:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  NOT_NEEDED: "bg-muted text-muted-foreground",
 };
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---

@@ -23,6 +23,7 @@ export type VenueBookingRow = {
   kind: "venue";
   locationId: string;
   locationName: string;
+  bookable: boolean; // false = walk-by stop; never booked, no status control
   bookingId: string | null; // null until the engagement is first created
   status: BookingStatus;
   label: string | null;
@@ -89,6 +90,7 @@ type StayInput = { locationId: string; checkIn: Date; checkOut: Date };
 type LocationInput = {
   id: string;
   name: string;
+  bookable: boolean;
   bookingOpensLeadDays: number | null;
   costs: Cost[];
 };
@@ -177,6 +179,7 @@ export function buildDashboardRows(data: DashboardData): {
   for (const [locationId, v] of venues) {
     const loc = locById.get(locationId);
     const eng = engByLoc.get(locationId) ?? null;
+    const bookable = loc?.bookable ?? true;
     const costs = (loc?.costs ?? []).map(serializeCost);
     const isMissingCost =
       (loc?.costs.length ?? 0) === 0 ||
@@ -186,6 +189,8 @@ export function buildDashboardRows(data: DashboardData): {
     const earliest = earliestCoveredDate(v.dates);
     const win = bookingWindow(earliest, loc?.bookingOpensLeadDays ?? null);
     const status: BookingStatus = eng?.status ?? "NOT_BOOKED";
+    // Not-bookable sites and ones deliberately marked "not needed" never need attention.
+    const inPlay = bookable && status !== "NOT_NEEDED";
 
     v.sessions.sort(
       (a, b) =>
@@ -197,6 +202,7 @@ export function buildDashboardRows(data: DashboardData): {
       kind: "venue",
       locationId,
       locationName: loc?.name ?? "Unknown location",
+      bookable,
       bookingId: eng?.id ?? null,
       status,
       label: eng?.label ?? null,
@@ -212,13 +218,15 @@ export function buildDashboardRows(data: DashboardData): {
       daysUntilOpen: win.daysUntilOpen,
       isMissingCost,
       isMissingTime,
-      needsInfo: bookingNeedsInfo({
-        status,
-        windowOpen: win.open,
-        hasRef: Boolean(eng?.confirmationRef),
-        isMissingCost,
-        isMissingTime,
-      }),
+      needsInfo:
+        inPlay &&
+        bookingNeedsInfo({
+          status,
+          windowOpen: win.open,
+          hasRef: Boolean(eng?.confirmationRef),
+          isMissingCost,
+          isMissingTime,
+        }),
     });
   }
 

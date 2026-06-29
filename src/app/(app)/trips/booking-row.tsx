@@ -47,6 +47,8 @@ function useAction() {
 
 // The window cell: when can this be booked (or is it already done).
 function WindowCell({ row }: { row: VenueBookingRow }) {
+  if (!row.bookable || row.status === "NOT_NEEDED")
+    return <span className="text-muted-foreground">—</span>;
   if (row.status === "CONFIRMED")
     return <span className="text-muted-foreground">Booked</span>;
   if (row.earliest == null)
@@ -66,6 +68,8 @@ function WindowCell({ row }: { row: VenueBookingRow }) {
 }
 
 function PriceCell({ row }: { row: VenueBookingRow }) {
+  if (!row.bookable)
+    return <span className="text-muted-foreground">—</span>;
   if (row.costs.length === 0)
     return (
       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
@@ -138,7 +142,12 @@ export function VenueRow({
 
   return (
     <>
-      <TableRow className={cn(row.needsInfo && "bg-amber-50 dark:bg-amber-950/40")}>
+      <TableRow
+        className={cn(
+          row.needsInfo && "bg-amber-50 dark:bg-amber-950/40",
+          !row.bookable && "text-muted-foreground",
+        )}
+      >
         <TableCell>
           <button
             type="button"
@@ -175,11 +184,19 @@ export function VenueRow({
           ) : null}
         </TableCell>
         <TableCell>
-          <StatusControl
-            status={row.status}
-            canEdit={canEdit}
-            onSet={(status) => setVenueBookingStatus(tripId, row.locationId, status)}
-          />
+          {row.bookable ? (
+            <StatusControl
+              status={row.status}
+              canEdit={canEdit}
+              onSet={(status) =>
+                setVenueBookingStatus(tripId, row.locationId, status)
+              }
+            />
+          ) : (
+            <span className="text-xs italic text-muted-foreground">
+              No booking needed
+            </span>
+          )}
         </TableCell>
       </TableRow>
 

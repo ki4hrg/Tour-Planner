@@ -31,6 +31,7 @@ export type LocationInitial = {
   notes: string | null;
   website: string | null;
   mapUrl: string | null;
+  bookable: boolean;
   bookingOpensLeadDays: number | null;
   bookingNotes: string | null;
   scheduleLimitations: string | null;
@@ -160,6 +161,13 @@ export function LocationForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
+          <Checkbox name="bookable" defaultChecked={initial?.bookable ?? true} />
+          Bookable
+          <span className="text-muted-foreground">
+            — uncheck for walk-by stops that never need a reservation
+          </span>
+        </label>
         <div className="space-y-1.5">
           <Label htmlFor="bookingOpensLeadDays">Booking opens (days before)</Label>
           <Input

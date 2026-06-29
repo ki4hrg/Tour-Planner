@@ -543,6 +543,17 @@ export async function addBooking(
 // location plus any stay there — so the booking dashboard upserts by venue rather
 // than per session. `locationId` is the engaged venue (forced from the arg, not the
 // input). Idempotent on (tripId, locationId) via the @@unique.
+// A location flagged not-bookable (a walk-by stop) can never hold a booking.
+async function assertBookable(locationId: string): Promise<string | null> {
+  const loc = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: { bookable: true },
+  });
+  if (!loc) return "Location not found.";
+  if (!loc.bookable) return "This site is marked not bookable.";
+  return null;
+}
+
 export async function upsertVenueBooking(
   tripId: string,
   locationId: string,
@@ -551,6 +562,8 @@ export async function upsertVenueBooking(
   await assertRole("PLANNER");
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  const notBookable = await assertBookable(locationId);
+  if (notBookable) return { error: notBookable };
 
   const scalars = { ...toBookingScalars(parsed.data), locationId };
   await prisma.booking.upsert({
@@ -572,6 +585,8 @@ export async function setVenueBookingStatus(
   status: BookingStatus,
 ): Promise<FormState> {
   await assertRole("PLANNER");
+  const notBookable = await assertBookable(locationId);
+  if (notBookable) return { error: notBookable };
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
     create: { tripId, locationId, status },

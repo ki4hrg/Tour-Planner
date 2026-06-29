@@ -34,6 +34,11 @@ function Cell({
   if (!row) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
+  if (!row.bookable) {
+    return (
+      <span className="text-xs italic text-muted-foreground">No booking</span>
+    );
+  }
   return (
     <div className={cn("space-y-1", row.needsInfo && "rounded p-1")}>
       <StatusControl
@@ -44,7 +49,7 @@ function Cell({
       <div className="text-[11px] text-muted-foreground">
         {row.status === "CONFIRMED"
           ? "Booked"
-          : row.earliest == null
+          : row.status === "NOT_NEEDED" || row.earliest == null
             ? "—"
             : row.open
               ? "Open now"

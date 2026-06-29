@@ -32,6 +32,11 @@ async function main() {
   const cathedral = await location("Salisbury Cathedral");
   const oldSarum = await location("Old Sarum");
   const closeWalk = await location("Cathedral Close");
+  // A walk-by stop on the route that never needs a reservation.
+  await prisma.location.update({
+    where: { id: closeWalk.id },
+    data: { bookable: false },
+  });
 
   // --- Contacts + talks (for items that read by their talk title) ---
   const contact = async (name: string, organization?: string) => {

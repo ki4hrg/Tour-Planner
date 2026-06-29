@@ -27,6 +27,8 @@ const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
 ];
 
 function venueMatches(row: VenueBookingRow, f: Filters): boolean {
+  // Not-bookable sites and ones marked "not needed" are never actionable.
+  if (!row.bookable || row.status === "NOT_NEEDED") return false;
   return (
     (f.windowOpen && row.open && row.status !== "CONFIRMED") ||
     (f.missingPrice && row.isMissingCost) ||
