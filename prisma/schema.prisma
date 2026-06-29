@@ -335,7 +335,7 @@ model OAuthClient {
   clientSecret            String?
   clientName              String?
   redirectUris            String[]
-  grantTypes              String[] @default(["authorization_code"])
+  grantTypes              String[] @default(["authorization_code", "refresh_token"])
   responseTypes           String[] @default(["code"])
   tokenEndpointAuthMethod String   @default("none")
   createdAt               DateTime @default(now())
@@ -355,5 +355,29 @@ model OAuthAuthorizationCode {
   createdAt           DateTime  @default(now())
 
   @@index([code])
+  @@index([expiresAt])
+}
+
+// Long-lived refresh tokens (rotated on every use). Stored hashed (SHA-256); the
+// raw token is shown to the client exactly once. A `familyId` ties together all
+// tokens descended from a single authorization grant: presenting a refresh token
+// that was already rotated (replaced) is treated as theft and revokes the whole
+// family. Access tokens stay stateless JWTs — they embed this row's id as `sid`
+// so the revocation endpoint can kill the session, but the MCP hot path never
+// reads this table.
+model OAuthRefreshToken {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  familyId     String
+  clientId     String
+  userId       String
+  scope        String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  @@index([familyId])
+  @@index([userId])
   @@index([expiresAt])
 }

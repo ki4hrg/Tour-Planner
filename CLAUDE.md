@@ -33,9 +33,18 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### OAuth
 
-- Access tokens: JWTs signed with `AUTH_SECRET` (HS256), audience `tour-planner-mcp`, 1-hour TTL.
+- Access tokens: stateless JWTs signed with `AUTH_SECRET` (HS256), audience `tour-planner-mcp`, **15-minute** TTL.
+  They embed a `sid` claim = the issuing refresh token's id (the session). The MCP hot path verifies the
+  signature only — it never reads the DB.
+- Refresh tokens: opaque (32 random bytes, base64url), stored **hashed** (SHA-256) in `OAuthRefreshToken`, 30-day TTL.
+  Rotated on every use: each `refresh_token` grant mints a new pair and revokes the presented token. A `familyId`
+  groups all tokens descended from one authorization grant; presenting an already-rotated (revoked) token is treated
+  as theft and revokes the whole family.
+- Token revocation at `/api/oauth/revoke` (RFC 7009). Accepts a refresh token or an access token (revokes the
+  session via its `sid`). Always returns 200. Because access tokens are self-contained, a revoked one keeps working
+  until it expires (≤15 min); revocation immediately stops the session from minting new access tokens.
 - Auth codes: single-use, 10-minute TTL, stored in `OAuthAuthorizationCode` table.
-- Dynamic client registration at `/api/oauth/register` (RFC 7591).
+- Dynamic client registration at `/api/oauth/register` (RFC 7591). Default `grantTypes` = `authorization_code`, `refresh_token`.
 - PKCE S256 is mandatory (OAuth 2.1).
 - Scope-to-role mapping: VIEWER → `mcp:read`, PLANNER → `mcp:read mcp:write`, ADMIN → `mcp:read mcp:write mcp:admin`.
 - The authorize endpoint (`/api/oauth/authorize`) renders a minimal HTML login form — not the React app login page.
