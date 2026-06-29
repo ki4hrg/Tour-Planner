@@ -31,6 +31,66 @@ the reply asynchronously) would tear the stream down before the response is sent
 8. Do NOT call `revalidatePath` from MCP tools — that is a Next.js RSC concern.
    MCP mutations write to the DB directly; the web UI revalidates on its own page loads.
 
+### Tool inventory
+
+36 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
+
+**trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
+`create-trip` (P), `update-trip` (P).
+
+**itinerary.ts** — `list-schedule-categories` (V, resolves `categoryId`),
+`get-itinerary` (V, the full day→item→site/booking tree), `add-day` (P),
+`update-day` (P, title + logistical/participant notes), `delete-day` (P, renumbers +
+recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
+`delete-schedule-item` (P, renumbers `order` in a txn).
+
+**bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings),
+`add-booking` (P, upserts the `(trip, location)` engagement; idempotent),
+`update-booking` (P).
+
+**locations.ts** — `search-locations` (V), `get-location` (V, incl. costs + host
+site), `list-regions` (V, resolves `regionId`), `list-trip-types` (V, resolves
+`tripTypeId`), `create-location` (P), `update-location` (P), `set-host-site` (P,
+upserts capability flags or `remove`s host-site status), `add-location-cost` (P),
+`update-location-cost` (P).
+
+**contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P).
+Passing `locationIds` on a write REPLACES the linked-location set.
+
+**presentations.ts** — `list-presentations` (V), `get-presentation` (V, incl. the
+occurrences that deliver it), `create-presentation` (P), `update-presentation` (P).
+Passing `defaultPresenterIds` on a write REPLACES the default-presenter set.
+
+**stays.ts** — `list-stays` (V), `add-stay` (P), `update-stay` (P). Lodging booking
+state lives on the venue-engagement Booking, NOT the Stay — see `list-bookings`.
+
+**notes.ts** — `list-notes` (V), `add-note` (P). Polymorphic `target` ∈
+`location | booking | trip | stay`; `add-note` defaults `contactedOn` to today via
+`todayUtc()`.
+
+### Deliberately NOT exposed over MCP (revisit if needed)
+
+- **Deletes for trip / location / presentation / contact.** Destructive, and the web
+  actions carry archive-vs-hard-delete logic (e.g. `deleteLocation`/`deletePresentation`
+  archive when referenced by a schedule item, hard-delete only when unreferenced;
+  `deleteContact` relies on `SetNull` FKs). Item/day/stay/booking deletes ARE exposed
+  because they're scoped and low-blast-radius. Add the entity-level deletes only with
+  the same archive-fallback behavior, not a bare `prisma.*.delete`.
+- **Region / trip-type / schedule-category / user CREATION + admin ops.** These are
+  ADMIN-managed catalog/config. Only the read side is exposed (`list-regions`,
+  `list-trip-types`, `list-schedule-categories`) so write tools can resolve their IDs.
+  If exposed later, gate with `hasRole(user.role, "ADMIN")`.
+- **ShareLink tools (mint / enable / disable / delete).** Share tokens are unguessable
+  capabilities that expose trip data to outside audiences (PARTICIPANT / HOST_SITE);
+  minting them over MCP widens the blast radius of a leaked token. Revisit only with a
+  clear use case, and mirror the server-side redaction (`redactDaysForShare`).
+- **`update-note` / `delete-note`.** Only create + list are exposed; editing/removing
+  log entries is rare and currently a UI-only concern.
+- **Reordering (`reorderDays`, `reorderScheduleItems`).** Drag-reorder is a UI gesture;
+  MCP callers set `order` implicitly by add/delete (which renumber). Add explicit
+  reorder tools only if an agent needs to resequence without add/delete.
+
 ### OAuth
 
 - Access tokens: stateless JWTs signed with `AUTH_SECRET` (HS256), audience `tour-planner-mcp`, **15-minute** TTL.

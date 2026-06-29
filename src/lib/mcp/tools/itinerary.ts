@@ -6,6 +6,55 @@ import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
+  // ── list-schedule-categories (VIEWER+) ────────────────────────────────
+  server.registerTool(
+    "list-schedule-categories",
+    {
+      title: "List Schedule Categories",
+      description:
+        "List the configurable schedule-item categories (Visit, Presentation, Meal, Travel, Free time, Break…). Returns id, name, color, and whether it's a built-in system category. Use a category id with add-schedule-item / update-schedule-item (categoryId).",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        if (!hasRole(user.role, "VIEWER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const categories = await prisma.scheduleItemCategory.findMany({
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            sortOrder: true,
+            system: true,
+          },
+        });
+
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(categories, null, 2) },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // ── get-itinerary (VIEWER+) ───────────────────────────────────────────
   server.registerTool(
     "get-itinerary",
@@ -325,6 +374,213 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             where: { id: itemId },
             data: updateData,
           });
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, id: itemId }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── update-day (PLANNER+) ─────────────────────────────────────────────
+  server.registerTool(
+    "update-day",
+    {
+      title: "Update Itinerary Day",
+      description:
+        "Update a day's title and notes. logisticalNotes are staff-only (hidden on participant/host-site shares); participantNotes are participant-facing free text. Only include fields you want to change. Use get-itinerary to find the day id. (Day dates are derived from the trip start date and cannot be set directly.)",
+      inputSchema: {
+        dayId: z.string(),
+        title: z.string().optional(),
+        logisticalNotes: z.string().optional(),
+        participantNotes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId, title, logisticalNotes, participantNotes }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const data: Record<string, unknown> = {};
+        if (title !== undefined) data.title = title || null;
+        if (logisticalNotes !== undefined)
+          data.logisticalNotes = logisticalNotes || null;
+        if (participantNotes !== undefined)
+          data.participantNotes = participantNotes || null;
+
+        await prisma.itineraryDay.update({ where: { id: dayId }, data });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, id: dayId }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── delete-day (PLANNER+) ─────────────────────────────────────────────
+  server.registerTool(
+    "delete-day",
+    {
+      title: "Delete Itinerary Day",
+      description:
+        "Delete a day from a trip's itinerary. This also deletes the day's schedule items. Remaining days are renumbered and their dates recomputed. Use get-itinerary to find the day id.",
+      inputSchema: { dayId: z.string() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const day = await prisma.itineraryDay.findUnique({
+          where: { id: dayId },
+          select: { tripId: true, trip: { select: { startDate: true } } },
+        });
+        if (!day) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Day not found" }],
+            isError: true,
+          };
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to items
+          const remaining = await tx.itineraryDay.findMany({
+            where: { tripId: day.tripId },
+            orderBy: { dayIndex: "asc" },
+            select: { id: true },
+          });
+          for (let i = 0; i < remaining.length; i++) {
+            await tx.itineraryDay.update({
+              where: { id: remaining[i].id },
+              data: {
+                dayIndex: i + 1,
+                date: computeDayDate(day.trip.startDate, i + 1),
+              },
+            });
+          }
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, id: dayId }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── delete-schedule-item (PLANNER+) ───────────────────────────────────
+  server.registerTool(
+    "delete-schedule-item",
+    {
+      title: "Delete Schedule Item",
+      description:
+        "Delete a schedule item from a day. Remaining items in that day are renumbered to stay contiguous. Any site-less item booking tied to this item is removed too. Use get-itinerary to find the item id.",
+      inputSchema: { itemId: z.string() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ itemId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const item = await prisma.scheduleItem.findUnique({
+          where: { id: itemId },
+          select: { dayId: true },
+        });
+        if (!item) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Item not found" }],
+            isError: true,
+          };
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.scheduleItem.delete({ where: { id: itemId } });
+          const remaining = await tx.scheduleItem.findMany({
+            where: { dayId: item.dayId },
+            orderBy: { order: "asc" },
+            select: { id: true },
+          });
+          for (let i = 0; i < remaining.length; i++) {
+            await tx.scheduleItem.update({
+              where: { id: remaining[i].id },
+              data: { order: i + 1 },
+            });
+          }
         });
 
         return {
