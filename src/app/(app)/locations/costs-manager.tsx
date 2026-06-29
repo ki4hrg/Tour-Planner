@@ -208,6 +208,8 @@ export function CostsManager({
   defaultCurrency: string;
   canEdit: boolean;
 }) {
+  const [adding, setAdding] = useState(false);
+
   return (
     <div className="space-y-4">
       <div className="divide-y">
@@ -225,15 +227,30 @@ export function CostsManager({
         ) : null}
       </div>
       {canEdit ? (
-        <div className="rounded-md border border-dashed p-3">
-          <p className="mb-2 text-sm font-medium">Add a cost</p>
-          <CostFields
-            action={addCost}
-            locationId={locationId}
-            defaultCurrency={defaultCurrency}
-            submitLabel="Add cost"
-          />
-        </div>
+        adding ? (
+          <div className="rounded-md border border-dashed p-3">
+            <p className="mb-2 text-sm font-medium">Add a cost</p>
+            <CostFields
+              action={addCost}
+              locationId={locationId}
+              defaultCurrency={defaultCurrency}
+              submitLabel="Add cost"
+              onSuccess={() => setAdding(false)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2"
+              onClick={() => setAdding(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            + Add cost
+          </Button>
+        )
       ) : null}
     </div>
   );

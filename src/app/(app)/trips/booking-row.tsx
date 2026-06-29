@@ -239,9 +239,7 @@ export function VenueRow({
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">
-                      Contact booked with
-                    </Label>
+                    <Label className="text-xs">Point of contact</Label>
                     <Select value={contactId} onValueChange={setContactId}>
                       <SelectTrigger size="sm">
                         <SelectValue />
