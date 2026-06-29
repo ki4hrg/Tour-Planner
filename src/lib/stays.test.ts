@@ -4,6 +4,7 @@ import {
   stayTotal,
   rollUpStays,
   lodgingByNight,
+  lodgingForDays,
 } from "./stays";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -79,5 +80,31 @@ describe("lodgingByNight (overlap resolution)", () => {
     const long = { id: "long", checkIn: d("2026-07-06"), checkOut: d("2026-07-12"), priority: 0 };
     const short = { id: "short", checkIn: d("2026-07-08"), checkOut: d("2026-07-09"), priority: 0 };
     expect(lodgingByNight([long, short], [d("2026-07-08")])[0]?.id).toBe("short");
+  });
+});
+
+describe("lodgingForDays", () => {
+  const base = { id: "sarum", checkIn: d("2026-07-06"), checkOut: d("2026-07-08"), priority: 0 };
+
+  it("keys each day's covering stay by the day id", () => {
+    const days = [
+      { id: "day6", date: d("2026-07-06") },
+      { id: "day7", date: d("2026-07-07") },
+      { id: "day8", date: d("2026-07-08") }, // checkout morning — no night
+    ];
+    const out = lodgingForDays(days, [base]);
+    expect(out.get("day6")?.id).toBe("sarum");
+    expect(out.get("day7")?.id).toBe("sarum");
+    expect(out.get("day8")).toBeNull();
+  });
+
+  it("maps dateless days to null without consuming a night slot", () => {
+    const days = [
+      { id: "undated", date: null },
+      { id: "day6", date: d("2026-07-06") },
+    ];
+    const out = lodgingForDays(days, [base]);
+    expect(out.get("undated")).toBeNull();
+    expect(out.get("day6")?.id).toBe("sarum");
   });
 });

@@ -74,3 +74,24 @@ export function lodgingByNight<T extends { checkIn: Date; checkOut: Date; priori
     });
   });
 }
+
+/**
+ * Resolve, per itinerary day, the stay the group sleeps in that night — keyed by
+ * the day's own date and using the same priority rules as `lodgingByNight`. Days
+ * with no date (trip has no startDate) map to null. Lets the itinerary surface
+ * where everyone is staying each night (GH #15).
+ */
+export function lodgingForDays<
+  D extends { id: string; date: Date | null },
+  S extends { checkIn: Date; checkOut: Date; priority?: number },
+>(days: D[], stays: S[]): Map<string, S | null> {
+  const map = new Map<string, S | null>();
+  const dated = days.filter((d): d is D & { date: Date } => d.date != null);
+  const picks = lodgingByNight(
+    stays,
+    dated.map((d) => d.date),
+  );
+  dated.forEach((d, i) => map.set(d.id, picks[i]));
+  for (const d of days) if (!map.has(d.id)) map.set(d.id, null);
+  return map;
+}

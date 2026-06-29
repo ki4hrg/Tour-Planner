@@ -9,6 +9,7 @@ import type {
   TripStatus,
 } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
+import { lodgingForDays } from "@/lib/stays";
 
 export const BOARD_LABELS: Record<BoardType, string> = {
   NONE: "No meals",
@@ -347,6 +348,42 @@ type StayRow = Stay & {
   location: { id: string; name: string };
   booking: BookingRow | null;
 };
+
+// A compact, client-safe summary of the night's lodging for a single day — what
+// the itinerary read views show as the "overnight" line (GH #15).
+export type DayLodgingSummary = {
+  locationName: string;
+  label: string | null;
+  board: BoardType;
+};
+
+type LodgingStayRow = {
+  checkIn: Date;
+  checkOut: Date;
+  priority?: number;
+  board: BoardType;
+  label: string | null;
+  location: { name: string };
+};
+
+/**
+ * Map each day id to a serializable summary of where the group sleeps that
+ * night (or null). Computed from raw Prisma rows (Date-typed), so call it before
+ * serializing days. Pairs with `lodgingForDays` in `lib/stays.ts`.
+ */
+export function summarizeDayLodging(
+  days: { id: string; date: Date | null }[],
+  stays: LodgingStayRow[],
+): Record<string, DayLodgingSummary | null> {
+  const byDay = lodgingForDays(days, stays);
+  const out: Record<string, DayLodgingSummary | null> = {};
+  for (const [id, s] of byDay) {
+    out[id] = s
+      ? { locationName: s.location.name, label: s.label, board: s.board }
+      : null;
+  }
+  return out;
+}
 
 export function serializeStay(stay: StayRow): SerializedStay {
   return {

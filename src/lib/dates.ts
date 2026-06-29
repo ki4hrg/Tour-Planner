@@ -59,6 +59,18 @@ export function isOngoing(
   return startDate.getTime() <= today && today <= end.getTime();
 }
 
+/**
+ * Today at UTC midnight (date-only), matching the `@db.Date` convention. Isolates
+ * `new Date()` in a plain helper so component render stays pure (same pattern as
+ * `isOngoing`). Use to line a real "today" up against day/stay dates.
+ */
+export function todayUtc(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
+
 /** Human-readable date, e.g. "Mon, 6 Jul 2026". Empty string when null. */
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "";

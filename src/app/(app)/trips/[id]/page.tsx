@@ -11,7 +11,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS, serializeStay, serializeDay } from "@/lib/trips";
+import {
+  TRIP_STATUS_LABELS,
+  serializeStay,
+  serializeDay,
+  summarizeDayLodging,
+} from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
@@ -175,6 +180,7 @@ export default async function TripOverviewPage({
             tripId={trip.id}
             canEdit={canEdit}
             days={trip.days.map(serializeDay)}
+            lodgingByDay={summarizeDayLodging(trip.days, stays)}
           />
         </div>
 

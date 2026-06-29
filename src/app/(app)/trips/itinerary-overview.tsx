@@ -17,8 +17,8 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { type SerializedDay } from "@/lib/trips";
-import { TimelineGroups } from "./itinerary-timeline";
+import { type DayLodgingSummary, type SerializedDay } from "@/lib/trips";
+import { OvernightLine, TimelineGroups } from "./itinerary-timeline";
 
 // Distinct location names visited across a day's items, in first-seen order.
 function daySites(day: SerializedDay): string[] {
@@ -50,10 +50,12 @@ export function ItineraryOverview({
   tripId,
   canEdit,
   days,
+  lodgingByDay,
 }: {
   tripId: string;
   canEdit: boolean;
   days: SerializedDay[];
+  lodgingByDay?: Record<string, DayLodgingSummary | null>;
 }) {
   // Default: open the first day so the panel isn't a wall of collapsed rows.
   const [open, setOpen] = useState<Set<string>>(
@@ -81,6 +83,14 @@ export function ItineraryOverview({
               {allOpen ? "Collapse all" : "Expand all"}
             </Button>
           ) : null}
+          {days.length > 0 ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/trips/${tripId}/today`}>Today</Link>
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/trips/${tripId}/print`}>Print</Link>
+          </Button>
           <Button asChild size="sm" variant="outline">
             <Link href={`/trips/${tripId}/booking`}>Booking</Link>
           </Button>
@@ -105,6 +115,7 @@ export function ItineraryOverview({
                 day={day}
                 open={open.has(day.id)}
                 onToggle={() => toggleDay(day.id)}
+                lodging={lodgingByDay?.[day.id] ?? null}
               />
             ))}
           </ol>
@@ -118,10 +129,12 @@ function DayRow({
   day,
   open,
   onToggle,
+  lodging,
 }: {
   day: SerializedDay;
   open: boolean;
   onToggle: () => void;
+  lodging: DayLodgingSummary | null;
 }) {
   const allSites = daySites(day);
   const { head, overflow } = siteRollup(allSites);
@@ -160,12 +173,13 @@ function DayRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           {count === 0 ? (
-            <p className="py-2 pl-6 text-xs text-muted-foreground">
-              Nothing scheduled.
-            </p>
+            <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
+              <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
+              {lodging ? <OvernightLine lodging={lodging} /> : null}
+            </div>
           ) : (
-            <div className="ml-[7px] border-l pt-1 pb-4 pl-4">
-              <TimelineGroups items={day.items} />
+            <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
+              <TimelineGroups items={day.items} lodging={lodging} />
             </div>
           )}
         </CollapsibleContent>

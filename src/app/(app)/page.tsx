@@ -223,7 +223,7 @@ export default async function Home() {
                     </span>
                     {now ? (
                       <Link
-                        href={`/trips/${t.id}/itinerary`}
+                        href={`/trips/${t.id}/today`}
                         className="shrink-0 text-sm text-muted-foreground hover:underline"
                       >
                         Today →
