@@ -101,6 +101,7 @@ export default async function CompareYearsPage({
         select: {
           id: true,
           name: true,
+          bookable: true,
           bookingOpensLeadDays: true,
           costs: true,
         },

@@ -25,6 +25,7 @@ export const locationSchema = z.object({
   notes: z.string().trim().optional(),
   website: optionalUrl,
   mapUrl: optionalUrl,
+  bookable: z.boolean().default(true),
   bookingOpensLeadDays: optionalLeadDays,
   bookingNotes: z.string().trim().optional(),
   scheduleLimitations: z.string().trim().optional(),

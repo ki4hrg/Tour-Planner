@@ -193,6 +193,10 @@ export default async function LocationDetailPage({
                 <dd className="col-span-2">
                   {location.scheduleLimitations ?? "—"}
                 </dd>
+                <dt className="text-muted-foreground">Bookable</dt>
+                <dd className="col-span-2">
+                  {location.bookable ? "Yes" : "No — walk-by stop"}
+                </dd>
                 <dt className="text-muted-foreground">Booking opens</dt>
                 <dd className="col-span-2">
                   {location.bookingOpensLeadDays != null
@@ -228,6 +232,7 @@ export default async function LocationDetailPage({
                 notes: location.notes,
                 website: location.website,
                 mapUrl: location.mapUrl,
+                bookable: location.bookable,
                 bookingOpensLeadDays: location.bookingOpensLeadDays,
                 bookingNotes: location.bookingNotes,
                 scheduleLimitations: location.scheduleLimitations,

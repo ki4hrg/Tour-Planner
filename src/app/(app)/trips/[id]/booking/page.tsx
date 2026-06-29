@@ -89,6 +89,7 @@ export default async function BookingDashboardPage({
         select: {
           id: true,
           name: true,
+          bookable: true,
           bookingOpensLeadDays: true,
           costs: true,
         },
