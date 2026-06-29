@@ -1,9 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
+
+type Tx = Prisma.TransactionClient;
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
   // ── get-itinerary (VIEWER+) ───────────────────────────────────────────
@@ -50,7 +53,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           },
         });
 
-        const serialized = days.map((day) => ({
+        const serialized = days.map((day: (typeof days)[number]) => ({
           ...day,
           date: toDateInput(day.date),
         }));
@@ -270,7 +273,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           updateData.presenters = { set: presenterIds.map((id) => ({ id })) };
         }
 
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: Tx) => {
           if (locationIds !== undefined) {
             await tx.scheduleItemSite.deleteMany({
               where: { scheduleItemId: itemId },
