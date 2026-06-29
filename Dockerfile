@@ -7,7 +7,9 @@ WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 # Schema must be present for the `postinstall: prisma generate` hook.
 COPY prisma ./prisma
-RUN npm ci
+# Cache mount persists npm's tarball cache across builds so a dependency
+# change re-installs only the delta instead of re-downloading everything.
+RUN --mount=type=cache,id=npm,target=/root/.npm npm ci
 
 # --- builder: generate Prisma client + build Next.js (standalone) ---
 FROM node:24-alpine AS builder
@@ -19,7 +21,10 @@ COPY . .
 RUN npx prisma generate
 # SW + manifest are produced here; ensure NODE_ENV=production so Serwist runs.
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# Cache mount persists Next's incremental build cache (.next/cache) across
+# builds. This is the dominant recurring cost — the build re-runs on every
+# code change since `COPY . .` above invalidates the layer.
+RUN --mount=type=cache,id=nextjs,target=/app/.next/cache npm run build
 
 # --- prisma-cli: a lean, self-contained Prisma CLI for boot-time migrations ---
 # Installed into its own tree so it carries ALL of the CLI's transitive deps
@@ -29,7 +34,8 @@ FROM node:24-alpine AS prisma-cli
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /prisma-cli
 COPY package.json .npmrc ./
-RUN PV=$(node -p "(require('./package.json').devDependencies.prisma||'').replace(/[^0-9.]/g,'')") \
+RUN --mount=type=cache,id=npm,target=/root/.npm \
+  PV=$(node -p "(require('./package.json').devDependencies.prisma||'').replace(/[^0-9.]/g,'')") \
   && npm init -y >/dev/null 2>&1 \
   && npm install prisma@"$PV" --no-save --no-audit --no-fund
 COPY prisma ./prisma
