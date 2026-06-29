@@ -270,7 +270,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           updateData.presenters = { set: presenterIds.map((id) => ({ id })) };
         }
 
-        await prisma.$transaction(async (tx: typeof prisma) => {
+        await prisma.$transaction(async (tx) => {
           if (locationIds !== undefined) {
             await tx.scheduleItemSite.deleteMany({
               where: { scheduleItemId: itemId },

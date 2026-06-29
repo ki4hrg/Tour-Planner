@@ -1,4 +1,4 @@
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { getMcpUser } from "@/lib/mcp/auth";
 import { createMcpServer } from "@/lib/mcp/server";
 
@@ -12,16 +12,14 @@ export async function POST(request: Request) {
   }
 
   const server = createMcpServer(user);
-  const transport = new StreamableHTTPServerTransport({
+  const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
 
   await server.connect(transport);
 
   try {
-    const body = await request.json();
-    const result = await transport.handleRequest(request, body);
-    return result;
+    return await transport.handleRequest(request);
   } finally {
     await transport.close();
     await server.close();
