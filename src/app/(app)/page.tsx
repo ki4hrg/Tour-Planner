@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   await requireUser();
 
-  const [activeTrips, itemBookings, stayBookings] = await Promise.all([
+  const [activeTrips, engagementBookings] = await Promise.all([
     // Trips still in play, soonest first (Postgres sorts NULL start dates last).
     prisma.trip.findMany({
       where: {
@@ -37,96 +37,41 @@ export default async function Home() {
         _count: { select: { days: true } },
       },
     }),
-    // Unbooked/requested ITEM bookings — window keyed off the trip start date.
+    // Unbooked/requested venue-engagement bookings. The window is keyed off the
+    // trip start date here (a coarse heads-up); the booking dashboard refines it to
+    // the earliest covered date per venue.
     prisma.booking.findMany({
       where: {
         status: { in: ["NOT_BOOKED", "REQUESTED"] },
+        tripId: { not: null },
         location: { is: { bookingOpensLeadDays: { not: null } } },
-        scheduleItem: {
-          is: {
-            day: {
-              is: { trip: { is: { isTemplate: false, startDate: { not: null } } } },
-            },
-          },
-        },
+        trip: { is: { isTemplate: false, startDate: { not: null } } },
       },
       select: {
         id: true,
         label: true,
         location: { select: { name: true, bookingOpensLeadDays: true } },
-        scheduleItem: {
-          select: {
-            title: true,
-            day: {
-              select: {
-                trip: { select: { id: true, name: true, startDate: true } },
-              },
-            },
-          },
-        },
-      },
-    }),
-    // Unbooked/requested STAY bookings — window keyed off the stay's check-in.
-    prisma.booking.findMany({
-      where: {
-        status: { in: ["NOT_BOOKED", "REQUESTED"] },
-        stay: {
-          is: {
-            location: { is: { bookingOpensLeadDays: { not: null } } },
-            trip: { is: { isTemplate: false } },
-          },
-        },
-      },
-      select: {
-        id: true,
-        label: true,
-        stay: {
-          select: {
-            checkIn: true,
-            label: true,
-            location: { select: { name: true, bookingOpensLeadDays: true } },
-            trip: { select: { id: true, name: true } },
-          },
-        },
+        trip: { select: { id: true, name: true, startDate: true } },
       },
     }),
   ]);
 
-  // Union item + stay bookings into one "windows open" feed.
-  const itemAlerts = itemBookings.map((b) => {
-    const trip = b.scheduleItem!.day.trip;
-    const win = bookingWindow(
-      trip.startDate,
-      b.location?.bookingOpensLeadDays ?? null,
-    );
-    return {
-      id: b.id,
-      locationName:
-        b.label ?? b.location?.name ?? b.scheduleItem!.title ?? "Booking",
-      tripId: trip.id,
-      tripName: trip.name,
-      earliest: win.earliest,
-      open: win.open,
-    };
-  });
-
-  const stayAlerts = stayBookings.map((b) => {
-    const stay = b.stay!;
-    const win = bookingWindow(
-      stay.checkIn,
-      stay.location.bookingOpensLeadDays ?? null,
-    );
-    return {
-      id: b.id,
-      locationName: b.label ?? stay.label ?? `Lodging — ${stay.location.name}`,
-      tripId: stay.trip.id,
-      tripName: stay.trip.name,
-      earliest: win.earliest,
-      open: win.open,
-    };
-  });
-
-  const alerts = [...itemAlerts, ...stayAlerts]
+  const alerts = engagementBookings
+    .map((b) => {
+      const trip = b.trip!;
+      const win = bookingWindow(
+        trip.startDate,
+        b.location?.bookingOpensLeadDays ?? null,
+      );
+      return {
+        id: b.id,
+        locationName: b.label ?? b.location?.name ?? "Booking",
+        tripId: trip.id,
+        tripName: trip.name,
+        earliest: win.earliest,
+        open: win.open,
+      };
+    })
     .filter((a) => a.open)
     .sort((a, b) => (a.earliest?.getTime() ?? 0) - (b.earliest?.getTime() ?? 0))
     .slice(0, 8);

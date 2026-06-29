@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { earliestBookable, windowStatus } from "./booking";
+import {
+  earliestBookable,
+  windowStatus,
+  earliestCoveredDate,
+  bookingNeedsInfo,
+} from "./booking";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -43,5 +48,53 @@ describe("windowStatus", () => {
       open: false,
       daysUntilOpen: 10,
     });
+  });
+});
+
+describe("earliestCoveredDate", () => {
+  it("returns null when nothing has a date", () => {
+    expect(earliestCoveredDate([])).toBeNull();
+    expect(earliestCoveredDate([null, undefined])).toBeNull();
+  });
+  it("returns the minimum, ignoring nulls (e.g. an excursion mid-trip)", () => {
+    const min = earliestCoveredDate([
+      d("2026-07-10"),
+      null,
+      d("2026-07-06"),
+      d("2026-07-08"),
+    ]);
+    expect(min?.toISOString().slice(0, 10)).toBe("2026-07-06");
+  });
+});
+
+describe("bookingNeedsInfo", () => {
+  const base = {
+    status: "NOT_BOOKED" as const,
+    windowOpen: false,
+    hasRef: true,
+    isMissingCost: false,
+    isMissingTime: false,
+  };
+
+  it("flags an open window that is not yet booked", () => {
+    expect(bookingNeedsInfo({ ...base, windowOpen: true })).toBe(true);
+    expect(
+      bookingNeedsInfo({ ...base, status: "REQUESTED", windowOpen: true }),
+    ).toBe(true);
+  });
+  it("flags confirmed bookings missing a reference", () => {
+    expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: false })).toBe(
+      true,
+    );
+    expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: true })).toBe(
+      false,
+    );
+  });
+  it("flags missing price or time regardless of status", () => {
+    expect(bookingNeedsInfo({ ...base, isMissingCost: true })).toBe(true);
+    expect(bookingNeedsInfo({ ...base, isMissingTime: true })).toBe(true);
+  });
+  it("is quiet when everything is in order", () => {
+    expect(bookingNeedsInfo({ ...base, status: "CONFIRMED" })).toBe(false);
   });
 });

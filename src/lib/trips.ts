@@ -60,7 +60,7 @@ export type SerializedPerson = { id: string; name: string };
 export type SerializedBooking = {
   id: string;
   scheduleItemId: string | null;
-  stayId: string | null;
+  tripId: string | null;
   locationId: string | null;
   label: string | null;
   status: BookingStatus;
@@ -250,7 +250,7 @@ export function serializeBooking(b: BookingRow): SerializedBooking {
   return {
     id: b.id,
     scheduleItemId: b.scheduleItemId,
-    stayId: b.stayId,
+    tripId: b.tripId,
     locationId: b.locationId,
     label: b.label,
     status: b.status,
@@ -341,12 +341,13 @@ export type SerializedStay = {
   currency: string;
   priority: number;
   notes: string | null;
+  // The venue-engagement booking covering this stay's location (resolved by the
+  // caller from the trip's engagements), or null. Lodging no longer owns a booking.
   booking: SerializedBooking | null;
 };
 
 type StayRow = Stay & {
   location: { id: string; name: string };
-  booking: BookingRow | null;
 };
 
 // A compact, client-safe summary of the night's lodging for a single day — what
@@ -385,7 +386,12 @@ export function summarizeDayLodging(
   return out;
 }
 
-export function serializeStay(stay: StayRow): SerializedStay {
+export function serializeStay(
+  stay: StayRow,
+  // The venue-engagement booking for this stay's location, if any (looked up by
+  // the caller via `bookingsByLocation`). Lodging no longer carries its own booking.
+  booking: SerializedBooking | null = null,
+): SerializedStay {
   return {
     id: stay.id,
     locationId: stay.locationId,
@@ -405,6 +411,21 @@ export function serializeStay(stay: StayRow): SerializedStay {
     currency: stay.currency,
     priority: stay.priority,
     notes: stay.notes,
-    booking: stay.booking ? serializeBooking(stay.booking) : null,
+    booking,
   };
+}
+
+/**
+ * Index a trip's venue-engagement bookings (tripId + locationId set) by location
+ * id, so an item/stay can resolve the single booking covering its venue. Site-less
+ * item bookings (no locationId) are skipped.
+ */
+export function bookingsByLocation(
+  bookings: SerializedBooking[],
+): Map<string, SerializedBooking> {
+  const map = new Map<string, SerializedBooking>();
+  for (const b of bookings) {
+    if (b.tripId && b.locationId) map.set(b.locationId, b);
+  }
+  return map;
 }

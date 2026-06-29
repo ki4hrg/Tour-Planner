@@ -15,6 +15,8 @@ import {
   TRIP_STATUS_LABELS,
   serializeStay,
   serializeDay,
+  serializeBooking,
+  bookingsByLocation,
   summarizeDayLodging,
 } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
@@ -112,11 +114,18 @@ export default async function TripOverviewPage({
     orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
     include: {
       location: { select: { id: true, name: true } },
-      booking: {
-        include: { bookedContact: { select: { id: true, name: true } } },
-      },
     },
   });
+
+  // Venue-engagement bookings for this trip, indexed by location, so a stay can
+  // reflect the single booking covering its lodging venue.
+  const engagementBookings = await prisma.booking.findMany({
+    where: { tripId: id },
+    include: { bookedContact: { select: { id: true, name: true } } },
+  });
+  const bookingByLocation = bookingsByLocation(
+    engagementBookings.map(serializeBooking),
+  );
   const stayRollups = rollUpStays(
     stays.map((s) => ({
       checkIn: s.checkIn,
@@ -151,10 +160,6 @@ export default async function TripOverviewPage({
     orderBy: { name: "asc" },
     select: { id: true, name: true, region: { select: { name: true } } },
   });
-  const lodgingContacts = await prisma.contact.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
 
   // Share links (PLANNER-managed) + the host sites a HOST_SITE link can target.
   const shareLinks = canEdit
@@ -182,12 +187,19 @@ export default async function TripOverviewPage({
           <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
           {trip.isTemplate ? <Badge variant="outline">template</Badge> : null}
         </h1>
-        <Link
-          href="/trips"
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← All trips
-        </Link>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          {!trip.isTemplate ? (
+            <Link
+              href={`/trips/compare?type=${trip.tripTypeId}`}
+              className="hover:underline"
+            >
+              Compare years
+            </Link>
+          ) : null}
+          <Link href="/trips" className="hover:underline">
+            ← All trips
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -353,8 +365,9 @@ export default async function TripOverviewPage({
                   name: l.name,
                   region: l.region?.name ?? null,
                 }))}
-                contacts={lodgingContacts}
-                stays={stays.map(serializeStay)}
+                stays={stays.map((s) =>
+                  serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
+                )}
               />
             </CardContent>
           </Card>

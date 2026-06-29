@@ -56,6 +56,7 @@ model User {
   role         Role     @default(PLANNER)
   createdAt    DateTime @default(now())
   trips        Trip[]   @relation("CreatedTrips")
+  authoredNotes Note[]  @relation("AuthoredNotes")
 }
 
 model TripType {
@@ -108,6 +109,7 @@ model Location {
   hostSite             HostSite? // 1:1 extension; presence ⇒ this location can host/lodge
   stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
   shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
+  siteNotes            Note[]             @relation("LocationNotes") // contact log for this venue
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -126,6 +128,7 @@ model Contact {
   bookings             Booking[]      @relation("BookedBy") // venue contact a booking was made with
   presentedItems       ScheduleItem[] @relation("Presenting") // occurrences this contact speaks at (override)
   presentationDefaults Presentation[] @relation("PresentationDefaults") // talks they're the usual speaker for
+  noteEntries          Note[] // contact-log entries that reference this person
 }
 
 model Cost {
@@ -157,6 +160,8 @@ model Trip {
   days             ItineraryDay[]
   shareLinks       ShareLink[]
   stays            Stay[]
+  bookings         Booking[] // venue-engagement bookings scoped to this trip
+  notesLog         Note[]         @relation("TripNotes")
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
@@ -228,17 +233,20 @@ model ScheduleItemSite {
   @@index([locationId])
 }
 
-// A booking tracked against a schedule item (and optionally a specific member location).
-// Presence of a Booking is what makes an item "bookable"; none = informational.
-// Targets exactly one of a schedule item or a stay (DB CHECK in the migration).
+// A booking is either a VENUE ENGAGEMENT — one arrangement with a (trip, location)
+// that auto-covers every schedule item in the trip visiting that location plus any
+// Stay there — or a SITE-LESS item booking (coach/transport) tied to one schedule
+// item via `label`. Targets exactly one of a schedule item or a trip+location
+// (DB CHECKs in the migration: num_nonnulls(scheduleItemId, tripId)=1, and
+// tripId ⇒ locationId). One engagement per (trip, location) — see @@unique below.
 model Booking {
   id              String        @id @default(cuid())
   scheduleItem    ScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
-  scheduleItemId  String?
-  stay            Stay?         @relation(fields: [stayId], references: [id], onDelete: Cascade)
-  stayId          String?       @unique
-  location        Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  locationId      String? // which member location this booking is for (null = the item as a whole)
+  scheduleItemId  String? // set for a site-less / single-session item booking
+  trip            Trip?         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId          String? // set for a venue-engagement booking (with locationId)
+  location        Location?     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId      String? // the engaged venue (required when tripId is set)
   label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
   status          BookingStatus @default(NOT_BOOKED)
   bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
@@ -248,8 +256,53 @@ model Booking {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  @@unique([tripId, locationId]) // one engagement per venue per trip (NULL tripId rows are distinct)
   @@index([scheduleItemId])
+  @@index([tripId])
   @@index([locationId])
+  notesLog        Note[]        @relation("BookingNotes")
+}
+
+enum NoteMethod {
+  CALL
+  EMAIL
+  IN_PERSON
+  OTHER
+}
+
+// A structured contact-log entry — tracks a conversation/contact while arranging a
+// trip. Polymorphic: attaches to exactly one of a Location, Booking, Trip, or Stay
+// (DB CHECK: num_nonnulls(...) = 1). Generalizable beyond bookings.
+model Note {
+  id          String     @id @default(cuid())
+  body        String
+  method      NoteMethod @default(OTHER)
+  contact     Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contactId   String? // the person spoken to, if a catalogued contact
+  contactedOn DateTime   @db.Date // when the contact happened (may differ from createdAt)
+  followUp    Boolean    @default(false)
+  dueDate     DateTime?  @db.Date // optional follow-up deadline
+
+  location   Location? @relation("LocationNotes", fields: [locationId], references: [id], onDelete: Cascade)
+  locationId String?
+  booking    Booking?  @relation("BookingNotes", fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  String?
+  trip       Trip?     @relation("TripNotes", fields: [tripId], references: [id], onDelete: Cascade)
+  tripId     String?
+  stay       Stay?     @relation("StayNotes", fields: [stayId], references: [id], onDelete: Cascade)
+  stayId     String?
+
+  createdBy   User     @relation("AuthoredNotes", fields: [createdById], references: [id], onDelete: Restrict)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([bookingId])
+  @@index([tripId])
+  @@index([stayId])
+  @@index([contactId])
+  @@index([createdById])
 }
 
 model ShareLink {
@@ -325,9 +378,10 @@ model Stay {
   currency              String    @default("USD")
   priority              Int       @default(0) // higher wins for "tonight's bed" when stays overlap (base=0, excursion>0)
   notes                 String?
-  booking               Booking? // via Booking.stayId
+  notesLog              Note[]    @relation("StayNotes")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+  // Lodging booking state lives on the venue engagement Booking(tripId, locationId).
 
   @@index([tripId])
   @@index([locationId])

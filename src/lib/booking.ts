@@ -1,3 +1,4 @@
+import type { BookingStatus } from "@prisma/client";
 import { addDays } from "./dates";
 
 // Booking timing for v1 models only WHEN booking opens (earliest-bookable),
@@ -57,4 +58,38 @@ export function bookingWindow(
   const earliest = earliestBookable(startDate, leadDays);
   const { open, daysUntilOpen } = windowStatus(earliest, utcToday(new Date()));
   return { earliest, open, daysUntilOpen };
+}
+
+/**
+ * The earliest date a venue engagement is in use — the min over its covered
+ * schedule-item day dates and stay check-ins. The booking window keys off this
+ * (not trip start) so a mid-trip excursion opens relative to the excursion, not
+ * arrival. Returns null when nothing covered has a date.
+ */
+export function earliestCoveredDate(dates: (Date | null | undefined)[]): Date | null {
+  let min: Date | null = null;
+  for (const d of dates) {
+    if (!d) continue;
+    if (min === null || d.getTime() < min.getTime()) min = d;
+  }
+  return min;
+}
+
+/**
+ * Whether a booking row needs the planner's attention — surfaced on the dashboard.
+ * Pure (caller passes the already-computed window state), keeping render free of
+ * Date.now(). "Needs info" = the window is open and the booking isn't done, OR it's
+ * marked confirmed but missing a reference, OR the venue is missing price/time.
+ */
+export function bookingNeedsInfo(args: {
+  status: BookingStatus;
+  windowOpen: boolean;
+  hasRef: boolean;
+  isMissingCost: boolean;
+  isMissingTime: boolean;
+}): boolean {
+  const { status, windowOpen, hasRef, isMissingCost, isMissingTime } = args;
+  if (windowOpen && (status === "NOT_BOOKED" || status === "REQUESTED")) return true;
+  if (status === "CONFIRMED" && !hasRef) return true;
+  return isMissingCost || isMissingTime;
 }
