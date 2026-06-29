@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { TripStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
@@ -150,7 +151,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           data: {
             name,
             tripTypeId,
-            status: (status as any) || "PLANNING",
+            status: (status as TripStatus) || "PLANNING",
             startDate: parseDateInput(startDate),
             endDate: parseDateInput(endDate),
             capacity,

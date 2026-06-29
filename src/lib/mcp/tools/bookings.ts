@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { BookingStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
@@ -25,7 +26,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const itemBookings = await prisma.booking.findMany({
           where: {
             scheduleItem: { day: { tripId } },
-            ...(status ? { status: status as any } : {}),
+            ...(status ? { status: status as BookingStatus } : {}),
           },
           include: {
             scheduleItem: {
@@ -42,7 +43,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const stayBookings = await prisma.booking.findMany({
           where: {
             stay: { tripId },
-            ...(status ? { status: status as any } : {}),
+            ...(status ? { status: status as BookingStatus } : {}),
           },
           include: {
             stay: {
@@ -142,7 +143,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             stayId: stayId || null,
             locationId: locationId || null,
             label: label || null,
-            status: status as any,
+            status: status as BookingStatus,
             bookedContactId: bookedContactId || null,
             confirmationRef: confirmationRef || null,
             notes: notes || null,
@@ -182,7 +183,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         }
 
         const data: Record<string, unknown> = {};
-        if (status !== undefined) data.status = status as any;
+        if (status !== undefined) data.status = status as BookingStatus;
         if (bookedContactId !== undefined) data.bookedContactId = bookedContactId;
         if (confirmationRef !== undefined) data.confirmationRef = confirmationRef;
         if (notes !== undefined) data.notes = notes;

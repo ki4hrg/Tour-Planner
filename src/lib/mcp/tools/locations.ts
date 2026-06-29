@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 
-export function registerLocationTools(server: McpServer, user: SessionUser) {
+export function registerLocationTools(server: McpServer, _user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
   server.tool(
     "search-locations",
