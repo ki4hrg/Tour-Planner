@@ -7,6 +7,7 @@ import type {
   TripStatus,
   BookingStatus,
   BoardType,
+  ShareAudience,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
@@ -740,4 +741,89 @@ export async function deleteStay(stayId: string): Promise<FormState> {
   await prisma.stay.delete({ where: { id: stayId } }); // cascades to its booking
   revalidateTrip(tripId);
   return { ok: true, message: "Stay removed." };
+}
+
+// --- Share links (public audience-scoped itinerary URLs) ---
+
+const SHARE_AUDIENCE_SET = new Set<ShareAudience>([
+  "STAFF",
+  "PARTICIPANT",
+  "HOST_SITE",
+]);
+
+export async function createShareLink(input: {
+  tripId: string;
+  audience: ShareAudience;
+  label?: string | null;
+  locationId?: string | null;
+  expiresAt?: string | null; // "yyyy-mm-dd"
+}): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!input.tripId) return { error: "Missing trip." };
+  if (!SHARE_AUDIENCE_SET.has(input.audience)) {
+    return { error: "Unknown audience." };
+  }
+
+  const trip = await prisma.trip.findUnique({
+    where: { id: input.tripId },
+    select: { id: true },
+  });
+  if (!trip) return { error: "Trip not found." };
+
+  // A host-site link must target a host site; other audiences span the trip.
+  let locationId: string | null = null;
+  if (input.audience === "HOST_SITE") {
+    if (!input.locationId) {
+      return { error: "Pick a host site for a host-site link." };
+    }
+    const host = await prisma.location.findFirst({
+      where: { id: input.locationId, hostSite: { isNot: null } },
+      select: { id: true },
+    });
+    if (!host) return { error: "That location isn't a host site." };
+    locationId = host.id;
+  }
+
+  const expiresAt = parseDateInput(input.expiresAt ?? undefined);
+
+  await prisma.shareLink.create({
+    data: {
+      tripId: input.tripId,
+      audience: input.audience,
+      label: input.label?.trim() || null,
+      locationId,
+      expiresAt,
+    },
+  });
+  revalidateTrip(input.tripId);
+  return { ok: true, message: "Share link created." };
+}
+
+export async function setShareLinkEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const link = await prisma.shareLink.findUnique({
+    where: { id },
+    select: { tripId: true },
+  });
+  if (!link) return { error: "Link not found." };
+
+  await prisma.shareLink.update({ where: { id }, data: { enabled } });
+  revalidateTrip(link.tripId);
+  return { ok: true, message: enabled ? "Link enabled." : "Link disabled." };
+}
+
+export async function deleteShareLink(id: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const link = await prisma.shareLink.findUnique({
+    where: { id },
+    select: { tripId: true },
+  });
+  if (!link) return { error: "Link not found." };
+
+  await prisma.shareLink.delete({ where: { id } });
+  revalidateTrip(link.tripId);
+  return { ok: true, message: "Link deleted." };
 }

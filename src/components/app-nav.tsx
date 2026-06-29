@@ -29,7 +29,7 @@ export function AppNav({
   const links = LINKS.filter((l) => !l.adminOnly || user.role === "ADMIN");
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur print:hidden">
       <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-2">
         <Link href="/" className="mr-2 font-semibold">
           Tour&nbsp;Planner

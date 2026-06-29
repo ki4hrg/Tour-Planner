@@ -1,12 +1,15 @@
 "use client";
 
+import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  BOARD_LABELS,
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_CLASSES,
   effectivePresenters,
   groupItemsByVenue,
   scheduleItemPrimaryLabel,
+  type DayLodgingSummary,
   type SerializedScheduleItem,
   type SerializedBooking,
   type VenueRun,
@@ -18,9 +21,11 @@ import {
 export function TimelineGroups({
   items,
   showBookings = false,
+  lodging,
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
+  lodging?: DayLodgingSummary | null;
 }) {
   const runs = groupItemsByVenue(items);
   return (
@@ -39,6 +44,26 @@ export function TimelineGroups({
           </ul>
         </div>
       ))}
+      {lodging ? <OvernightLine lodging={lodging} /> : null}
+    </div>
+  );
+}
+
+// Where the group sleeps that night — surfaced inline in the itinerary so the
+// overnight venue reads as part of the day, not just the Lodging panel (GH #15).
+export function OvernightLine({ lodging }: { lodging: DayLodgingSummary }) {
+  const board = lodging.board !== "NONE" ? BOARD_LABELS[lodging.board] : null;
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Moon className="size-3.5 shrink-0" />
+      <span>
+        Overnight ·{" "}
+        <span className="font-medium text-foreground">
+          {lodging.label ?? lodging.locationName}
+        </span>
+        {lodging.label ? ` (${lodging.locationName})` : ""}
+        {board ? ` · ${board}` : ""}
+      </span>
     </div>
   );
 }

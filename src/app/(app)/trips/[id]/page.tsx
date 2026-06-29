@@ -10,8 +10,13 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS, serializeStay, serializeDay } from "@/lib/trips";
+import { formatDate, toDateInput } from "@/lib/dates";
+import {
+  TRIP_STATUS_LABELS,
+  serializeStay,
+  serializeDay,
+  summarizeDayLodging,
+} from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
@@ -19,6 +24,7 @@ import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
+import { ShareManager } from "../share-manager";
 import { updateTrip, deleteTrip, saveTripAsTemplate } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -150,6 +156,22 @@ export default async function TripOverviewPage({
     select: { id: true, name: true },
   });
 
+  // Share links (PLANNER-managed) + the host sites a HOST_SITE link can target.
+  const shareLinks = canEdit
+    ? await prisma.shareLink.findMany({
+        where: { tripId: id },
+        orderBy: { createdAt: "desc" },
+        include: { location: { select: { name: true } } },
+      })
+    : [];
+  const hostSites = canEdit
+    ? await prisma.location.findMany({
+        where: { archivedAt: null, hostSite: { isNot: null } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
+
   return (
     // This is the most information-dense screen, so let it grow past the shared
     // max-w-5xl into the surrounding whitespace once there's room (xl/2xl).
@@ -175,6 +197,7 @@ export default async function TripOverviewPage({
             tripId={trip.id}
             canEdit={canEdit}
             days={trip.days.map(serializeDay)}
+            lodgingByDay={summarizeDayLodging(trip.days, stays)}
           />
         </div>
 
@@ -335,6 +358,30 @@ export default async function TripOverviewPage({
               />
             </CardContent>
           </Card>
+
+          {canEdit ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Share links</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ShareManager
+                  tripId={trip.id}
+                  canEdit={canEdit}
+                  hostSites={hostSites}
+                  links={shareLinks.map((l) => ({
+                    id: l.id,
+                    token: l.token,
+                    audience: l.audience,
+                    label: l.label,
+                    locationName: l.location?.name ?? null,
+                    enabled: l.enabled,
+                    expiresAt: l.expiresAt ? toDateInput(l.expiresAt) : null,
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
 
           {canEdit ? (
             <Card>

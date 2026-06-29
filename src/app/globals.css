@@ -148,3 +148,19 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Print: drop the limewash page tint for plain paper, keep category-chip colours
+   (browsers strip backgrounds otherwise), and let day sections break cleanly. */
+@media print {
+  :root {
+    --background: #ffffff;
+    --card: #ffffff;
+  }
+  body {
+    background: #ffffff;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
