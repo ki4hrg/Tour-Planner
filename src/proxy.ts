@@ -37,7 +37,12 @@ export const config = {
   // Run on app routes, but skip Next internals, auth API, the public share
   // pages, and static PWA assets. Fine-grained write gating happens in the
   // server actions themselves.
+  //
+  // `.well-known` must be excluded here too: middleware runs BEFORE the
+  // next.config rewrites that map `/.well-known/oauth-*` to `/api/well-known/*`,
+  // so it sees the public source path. Without this, OAuth discovery would be
+  // redirected to /login and MCP clients could never authenticate.
   matcher: [
-    "/((?!api/auth|api/mcp|api/oauth|api/well-known|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
+    "/((?!api/auth|api/mcp|api/oauth|api/well-known|\\.well-known|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
   ],
 };
