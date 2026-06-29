@@ -8,13 +8,18 @@ import { toDateInput, parseDateInput } from "@/lib/dates";
 
 export function registerTripTools(server: McpServer, user: SessionUser) {
   // ── list-trips (VIEWER+) ──────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "list-trips",
-    "List all trips, optionally filtered by status (PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED) or trip type. Returns trip name, dates, status, type, and participant count.",
     {
-      status: z.string().optional(),
-      tripTypeId: z.string().optional(),
-      includeTemplates: z.boolean().optional(),
+      title: "List Trips",
+      description:
+        "List all trips, optionally filtered by status (PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED) or trip type. Returns trip name, dates, status, type, and participant count.",
+      inputSchema: {
+        status: z.string().optional(),
+        tripTypeId: z.string().optional(),
+        includeTemplates: z.boolean().optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ status, tripTypeId, includeTemplates }) => {
       try {
@@ -45,7 +50,9 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -57,10 +64,15 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
   );
 
   // ── get-trip (VIEWER+) ────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "get-trip",
-    "Get full details of a specific trip including day count, stay count, and booking status summary (counts of NOT_BOOKED, REQUESTED, CONFIRMED across all items). Use list-trips first to find the trip ID.",
-    { tripId: z.string() },
+    {
+      title: "Get Trip Details",
+      description:
+        "Get full details of a specific trip including day count, stay count, and booking status summary (counts of NOT_BOOKED, REQUESTED, CONFIRMED across all items). Use list-trips first to find the trip ID.",
+      inputSchema: { tripId: z.string() },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
     async ({ tripId }) => {
       try {
         const trip = await prisma.trip.findUnique({
@@ -81,10 +93,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         const bookingCounts = await prisma.booking.groupBy({
           by: ["status"],
           where: {
-            OR: [
-              { scheduleItem: { day: { tripId } } },
-              { stay: { tripId } },
-            ],
+            OR: [{ scheduleItem: { day: { tripId } } }, { stay: { tripId } }],
           },
           _count: true,
         });
@@ -113,7 +122,9 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         };
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -125,23 +136,47 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
   );
 
   // ── create-trip (PLANNER+) ────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "create-trip",
-    "Create a new trip. Requires a name and tripTypeId. Status defaults to PLANNING. Dates (YYYY-MM-DD), capacity, and participant count are optional. Use list-trip-types to find available type IDs.",
     {
-      name: z.string(),
-      tripTypeId: z.string(),
-      status: z.string().optional(),
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-      capacity: z.number().optional(),
-      participantCount: z.number().optional(),
-      notes: z.string().optional(),
+      title: "Create Trip",
+      description:
+        "Create a new trip. Requires a name and tripTypeId. Status defaults to PLANNING. Dates (YYYY-MM-DD), capacity, and participant count are optional. Use list-trip-types to find available type IDs.",
+      inputSchema: {
+        name: z.string(),
+        tripTypeId: z.string(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        capacity: z.number().optional(),
+        participantCount: z.number().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
-    async ({ name, tripTypeId, status, startDate, endDate, capacity, participantCount, notes }) => {
+    async ({
+      name,
+      tripTypeId,
+      status,
+      startDate,
+      endDate,
+      capacity,
+      participantCount,
+      notes,
+    }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
-          content: [{ type: "text" as const, text: "Error: Requires PLANNER role or above" }],
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
           isError: true,
         };
       }
@@ -162,7 +197,9 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(trip, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(trip, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -174,23 +211,47 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
   );
 
   // ── update-trip (PLANNER+) ────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "update-trip",
-    "Update an existing trip's details. Only include fields you want to change. Valid statuses: PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED.",
     {
-      tripId: z.string(),
-      name: z.string().optional(),
-      status: z.string().optional(),
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-      capacity: z.number().optional(),
-      participantCount: z.number().optional(),
-      notes: z.string().optional(),
+      title: "Update Trip",
+      description:
+        "Update an existing trip's details. Only include fields you want to change. Valid statuses: PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED.",
+      inputSchema: {
+        tripId: z.string(),
+        name: z.string().optional(),
+        status: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        capacity: z.number().optional(),
+        participantCount: z.number().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    async ({ tripId, name, status, startDate, endDate, capacity, participantCount, notes }) => {
+    async ({
+      tripId,
+      name,
+      status,
+      startDate,
+      endDate,
+      capacity,
+      participantCount,
+      notes,
+    }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
-          content: [{ type: "text" as const, text: "Error: Requires PLANNER role or above" }],
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
           isError: true,
         };
       }
@@ -203,7 +264,8 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         if (startDate !== undefined) data.startDate = parseDateInput(startDate);
         if (endDate !== undefined) data.endDate = parseDateInput(endDate);
         if (capacity !== undefined) data.capacity = capacity;
-        if (participantCount !== undefined) data.participantCount = participantCount;
+        if (participantCount !== undefined)
+          data.participantCount = participantCount;
         if (notes !== undefined) data.notes = notes;
 
         const trip = await prisma.trip.update({
@@ -212,7 +274,9 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(trip, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(trip, null, 2) },
+          ],
         };
       } catch (err) {
         return {

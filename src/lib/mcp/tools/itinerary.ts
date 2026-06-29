@@ -7,10 +7,15 @@ import { toDateInput, computeDayDate } from "@/lib/dates";
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
   // ── get-itinerary (VIEWER+) ───────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "get-itinerary",
-    "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. This is the most detailed view of a trip's plan.",
-    { tripId: z.string() },
+    {
+      title: "Get Itinerary",
+      description:
+        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. This is the most detailed view of a trip's plan.",
+      inputSchema: { tripId: z.string() },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
     async ({ tripId }) => {
       try {
         if (!hasRole(user.role, "VIEWER")) {
@@ -57,7 +62,10 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
 
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify(serialized, null, 2) },
+            {
+              type: "text" as const,
+              text: JSON.stringify(serialized, null, 2),
+            },
           ],
         };
       } catch (error) {
@@ -75,10 +83,20 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
   );
 
   // ── add-day (PLANNER+) ────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "add-day",
-    "Add a new day to a trip's itinerary. The day is appended at the end with the next sequential day number. Its date is automatically computed from the trip's start date.",
-    { tripId: z.string(), title: z.string().optional() },
+    {
+      title: "Add Itinerary Day",
+      description:
+        "Add a new day to a trip's itinerary. The day is appended at the end with the next sequential day number. Its date is automatically computed from the trip's start date.",
+      inputSchema: { tripId: z.string(), title: z.string().optional() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
     async ({ tripId, title }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -137,20 +155,30 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
   );
 
   // ── add-schedule-item (PLANNER+) ──────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "add-schedule-item",
-    "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Travel', 'Free time' can be set via categoryId.",
     {
-      dayId: z.string(),
-      title: z.string().optional(),
-      categoryId: z.string().optional(),
-      startTime: z.string().optional(),
-      endTime: z.string().optional(),
-      notes: z.string().optional(),
-      locationIds: z.array(z.string()).optional(),
-      presentationId: z.string().optional(),
-      presenterIds: z.array(z.string()).optional(),
-      isBlock: z.boolean().optional(),
+      title: "Add Schedule Item",
+      description:
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Travel', 'Free time' can be set via categoryId.",
+      inputSchema: {
+        dayId: z.string(),
+        title: z.string().optional(),
+        categoryId: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        notes: z.string().optional(),
+        locationIds: z.array(z.string()).optional(),
+        presentationId: z.string().optional(),
+        presenterIds: z.array(z.string()).optional(),
+        isBlock: z.boolean().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({
       dayId,
@@ -202,11 +230,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
-                { id: item.id, order: item.order },
-                null,
-                2,
-              ),
+              text: JSON.stringify({ id: item.id, order: item.order }, null, 2),
             },
           ],
         };
@@ -225,19 +249,29 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
   );
 
   // ── update-schedule-item (PLANNER+) ───────────────────────────────────
-  server.tool(
+  server.registerTool(
     "update-schedule-item",
-    "Update a schedule item's title, times, locations, category, or notes. Only include fields you want to change. Use get-itinerary to find item IDs.",
     {
-      itemId: z.string(),
-      title: z.string().optional(),
-      categoryId: z.string().optional(),
-      startTime: z.string().optional(),
-      endTime: z.string().optional(),
-      notes: z.string().optional(),
-      locationIds: z.array(z.string()).optional(),
-      presentationId: z.string().optional(),
-      presenterIds: z.array(z.string()).optional(),
+      title: "Update Schedule Item",
+      description:
+        "Update a schedule item's title, times, locations, category, or notes. Only include fields you want to change. Use get-itinerary to find item IDs.",
+      inputSchema: {
+        itemId: z.string(),
+        title: z.string().optional(),
+        categoryId: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        notes: z.string().optional(),
+        locationIds: z.array(z.string()).optional(),
+        presentationId: z.string().optional(),
+        presenterIds: z.array(z.string()).optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({
       itemId,
@@ -260,7 +294,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
 
         const updateData: Record<string, unknown> = {};
         if (title !== undefined) updateData.title = title || null;
-        if (categoryId !== undefined) updateData.categoryId = categoryId || null;
+        if (categoryId !== undefined)
+          updateData.categoryId = categoryId || null;
         if (startTime !== undefined) updateData.startTime = startTime || null;
         if (endTime !== undefined) updateData.endTime = endTime || null;
         if (notes !== undefined) updateData.notes = notes || null;
@@ -296,11 +331,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
-                { success: true, id: itemId },
-                null,
-                2,
-              ),
+              text: JSON.stringify({ success: true, id: itemId }, null, 2),
             },
           ],
         };

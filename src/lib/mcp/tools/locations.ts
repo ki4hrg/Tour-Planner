@@ -5,15 +5,20 @@ import type { SessionUser } from "@/lib/authz";
 
 export function registerLocationTools(server: McpServer, _user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "search-locations",
-    "Search locations by name, region, or trip type. Returns location name, address, region, and whether it's a host site. Use this to find location IDs for schedule items and stays. Excludes archived locations by default.",
     {
-      query: z.string().optional(),
-      regionId: z.string().optional(),
-      tripTypeId: z.string().optional(),
-      hostSitesOnly: z.boolean().optional(),
-      limit: z.number().optional(),
+      title: "Search Locations",
+      description:
+        "Search locations by name, region, or trip type. Returns location name, address, region, and whether it's a host site. Use this to find location IDs for schedule items and stays. Excludes archived locations by default.",
+      inputSchema: {
+        query: z.string().optional(),
+        regionId: z.string().optional(),
+        tripTypeId: z.string().optional(),
+        hostSitesOnly: z.boolean().optional(),
+        limit: z.number().optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ query, regionId, tripTypeId, hostSitesOnly, limit }) => {
       try {
@@ -50,7 +55,9 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
         }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -62,10 +69,15 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
   );
 
   // ── get-location (VIEWER+) ─────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "get-location",
-    "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. Useful before creating a booking or adding a location to an itinerary.",
-    { locationId: z.string() },
+    {
+      title: "Get Location Details",
+      description:
+        "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. Useful before creating a booking or adding a location to an itinerary.",
+      inputSchema: { locationId: z.string() },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
     async ({ locationId }) => {
       try {
         const location = await prisma.location.findUnique({
@@ -100,7 +112,9 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
 
         if (!location) {
           return {
-            content: [{ type: "text" as const, text: "Error: Location not found" }],
+            content: [
+              { type: "text" as const, text: "Error: Location not found" },
+            ],
             isError: true,
           };
         }
@@ -115,7 +129,9 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
         };
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -127,12 +143,17 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
   );
 
   // ── search-contacts (VIEWER+) ──────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "search-contacts",
-    "Search contacts by name or organization. Returns contact details and their linked locations. Useful for finding a contact ID when creating a booking or assigning a presenter.",
     {
-      query: z.string().optional(),
-      limit: z.number().optional(),
+      title: "Search Contacts",
+      description:
+        "Search contacts by name or organization. Returns contact details and their linked locations. Useful for finding a contact ID when creating a booking or assigning a presenter.",
+      inputSchema: {
+        query: z.string().optional(),
+        limit: z.number().optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ query, limit }) => {
       try {
@@ -155,7 +176,9 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(contacts, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(contacts, null, 2) },
+          ],
         };
       } catch (err) {
         return {
@@ -167,10 +190,15 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
   );
 
   // ── list-trip-types (VIEWER+) ──────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "list-trip-types",
-    "List all available trip types with their names, descriptions, and default currencies. Use the trip type ID when creating a new trip.",
-    {},
+    {
+      title: "List Trip Types",
+      description:
+        "List all available trip types with their names, descriptions, and default currencies. Use the trip type ID when creating a new trip.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
     async () => {
       try {
         const tripTypes = await prisma.tripType.findMany({
@@ -185,7 +213,9 @@ export function registerLocationTools(server: McpServer, _user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(tripTypes, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(tripTypes, null, 2) },
+          ],
         };
       } catch (err) {
         return {

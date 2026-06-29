@@ -6,11 +6,16 @@ import { hasRole } from "@/lib/authz";
 import { toDateInput, parseDateInput } from "@/lib/dates";
 
 export function registerStayTools(server: McpServer, user: SessionUser) {
-  server.tool(
+  server.registerTool(
     "list-stays",
-    "List all lodging stays for a trip, showing location, check-in/out dates, board type, headcount, cost per person per night, and booking status. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
     {
-      tripId: z.string(),
+      title: "List Stays",
+      description:
+        "List all lodging stays for a trip, showing location, check-in/out dates, board type, headcount, cost per person per night, and booking status. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
+      inputSchema: {
+        tripId: z.string(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ tripId }) => {
       const stays = await prisma.stay.findMany({
@@ -57,23 +62,33 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     },
   );
 
-  server.tool(
+  server.registerTool(
     "add-stay",
-    "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues) and check-in/check-out dates (YYYY-MM-DD format). Board types: NONE (default), BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
     {
-      tripId: z.string(),
-      locationId: z.string(),
-      checkIn: z.string(),
-      checkOut: z.string(),
-      label: z.string().optional(),
-      arrivalTime: z.string().optional(),
-      departureTime: z.string().optional(),
-      board: z.string().optional(),
-      headcount: z.number().optional(),
-      costPerPersonPerNight: z.number().optional(),
-      currency: z.string().optional(),
-      priority: z.number().optional(),
-      notes: z.string().optional(),
+      title: "Add Stay",
+      description:
+        "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues) and check-in/check-out dates (YYYY-MM-DD format). Board types: NONE (default), BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
+      inputSchema: {
+        tripId: z.string(),
+        locationId: z.string(),
+        checkIn: z.string(),
+        checkOut: z.string(),
+        label: z.string().optional(),
+        arrivalTime: z.string().optional(),
+        departureTime: z.string().optional(),
+        board: z.string().optional(),
+        headcount: z.number().optional(),
+        costPerPersonPerNight: z.number().optional(),
+        currency: z.string().optional(),
+        priority: z.number().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({
       tripId,
@@ -137,7 +152,12 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
           checkOut: checkOutDate,
           arrivalTime: arrivalTime || null,
           departureTime: departureTime || null,
-          board: (board as "NONE" | "BED_AND_BREAKFAST" | "HALF_BOARD" | "FULL_BOARD") || "NONE",
+          board:
+            (board as
+              | "NONE"
+              | "BED_AND_BREAKFAST"
+              | "HALF_BOARD"
+              | "FULL_BOARD") || "NONE",
           headcount: headcount ?? null,
           costPerPersonPerNight: costPerPersonPerNight ?? null,
           currency: currency || "USD",
@@ -161,23 +181,33 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     },
   );
 
-  server.tool(
+  server.registerTool(
     "update-stay",
-    "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. Dates use YYYY-MM-DD format. Board types: NONE, BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD.",
     {
-      stayId: z.string(),
-      locationId: z.string().optional(),
-      checkIn: z.string().optional(),
-      checkOut: z.string().optional(),
-      label: z.string().optional(),
-      arrivalTime: z.string().optional(),
-      departureTime: z.string().optional(),
-      board: z.string().optional(),
-      headcount: z.number().optional(),
-      costPerPersonPerNight: z.number().optional(),
-      currency: z.string().optional(),
-      priority: z.number().optional(),
-      notes: z.string().optional(),
+      title: "Update Stay",
+      description:
+        "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. Dates use YYYY-MM-DD format. Board types: NONE, BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD.",
+      inputSchema: {
+        stayId: z.string(),
+        locationId: z.string().optional(),
+        checkIn: z.string().optional(),
+        checkOut: z.string().optional(),
+        label: z.string().optional(),
+        arrivalTime: z.string().optional(),
+        departureTime: z.string().optional(),
+        board: z.string().optional(),
+        headcount: z.number().optional(),
+        costPerPersonPerNight: z.number().optional(),
+        currency: z.string().optional(),
+        priority: z.number().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({
       stayId,
@@ -254,14 +284,15 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         await prisma.stay.update({ where: { id: stayId }, data });
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify({ message: "Stay updated." }) },
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: "Stay updated." }),
+            },
           ],
         };
       } catch {
         return {
-          content: [
-            { type: "text" as const, text: "Error: Stay not found." },
-          ],
+          content: [{ type: "text" as const, text: "Error: Stay not found." }],
           isError: true,
         };
       }
