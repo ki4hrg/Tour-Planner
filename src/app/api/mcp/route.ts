@@ -14,6 +14,13 @@ export async function POST(request: Request) {
   const server = createMcpServer(user);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
+    // JSON response mode is required for this per-request handler model.
+    // In the default SSE mode, handleRequest() returns the streaming Response
+    // immediately and writes the JSON-RPC reply asynchronously — but we close
+    // the transport in `finally` as soon as it returns, tearing the stream
+    // down before anything is written. JSON mode makes handleRequest() resolve
+    // only once the full response is built, so the close is safe.
+    enableJsonResponse: true,
   });
 
   await server.connect(transport);
