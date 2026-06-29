@@ -12,7 +12,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip, including both schedule item bookings and stay bookings. Shows booking status, location, contact, confirmation reference, and which schedule item or stay each booking belongs to. Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, location, contact, confirmation reference. Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
         status: z.string().optional(),
@@ -33,6 +33,17 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           };
         }
 
+        const engagementBookings = await prisma.booking.findMany({
+          where: {
+            tripId,
+            ...(status ? { status: status as BookingStatus } : {}),
+          },
+          include: {
+            location: { select: { id: true, name: true } },
+            bookedContact: { select: { id: true, name: true } },
+          },
+        });
+
         const itemBookings = await prisma.booking.findMany({
           where: {
             scheduleItem: { day: { tripId } },
@@ -50,24 +61,17 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           },
         });
 
-        const stayBookings = await prisma.booking.findMany({
-          where: {
-            stay: { tripId },
-            ...(status ? { status: status as BookingStatus } : {}),
-          },
-          include: {
-            stay: {
-              select: {
-                label: true,
-                location: { select: { id: true, name: true } },
-              },
-            },
-            location: { select: { id: true, name: true } },
-            bookedContact: { select: { id: true, name: true } },
-          },
-        });
-
         const bookings = [
+          ...engagementBookings.map((b) => ({
+            type: "venue" as const,
+            id: b.id,
+            label: b.label,
+            status: b.status,
+            confirmationRef: b.confirmationRef,
+            notes: b.notes,
+            location: b.location,
+            bookedContact: b.bookedContact,
+          })),
           ...itemBookings.map((b) => ({
             type: "schedule_item" as const,
             id: b.id,
@@ -80,22 +84,6 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
                   title: b.scheduleItem.title,
                   dayIndex: b.scheduleItem.day.dayIndex,
                   dayTitle: b.scheduleItem.day.title,
-                }
-              : null,
-            location: b.location,
-            bookedContact: b.bookedContact,
-          })),
-          ...stayBookings.map((b) => ({
-            type: "stay" as const,
-            id: b.id,
-            label: b.label,
-            status: b.status,
-            confirmationRef: b.confirmationRef,
-            notes: b.notes,
-            stay: b.stay
-              ? {
-                  label: b.stay.label,
-                  location: b.stay.location,
                 }
               : null,
             location: b.location,
@@ -128,10 +116,10 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking for a schedule item or stay. A booking tracks whether a venue or service has been reserved. Exactly one of scheduleItemId or stayId must be provided. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
       inputSchema: {
+        tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
-        stayId: z.string().optional(),
         locationId: z.string().optional(),
         label: z.string().optional(),
         status: z.string(),
@@ -147,8 +135,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       },
     },
     async ({
+      tripId,
       scheduleItemId,
-      stayId,
       locationId,
       label,
       status,
@@ -169,32 +157,50 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           };
         }
 
-        const hasScheduleItem = !!scheduleItemId;
-        const hasStay = !!stayId;
-        if (hasScheduleItem === hasStay) {
+        const isVenue = !!tripId;
+        const isItem = !!scheduleItemId;
+        if (isVenue === isItem) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "Error: Exactly one of scheduleItemId or stayId must be provided.",
+                text: "Error: Provide exactly one of (tripId + locationId) or scheduleItemId.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (isVenue && !locationId) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: A venue booking requires both tripId and locationId.",
               },
             ],
             isError: true,
           };
         }
 
-        const booking = await prisma.booking.create({
-          data: {
-            scheduleItemId: scheduleItemId || null,
-            stayId: stayId || null,
-            locationId: locationId || null,
-            label: label || null,
-            status: status as BookingStatus,
-            bookedContactId: bookedContactId || null,
-            confirmationRef: confirmationRef || null,
-            notes: notes || null,
-          },
-        });
+        const scalars = {
+          locationId: locationId || null,
+          label: label || null,
+          status: status as BookingStatus,
+          bookedContactId: bookedContactId || null,
+          confirmationRef: confirmationRef || null,
+          notes: notes || null,
+        };
+        const booking = isVenue
+          ? await prisma.booking.upsert({
+              where: {
+                tripId_locationId: { tripId: tripId!, locationId: locationId! },
+              },
+              create: { tripId, ...scalars },
+              update: scalars,
+            })
+          : await prisma.booking.create({
+              data: { scheduleItemId, ...scalars },
+            });
 
         return {
           content: [

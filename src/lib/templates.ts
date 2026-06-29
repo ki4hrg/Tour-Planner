@@ -66,6 +66,42 @@ export type InstantiatedDay = {
   scheduleItems: { create: InstantiatedScheduleItem[] };
 };
 
+// A venue-engagement booking lives at the trip level (tripId + locationId), so it
+// is copied alongside the days rather than nested under an item.
+export type TemplateVenueBooking = {
+  locationId: string | null;
+  label: string | null;
+  notes: string | null;
+};
+
+export type InstantiatedVenueBooking = {
+  locationId: string;
+  label: string | null;
+  notes: string | null;
+  status: BookingStatus;
+};
+
+/**
+ * Deep-copy a trip/template's venue-engagement bookings into trip-level create-data.
+ * Status is reset to NOT_BOOKED and the instance actuals (contact, confirmationRef)
+ * are dropped — same reset policy as item bookings. Rows without a location are
+ * skipped (engagements require one).
+ */
+export function instantiateVenueBookings(
+  bookings: TemplateVenueBooking[],
+): InstantiatedVenueBooking[] {
+  return bookings
+    .filter((b): b is TemplateVenueBooking & { locationId: string } =>
+      Boolean(b.locationId),
+    )
+    .map((b) => ({
+      locationId: b.locationId,
+      label: b.label,
+      notes: b.notes,
+      status: "NOT_BOOKED" as BookingStatus,
+    }));
+}
+
 /**
  * Deep-copy a template's days/items into create-data for a new trip.
  *

@@ -18,7 +18,7 @@ import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
 import { bookingSchema } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
-import { instantiateDays } from "@/lib/templates";
+import { instantiateDays, instantiateVenueBookings } from "@/lib/templates";
 
 // --- Trip CRUD ---
 
@@ -87,13 +87,18 @@ export async function createTrip(
   // Optionally instantiate from a template: deep-copy its days/items (dates
   // derived from the new startDate, bookings reset). Templates are snapshots.
   let daysCreate;
+  let venueBookingsCreate: ReturnType<typeof instantiateVenueBookings> = [];
   if (templateId) {
     const template = await prisma.trip.findUnique({
       where: { id: templateId },
-      select: { days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT } },
+      select: {
+        days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
+        bookings: { select: { locationId: true, label: true, notes: true } },
+      },
     });
     if (!template) return { error: "Selected template no longer exists." };
     daysCreate = instantiateDays(template.days, data.startDate);
+    venueBookingsCreate = instantiateVenueBookings(template.bookings);
   }
 
   const trip = await prisma.trip.create({
@@ -102,6 +107,9 @@ export async function createTrip(
       isTemplate: parsed.data.isTemplate ?? false,
       createdById: user.id,
       ...(daysCreate ? { days: { create: daysCreate } } : {}),
+      ...(venueBookingsCreate.length
+        ? { bookings: { create: venueBookingsCreate } }
+        : {}),
     },
   });
 
@@ -153,10 +161,12 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       participantCount: true,
       notes: true,
       days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
+      bookings: { select: { locationId: true, label: true, notes: true } },
     },
   });
   if (!source) return;
 
+  const venueBookingsCreate = instantiateVenueBookings(source.bookings);
   const template = await prisma.trip.create({
     data: {
       name: `${source.name} (template)`,
@@ -170,6 +180,9 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       isTemplate: true,
       createdById: user.id,
       days: { create: instantiateDays(source.days, source.startDate) },
+      ...(venueBookingsCreate.length
+        ? { bookings: { create: venueBookingsCreate } }
+        : {}),
     },
   });
 
@@ -525,38 +538,75 @@ export async function addBooking(
   return { ok: true, message: "Booking added." };
 }
 
-// A stay holds at most one booking (Booking.stayId is unique). Lodging-specific,
-// so no member location applies — locationId is dropped.
-export async function addStayBooking(
-  stayId: string,
+// Create or update the single venue-engagement booking for a (trip, location).
+// The engagement auto-covers every schedule item in the trip that visits this
+// location plus any stay there — so the booking dashboard upserts by venue rather
+// than per session. `locationId` is the engaged venue (forced from the arg, not the
+// input). Idempotent on (tripId, locationId) via the @@unique.
+export async function upsertVenueBooking(
+  tripId: string,
+  locationId: string,
   input: BookingInputData,
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const tripId = await tripIdForStay(stayId);
-  if (!tripId) return { error: "Stay not found." };
-
-  await prisma.booking.create({
-    data: { stayId, ...toBookingScalars(parsed.data), locationId: null },
+  const scalars = { ...toBookingScalars(parsed.data), locationId };
+  await prisma.booking.upsert({
+    where: { tripId_locationId: { tripId, locationId } },
+    create: { tripId, ...scalars },
+    update: scalars,
   });
 
   revalidateTrip(tripId);
-  return { ok: true, message: "Booking added." };
+  return { ok: true, message: "Booking saved." };
 }
 
-// Resolve the owning trip whether the booking targets an item or a stay.
+// The one-click status control on the dashboard — upsert the engagement with just a
+// status (defaults the rest on first create). Other fields are managed via the
+// expandable row (upsertVenueBooking) so a quick status change never clears them.
+export async function setVenueBookingStatus(
+  tripId: string,
+  locationId: string,
+  status: BookingStatus,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  await prisma.booking.upsert({
+    where: { tripId_locationId: { tripId, locationId } },
+    create: { tripId, locationId, status },
+    update: { status },
+  });
+
+  revalidateTrip(tripId);
+  return { ok: true, message: "Status updated." };
+}
+
+// Quick status set for an existing booking by id (the dashboard's one-click control
+// on a site-less item booking, which always already exists).
+export async function setBookingStatus(
+  bookingId: string,
+  status: BookingStatus,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  await prisma.booking.update({ where: { id: bookingId }, data: { status } });
+  const tripId = await tripIdForBooking(bookingId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Status updated." };
+}
+
+// Resolve the owning trip whether the booking is a venue engagement or a site-less
+// item booking.
 async function tripIdForBooking(bookingId: string): Promise<string | null> {
   const b = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: {
+      tripId: true,
       scheduleItem: { select: { day: { select: { tripId: true } } } },
-      stay: { select: { tripId: true } },
     },
   });
   if (!b) return null;
-  return b.scheduleItem?.day.tripId ?? b.stay?.tripId ?? null;
+  return b.tripId ?? b.scheduleItem?.day.tripId ?? null;
 }
 
 export async function updateBooking(

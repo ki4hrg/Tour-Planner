@@ -11,11 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale } from "@/lib/money";
+import { serializeNote } from "@/lib/notes";
+import { todayUtc, toDateInput } from "@/lib/dates";
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
 import { LocationContactsManager } from "../location-contacts-manager";
 import { HostSitePanel } from "../host-site-panel";
+import { NotesThread } from "../../notes/notes-thread";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +39,13 @@ export default async function LocationDetailPage({
       region: { select: { id: true, name: true, parentId: true } },
       costs: { orderBy: { label: "asc" } },
       contacts: { orderBy: { name: "asc" } },
+      siteNotes: {
+        orderBy: { contactedOn: "desc" },
+        include: {
+          contact: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true } },
+        },
+      },
       hostSite: {
         select: {
           id: true,
@@ -204,6 +214,22 @@ export default async function LocationDetailPage({
             }))}
             available={availableContacts}
             canEdit={canEdit}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NotesThread
+            target="location"
+            targetId={location.id}
+            notes={location.siteNotes.map(serializeNote)}
+            contacts={allContacts}
+            canEdit={canEdit}
+            today={toDateInput(todayUtc())}
           />
         </CardContent>
       </Card>

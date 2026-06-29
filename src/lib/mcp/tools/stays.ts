@@ -23,14 +23,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         orderBy: { checkIn: "asc" },
         include: {
           location: { select: { id: true, name: true } },
-          booking: {
-            select: {
-              id: true,
-              status: true,
-              confirmationRef: true,
-              bookedContact: { select: { id: true, name: true } },
-            },
-          },
         },
       });
 
@@ -51,7 +43,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         currency: s.currency,
         priority: s.priority,
         notes: s.notes,
-        booking: s.booking,
+        // Lodging booking state lives on the venue engagement — see list-bookings.
       }));
 
       return {

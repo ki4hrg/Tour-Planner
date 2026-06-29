@@ -93,14 +93,14 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         const bookingCounts = await prisma.booking.groupBy({
           by: ["status"],
           where: {
-            OR: [{ scheduleItem: { day: { tripId } } }, { stay: { tripId } }],
+            OR: [{ tripId }, { scheduleItem: { day: { tripId } } }],
           },
-          _count: true,
+          _count: { _all: true },
         });
 
         const bookingStatus: Record<string, number> = {};
         for (const b of bookingCounts) {
-          bookingStatus[b.status] = b._count;
+          bookingStatus[b.status] = b._count._all;
         }
 
         const result = {
