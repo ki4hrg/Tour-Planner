@@ -107,6 +107,7 @@ model Location {
   bookings             Booking[] // bookings made against this location
   hostSite             HostSite? // 1:1 extension; presence ⇒ this location can host/lodge
   stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
+  shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -258,12 +259,17 @@ model ShareLink {
   token          String        @unique @default(cuid()) // unguessable URL segment
   audience       ShareAudience @default(PARTICIPANT)
   label          String?
+  // Scopes a HOST_SITE link to a single host site (their items + bookings only).
+  // Null for STAFF/PARTICIPANT links, which span the whole trip.
+  location       Location?     @relation("HostSiteShareLinks", fields: [locationId], references: [id], onDelete: SetNull)
+  locationId     String?
   fieldOverrides Json? // optional per-link tweaks over the audience preset
   enabled        Boolean       @default(true)
   expiresAt      DateTime?
   createdAt      DateTime      @default(now())
 
   @@index([tripId])
+  @@index([locationId])
 }
 
 // 1:1 extension of a Location. Presence ⇒ the location can host/lodge the group
