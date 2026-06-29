@@ -1,10 +1,19 @@
 import { SignJWT, jwtVerify } from "jose";
+import { randomBytes, createHash } from "crypto";
 import type { SessionUser } from "@/lib/authz";
 import type { Role } from "@prisma/client";
 
 const ISSUER = "tour-planner";
 const AUDIENCE = "tour-planner-mcp";
-const TOKEN_TTL = "1h";
+
+// Access tokens are short-lived so that a revoked session (refresh token) stops
+// granting access quickly even though the JWT itself is self-contained and never
+// checked against the database on the MCP hot path.
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
+const ACCESS_TOKEN_TTL = `${ACCESS_TOKEN_TTL_SECONDS}s`;
+
+// Refresh tokens are long-lived and rotated on every use.
+export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 function getSecret() {
   const raw = process.env.AUTH_SECRET;
@@ -23,19 +32,30 @@ export function scopesForRole(role: Role): string {
   }
 }
 
-export async function createAccessToken(user: {
-  id: string;
-  email: string;
-  role: Role;
-}): Promise<string> {
+export async function createAccessToken(
+  user: {
+    id: string;
+    email: string;
+    role: Role;
+  },
+  // The refresh-token (session) id this access token belongs to. Embedded as
+  // `sid` so the revocation endpoint can map an access token back to its session.
+  sessionId?: string,
+): Promise<string> {
   const scope = scopesForRole(user.role);
-  return new SignJWT({ email: user.email, role: user.role, scope })
+  const claims: Record<string, unknown> = {
+    email: user.email,
+    role: user.role,
+    scope,
+  };
+  if (sessionId) claims.sid = sessionId;
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(TOKEN_TTL)
+    .setExpirationTime(ACCESS_TOKEN_TTL)
     .sign(getSecret());
 }
 
@@ -44,7 +64,18 @@ export type McpTokenPayload = {
   email: string;
   role: Role;
   scope: string;
+  sid?: string;
 };
+
+// Opaque refresh token: 32 random bytes, base64url-encoded. Returned to the
+// client once; only its SHA-256 hash is persisted.
+export function generateRefreshToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 export async function verifyAccessToken(
   token: string,
@@ -67,6 +98,7 @@ export async function verifyAccessToken(
       email: payload.email,
       role: payload.role as Role,
       scope: payload.scope,
+      sid: typeof payload.sid === "string" ? payload.sid : undefined,
     };
   } catch {
     return null;
