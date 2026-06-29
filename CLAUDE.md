@@ -6,12 +6,23 @@ Remote MCP endpoint at `/api/mcp` (Streamable HTTP). OAuth 2.1 at `/api/oauth/*`
 Discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
 (served via rewrites in `next.config.ts` to `/api/well-known/*`).
 
+The `/api/mcp` route creates a fresh `WebStandardStreamableHTTPServerTransport` per request
+with `enableJsonResponse: true`. This is required: the handler closes the transport in a
+`finally` right after `handleRequest()` returns, so the default SSE-streaming mode (which writes
+the reply asynchronously) would tear the stream down before the response is sent. JSON mode makes
+`handleRequest()` resolve only once the full response is built.
+
 ### Adding a new MCP tool
 
 1. Create or extend a file in `src/lib/mcp/tools/`.
 2. Export a `register*Tools(server: McpServer, user: SessionUser)` function.
-3. Register tools with `server.tool(name, description, zodSchema, handler)`.
-   The schema argument is a plain object of Zod shapes (e.g. `{ tripId: z.string() }`), NOT wrapped in `z.object()`.
+3. Register tools with `server.registerTool(name, config, handler)`, where `config` is
+   `{ title, description, inputSchema, annotations }`:
+   - `inputSchema` is a plain object of Zod shapes (e.g. `{ tripId: z.string() }`), NOT wrapped in `z.object()`.
+   - `title` is a short human-readable label (e.g. `"Get Trip Details"`).
+   - `annotations` are behavior hints. Read tools: `{ readOnlyHint: true, openWorldHint: false }`.
+     Writes: `{ readOnlyHint: false, destructiveHint: <deletes?>, idempotentHint: <update=true/add=false>, openWorldHint: false }`.
+     `openWorldHint` is always `false` — these tools operate on our own database, a closed world.
 4. Gate mutations with `hasRole(user.role, "PLANNER")` — read tools require VIEWER, writes PLANNER, admin ops ADMIN.
    Return `{ content: [{ type: "text", text: "Error: ..." }], isError: true }` on auth failure.
 5. Reuse Zod validators from `src/lib/validators/` and Prisma query patterns from `src/app/(app)/*/actions.ts`.

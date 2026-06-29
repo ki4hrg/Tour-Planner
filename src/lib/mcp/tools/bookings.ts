@@ -7,18 +7,28 @@ import { hasRole } from "@/lib/authz";
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
   // ── list-bookings (VIEWER+) ──────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "list-bookings",
-    "List all bookings for a trip, including both schedule item bookings and stay bookings. Shows booking status, location, contact, confirmation reference, and which schedule item or stay each booking belongs to. Useful for checking which reservations still need attention.",
     {
-      tripId: z.string(),
-      status: z.string().optional(),
+      title: "List Bookings",
+      description:
+        "List all bookings for a trip, including both schedule item bookings and stay bookings. Shows booking status, location, contact, confirmation reference, and which schedule item or stay each booking belongs to. Useful for checking which reservations still need attention.",
+      inputSchema: {
+        tripId: z.string(),
+        status: z.string().optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ tripId, status }) => {
       try {
         if (!hasRole(user.role, "VIEWER")) {
           return {
-            content: [{ type: "text" as const, text: "Error: Insufficient permissions. VIEWER role or higher required." }],
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. VIEWER role or higher required.",
+              },
+            ],
             isError: true,
           };
         }
@@ -94,11 +104,18 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         ];
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(bookings, null, 2) }],
+          content: [
+            { type: "text" as const, text: JSON.stringify(bookings, null, 2) },
+          ],
         };
       } catch (error) {
         return {
-          content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -106,24 +123,48 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
   );
 
   // ── add-booking (PLANNER+) ───────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "add-booking",
-    "Create a booking for a schedule item or stay. A booking tracks whether a venue or service has been reserved. Exactly one of scheduleItemId or stayId must be provided. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
     {
-      scheduleItemId: z.string().optional(),
-      stayId: z.string().optional(),
-      locationId: z.string().optional(),
-      label: z.string().optional(),
-      status: z.string(),
-      bookedContactId: z.string().optional(),
-      confirmationRef: z.string().optional(),
-      notes: z.string().optional(),
+      title: "Add Booking",
+      description:
+        "Create a booking for a schedule item or stay. A booking tracks whether a venue or service has been reserved. Exactly one of scheduleItemId or stayId must be provided. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
+      inputSchema: {
+        scheduleItemId: z.string().optional(),
+        stayId: z.string().optional(),
+        locationId: z.string().optional(),
+        label: z.string().optional(),
+        status: z.string(),
+        bookedContactId: z.string().optional(),
+        confirmationRef: z.string().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
-    async ({ scheduleItemId, stayId, locationId, label, status, bookedContactId, confirmationRef, notes }) => {
+    async ({
+      scheduleItemId,
+      stayId,
+      locationId,
+      label,
+      status,
+      bookedContactId,
+      confirmationRef,
+      notes,
+    }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
           return {
-            content: [{ type: "text" as const, text: "Error: Insufficient permissions. PLANNER role or higher required." }],
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. PLANNER role or higher required.",
+              },
+            ],
             isError: true,
           };
         }
@@ -132,7 +173,12 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const hasStay = !!stayId;
         if (hasScheduleItem === hasStay) {
           return {
-            content: [{ type: "text" as const, text: "Error: Exactly one of scheduleItemId or stayId must be provided." }],
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Exactly one of scheduleItemId or stayId must be provided.",
+              },
+            ],
             isError: true,
           };
         }
@@ -151,11 +197,21 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ id: booking.id }, null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ id: booking.id }, null, 2),
+            },
+          ],
         };
       } catch (error) {
         return {
-          content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -163,29 +219,46 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
   );
 
   // ── update-booking (PLANNER+) ────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "update-booking",
-    "Update a booking's status, contact, confirmation reference, or notes. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
     {
-      bookingId: z.string(),
-      status: z.string().optional(),
-      bookedContactId: z.string().optional(),
-      confirmationRef: z.string().optional(),
-      notes: z.string().optional(),
+      title: "Update Booking",
+      description:
+        "Update a booking's status, contact, confirmation reference, or notes. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
+      inputSchema: {
+        bookingId: z.string(),
+        status: z.string().optional(),
+        bookedContactId: z.string().optional(),
+        confirmationRef: z.string().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ bookingId, status, bookedContactId, confirmationRef, notes }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
           return {
-            content: [{ type: "text" as const, text: "Error: Insufficient permissions. PLANNER role or higher required." }],
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. PLANNER role or higher required.",
+              },
+            ],
             isError: true,
           };
         }
 
         const data: Record<string, unknown> = {};
         if (status !== undefined) data.status = status as BookingStatus;
-        if (bookedContactId !== undefined) data.bookedContactId = bookedContactId;
-        if (confirmationRef !== undefined) data.confirmationRef = confirmationRef;
+        if (bookedContactId !== undefined)
+          data.bookedContactId = bookedContactId;
+        if (confirmationRef !== undefined)
+          data.confirmationRef = confirmationRef;
         if (notes !== undefined) data.notes = notes;
 
         const booking = await prisma.booking.update({
@@ -194,11 +267,21 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ success: true, id: booking.id }, null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, id: booking.id }, null, 2),
+            },
+          ],
         };
       } catch (error) {
         return {
-          content: [{ type: "text" as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
