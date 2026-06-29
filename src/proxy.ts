@@ -38,6 +38,6 @@ export const config = {
   // pages, and static PWA assets. Fine-grained write gating happens in the
   // server actions themselves.
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
+    "/((?!api/auth|api/mcp|api/oauth|api/well-known|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
   ],
 };
