@@ -4,6 +4,18 @@ import withSerwistInit from "@serwist/next";
 const nextConfig: NextConfig = {
   // Produce a self-contained server bundle for the Docker image.
   output: "standalone",
+  async rewrites() {
+    return [
+      {
+        source: "/.well-known/oauth-authorization-server",
+        destination: "/api/well-known/oauth-authorization-server",
+      },
+      {
+        source: "/.well-known/oauth-protected-resource",
+        destination: "/api/well-known/oauth-protected-resource",
+      },
+    ];
+  },
 };
 
 // Serwist (v9) integrates via webpack, which conflicts with Next 16's default

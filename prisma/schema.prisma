@@ -326,3 +326,34 @@ model Stay {
   @@index([tripId])
   @@index([locationId])
 }
+
+// --- OAuth 2.1 (MCP remote access) ---
+
+model OAuthClient {
+  id                      String   @id @default(cuid())
+  clientId                String   @unique @default(cuid())
+  clientSecret            String?
+  clientName              String?
+  redirectUris            String[]
+  grantTypes              String[] @default(["authorization_code"])
+  responseTypes           String[] @default(["code"])
+  tokenEndpointAuthMethod String   @default("none")
+  createdAt               DateTime @default(now())
+}
+
+model OAuthAuthorizationCode {
+  id                  String    @id @default(cuid())
+  code                String    @unique @default(cuid())
+  clientId            String
+  userId              String
+  redirectUri         String
+  codeChallenge       String
+  codeChallengeMethod String    @default("S256")
+  scope               String?
+  expiresAt           DateTime
+  usedAt              DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@index([code])
+  @@index([expiresAt])
+}
