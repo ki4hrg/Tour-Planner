@@ -116,7 +116,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -230,7 +230,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Booking",
       description:
-        "Update a booking's status, contact, confirmation reference, or notes. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options: NOT_BOOKED, REQUESTED, CONFIRMED.",
+        "Update a booking's status, contact, confirmation reference, or notes. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
       inputSchema: {
         bookingId: z.string(),
         status: z.string().optional(),

@@ -78,6 +78,12 @@ export default async function LocationDetailPage({
 
   const linkedIds = new Set(location.contacts.map((c) => c.id));
   const availableContacts = allContacts.filter((c) => !linkedIds.has(c.id));
+  // The contact-log picker is scoped to the people actually linked to this
+  // location — you log calls with this venue's contacts, not the global list.
+  const linkedContacts = location.contacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+  }));
   const defaultCurrency = "USD";
   const referenced = location._count.scheduleItems > 0;
 
@@ -148,9 +154,9 @@ export default async function LocationDetailPage({
         </Link>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        {/* Left column: what this place is */}
-        <div className="space-y-6">
+      <div className="grid items-start gap-6 lg:grid-cols-3">
+        {/* Main column (2/3): the full profile + the contact log you work in */}
+        <div className="space-y-6 lg:col-span-2">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
@@ -245,6 +251,44 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NotesThread
+            target="location"
+            targetId={location.id}
+            notes={location.siteNotes.map(serializeNote)}
+            contacts={linkedContacts}
+            canEdit={canEdit}
+            today={toDateInput(todayUtc())}
+          />
+        </CardContent>
+      </Card>
+        </div>
+
+        {/* Side column (1/3): who we talk to, what it costs, how it's been used */}
+        <div className="space-y-6 lg:col-span-1">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Contacts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LocationContactsManager
+            locationId={location.id}
+            linked={location.contacts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              role: c.role,
+              organization: c.organization,
+            }))}
+            available={availableContacts}
+            canEdit={canEdit}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Costs</CardTitle>
         </CardHeader>
         <CardContent>
@@ -271,44 +315,6 @@ export default async function LocationDetailPage({
           </CardContent>
         </Card>
       ) : null}
-        </div>
-
-        {/* Right column: who we talk to & how it's been used */}
-        <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Contacts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LocationContactsManager
-            locationId={location.id}
-            linked={location.contacts.map((c) => ({
-              id: c.id,
-              name: c.name,
-              role: c.role,
-              organization: c.organization,
-            }))}
-            available={availableContacts}
-            canEdit={canEdit}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <NotesThread
-            target="location"
-            targetId={location.id}
-            notes={location.siteNotes.map(serializeNote)}
-            contacts={allContacts}
-            canEdit={canEdit}
-            today={toDateInput(todayUtc())}
-          />
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

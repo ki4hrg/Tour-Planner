@@ -19,6 +19,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS } from "@/lib/money";
+import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
@@ -49,7 +50,7 @@ function useAction() {
 function WindowCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable || row.status === "NOT_NEEDED")
     return <span className="text-muted-foreground">—</span>;
-  if (row.status === "CONFIRMED")
+  if (isBookingSecured(row.status))
     return <span className="text-muted-foreground">Booked</span>;
   if (row.earliest == null)
     return <span className="text-muted-foreground">—</span>;

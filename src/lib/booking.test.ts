@@ -76,17 +76,39 @@ describe("bookingNeedsInfo", () => {
     isMissingTime: false,
   };
 
-  it("flags an open window that is not yet booked", () => {
+  it("flags an open window that is not yet secured", () => {
     expect(bookingNeedsInfo({ ...base, windowOpen: true })).toBe(true);
     expect(
       bookingNeedsInfo({ ...base, status: "REQUESTED", windowOpen: true }),
     ).toBe(true);
+    // Tentatively confirmed is still in-flight until it is fully confirmed.
+    expect(
+      bookingNeedsInfo({
+        ...base,
+        status: "TENTATIVELY_CONFIRMED",
+        windowOpen: true,
+      }),
+    ).toBe(true);
   });
-  it("flags confirmed bookings missing a reference", () => {
+  it("does not flag an open window that is already secured", () => {
+    expect(
+      bookingNeedsInfo({ ...base, status: "CONFIRMED", windowOpen: true }),
+    ).toBe(false);
+    expect(
+      bookingNeedsInfo({ ...base, status: "FINALIZED", windowOpen: true }),
+    ).toBe(false);
+  });
+  it("flags secured bookings missing a reference", () => {
     expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: false })).toBe(
       true,
     );
     expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: true })).toBe(
+      false,
+    );
+    expect(bookingNeedsInfo({ ...base, status: "FINALIZED", hasRef: false })).toBe(
+      true,
+    );
+    expect(bookingNeedsInfo({ ...base, status: "FINALIZED", hasRef: true })).toBe(
       false,
     );
   });
