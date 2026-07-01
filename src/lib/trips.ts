@@ -31,7 +31,9 @@ export const TRIP_STATUSES = Object.keys(TRIP_STATUS_LABELS) as TripStatus[];
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   NOT_BOOKED: "Not booked",
   REQUESTED: "Requested",
+  TENTATIVELY_CONFIRMED: "Tentatively confirmed",
   CONFIRMED: "Confirmed",
+  FINALIZED: "Finalized",
   NOT_NEEDED: "Not needed",
 };
 
@@ -43,8 +45,11 @@ export const BOOKING_STATUSES = Object.keys(
 export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
   NOT_BOOKED: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
   REQUESTED: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
+  TENTATIVELY_CONFIRMED:
+    "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
   CONFIRMED:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  FINALIZED: "bg-emerald-600 text-white dark:bg-emerald-700 dark:text-emerald-50",
   NOT_NEEDED: "bg-muted text-muted-foreground",
 };
 

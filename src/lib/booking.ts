@@ -76,10 +76,20 @@ export function earliestCoveredDate(dates: (Date | null | undefined)[]): Date | 
 }
 
 /**
+ * Whether a booking is "locked in" — a reservation actually secured (confirmed or
+ * finalized), so the planner no longer needs to chase it. Requested and
+ * tentatively-confirmed still count as in-flight. Used to gate attention filters
+ * and "Booked" labels across the dashboards.
+ */
+export function isBookingSecured(status: BookingStatus): boolean {
+  return status === "CONFIRMED" || status === "FINALIZED";
+}
+
+/**
  * Whether a booking row needs the planner's attention — surfaced on the dashboard.
  * Pure (caller passes the already-computed window state), keeping render free of
- * Date.now(). "Needs info" = the window is open and the booking isn't done, OR it's
- * marked confirmed but missing a reference, OR the venue is missing price/time.
+ * Date.now(). "Needs info" = the window is open and the booking isn't secured yet,
+ * OR it's secured but missing a reference, OR the venue is missing price/time.
  */
 export function bookingNeedsInfo(args: {
   status: BookingStatus;
@@ -89,7 +99,8 @@ export function bookingNeedsInfo(args: {
   isMissingTime: boolean;
 }): boolean {
   const { status, windowOpen, hasRef, isMissingCost, isMissingTime } = args;
-  if (windowOpen && (status === "NOT_BOOKED" || status === "REQUESTED")) return true;
-  if (status === "CONFIRMED" && !hasRef) return true;
+  if (windowOpen && status !== "NOT_NEEDED" && !isBookingSecured(status))
+    return true;
+  if (isBookingSecured(status) && !hasRef) return true;
   return isMissingCost || isMissingTime;
 }

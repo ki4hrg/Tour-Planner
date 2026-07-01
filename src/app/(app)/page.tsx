@@ -42,7 +42,7 @@ export default async function Home() {
     // the earliest covered date per venue.
     prisma.booking.findMany({
       where: {
-        status: { in: ["NOT_BOOKED", "REQUESTED"] },
+        status: { in: ["NOT_BOOKED", "REQUESTED", "TENTATIVELY_CONFIRMED"] },
         tripId: { not: null },
         location: { is: { bookingOpensLeadDays: { not: null } } },
         trip: { is: { isTemplate: false, startDate: { not: null } } },

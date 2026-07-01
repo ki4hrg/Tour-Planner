@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
+import { isBookingSecured } from "@/lib/booking";
 import { VenueRow, ItemRow } from "./booking-row";
 
 type ContactOption = { id: string; name: string };
@@ -30,9 +31,9 @@ function venueMatches(row: VenueBookingRow, f: Filters): boolean {
   // Not-bookable sites and ones marked "not needed" are never actionable.
   if (!row.bookable || row.status === "NOT_NEEDED") return false;
   return (
-    (f.windowOpen && row.open && row.status !== "CONFIRMED") ||
+    (f.windowOpen && row.open && !isBookingSecured(row.status)) ||
     (f.missingPrice && row.isMissingCost) ||
-    (f.unconfirmed && row.status !== "CONFIRMED")
+    (f.unconfirmed && !isBookingSecured(row.status))
   );
 }
 
@@ -61,7 +62,7 @@ export function BookingDashboard({
     ? venueRows.filter((r) => venueMatches(r, filters))
     : venueRows;
   const shownItems = anyFilter
-    ? itemRows.filter((r) => filters.unconfirmed && r.status !== "CONFIRMED")
+    ? itemRows.filter((r) => filters.unconfirmed && !isBookingSecured(r.status))
     : itemRows;
 
   const total = venueRows.length + itemRows.length;

@@ -27,7 +27,9 @@ enum TripStatus {
 enum BookingStatus {
   NOT_BOOKED
   REQUESTED
+  TENTATIVELY_CONFIRMED
   CONFIRMED
+  FINALIZED
   NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 

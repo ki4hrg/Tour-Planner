@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
+import { isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
 import { setVenueBookingStatus } from "./actions";
 import { StatusControl } from "./status-control";
@@ -47,7 +48,7 @@ function Cell({
         onSet={(status) => setVenueBookingStatus(tripId, row.locationId, status)}
       />
       <div className="text-[11px] text-muted-foreground">
-        {row.status === "CONFIRMED"
+        {isBookingSecured(row.status)
           ? "Booked"
           : row.status === "NOT_NEEDED" || row.earliest == null
             ? "—"
