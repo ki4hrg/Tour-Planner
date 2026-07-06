@@ -204,9 +204,9 @@ export function VenueRow({
       {open ? (
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={5} className="bg-muted/30">
-            <div className="grid gap-4 py-1 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 py-1 md:grid-cols-2">
               {/* Covered sessions — so a multi-timeslot booking stays visible. */}
-              <div>
+              <div className="min-w-0">
                 <p className="mb-1 text-xs font-medium text-muted-foreground">
                   Covered sessions
                 </p>
