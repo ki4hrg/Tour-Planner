@@ -202,9 +202,9 @@ export default async function TripOverviewPage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Itinerary — right 2/3 on desktop, below the details on mobile. */}
-        <div className="order-2 lg:col-span-2">
+        <div className="order-2 min-w-0 lg:col-span-2">
           <ItineraryOverview
             tripId={trip.id}
             canEdit={canEdit}
@@ -214,7 +214,7 @@ export default async function TripOverviewPage({
         </div>
 
         {/* Trip meta — leads on mobile, left 1/3 on desktop. */}
-        <div className="order-1 space-y-6 lg:col-span-1">
+        <div className="order-1 min-w-0 space-y-6 lg:col-span-1">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">Details</CardTitle>

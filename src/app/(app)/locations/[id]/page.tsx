@@ -154,9 +154,9 @@ export default async function LocationDetailPage({
         </Link>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
         {/* Main column (2/3): the full profile + the contact log you work in */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
@@ -267,7 +267,7 @@ export default async function LocationDetailPage({
         </div>
 
         {/* Side column (1/3): who we talk to, what it costs, how it's been used */}
-        <div className="space-y-6 lg:col-span-1">
+        <div className="min-w-0 space-y-6 lg:col-span-1">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
