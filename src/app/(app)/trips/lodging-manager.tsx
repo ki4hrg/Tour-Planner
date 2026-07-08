@@ -54,11 +54,17 @@ function useAction() {
 export function LodgingManager({
   tripId,
   canEdit,
+  isTemplate,
+  dayCount,
   locations: initialLocations,
   stays,
 }: {
   tripId: string;
   canEdit: boolean;
+  // Templates are date-less: lodging anchors to day numbers (Day 1 → Day N)
+  // instead of calendar dates. dayCount bounds the day pickers.
+  isTemplate: boolean;
+  dayCount: number;
   locations: Location[];
   stays: SerializedStay[];
 }) {
@@ -82,6 +88,8 @@ export function LodgingManager({
               tripId={tripId}
               stay={stay}
               canEdit={canEdit}
+              isTemplate={isTemplate}
+              dayCount={dayCount}
               locations={locations}
             />
           ))}
@@ -89,11 +97,17 @@ export function LodgingManager({
       )}
 
       {canEdit ? (
-        adding ? (
+        isTemplate && dayCount === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Add itinerary days first — template lodging anchors to day numbers.
+          </p>
+        ) : adding ? (
           <div className="rounded-md border border-dashed p-3">
             <p className="mb-2 text-sm font-medium">Add a stay</p>
             <StayFields
               locations={locations}
+              isTemplate={isTemplate}
+              dayCount={dayCount}
               submitLabel="Add stay"
               onSubmit={(data, done) =>
                 run(() => addStay(tripId, data), () => {
@@ -123,27 +137,44 @@ function StayRow({
   tripId,
   stay,
   canEdit,
+  isTemplate,
+  dayCount,
   locations,
 }: {
   tripId: string;
   stay: SerializedStay;
   canEdit: boolean;
+  isTemplate: boolean;
+  dayCount: number;
   locations: Location[];
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
 
-  const checkInDate = new Date(`${stay.checkIn}T00:00:00.000Z`);
-  const checkOutDate = new Date(`${stay.checkOut}T00:00:00.000Z`);
-  const nights = nightsBetween(checkInDate, checkOutDate);
-  const total = stayTotal({
-    checkIn: checkInDate,
-    checkOut: checkOutDate,
-    headcount: stay.headcount,
-    costPerPersonPerNight: stay.costPerPersonPerNight,
-  });
+  // Day-relative (template) stay: span/nights come from the day indices; there
+  // are no calendar dates. Dated stay: parse the "yyyy-mm-dd" anchors.
+  const dayRelative = stay.checkInDayIndex != null;
+  const checkInDate = stay.checkIn
+    ? new Date(`${stay.checkIn}T00:00:00.000Z`)
+    : null;
+  const checkOutDate = stay.checkOut
+    ? new Date(`${stay.checkOut}T00:00:00.000Z`)
+    : null;
+  const nights = dayRelative
+    ? Math.max(0, (stay.checkOutDayIndex ?? 0) - (stay.checkInDayIndex ?? 0))
+    : nightsBetween(checkInDate, checkOutDate);
+  const total = dayRelative
+    ? (stay.costPerPersonPerNight ?? 0) * (stay.headcount ?? 0) * nights
+    : stayTotal({
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        headcount: stay.headcount,
+        costPerPersonPerNight: stay.costPerPersonPerNight,
+      });
 
-  const dateSpan = `${formatDate(checkInDate)}–${formatDate(checkOutDate)}`;
+  const dateSpan = dayRelative
+    ? `Day ${stay.checkInDayIndex} → Day ${stay.checkOutDayIndex}`
+    : `${formatDate(checkInDate)}–${formatDate(checkOutDate)}`;
 
   return (
     <div className="rounded-md border p-3 space-y-2">
@@ -152,6 +183,8 @@ function StayRow({
           <StayFields
             initial={stay}
             locations={locations}
+            isTemplate={isTemplate}
+            dayCount={dayCount}
             submitLabel="Save stay"
             onSubmit={(data, done) =>
               run(() => updateStay(stay.id, data), () => {
@@ -265,12 +298,16 @@ function BookingPill({ booking }: { booking: SerializedBooking }) {
 function StayFields({
   locations,
   initial,
+  isTemplate,
+  dayCount,
   submitLabel,
   onSubmit,
   onCancel,
 }: {
   locations: Location[];
   initial?: SerializedStay;
+  isTemplate: boolean;
+  dayCount: number;
   submitLabel: string;
   onSubmit: (data: StayInputData, done: () => void) => void;
   onCancel: () => void;
@@ -281,6 +318,13 @@ function StayFields({
   const [label, setLabel] = useState(initial?.label ?? "");
   const [checkIn, setCheckIn] = useState(initial?.checkIn ?? "");
   const [checkOut, setCheckOut] = useState(initial?.checkOut ?? "");
+  // Day-relative anchors (template mode). Stored as strings for the <Select>.
+  const [checkInDay, setCheckInDay] = useState<string>(
+    initial?.checkInDayIndex != null ? String(initial.checkInDayIndex) : "",
+  );
+  const [checkOutDay, setCheckOutDay] = useState<string>(
+    initial?.checkOutDayIndex != null ? String(initial.checkOutDayIndex) : "",
+  );
   const [arrivalTime, setArrivalTime] = useState(initial?.arrivalTime ?? "");
   const [departureTime, setDepartureTime] = useState(initial?.departureTime ?? "");
   const [board, setBoard] = useState<string>(initial?.board ?? "NONE");
@@ -303,8 +347,12 @@ function StayFields({
       {
         locationId,
         label: label.trim() || undefined,
-        checkIn,
-        checkOut,
+        // Send exactly one anchor mode — the server rejects a mismatch with the
+        // trip's template flag.
+        checkIn: isTemplate ? undefined : checkIn,
+        checkOut: isTemplate ? undefined : checkOut,
+        checkInDayIndex: isTemplate ? checkInDay || undefined : undefined,
+        checkOutDayIndex: isTemplate ? checkOutDay || undefined : undefined,
         arrivalTime: arrivalTime || undefined,
         departureTime: departureTime || undefined,
         board: board || undefined,
@@ -320,6 +368,8 @@ function StayFields({
           setLabel("");
           setCheckIn("");
           setCheckOut("");
+          setCheckInDay("");
+          setCheckOutDay("");
           setArrivalTime("");
           setDepartureTime("");
           setBoard("NONE");
@@ -363,23 +413,63 @@ function StayFields({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-xs">Check-in *</Label>
-          <Input
-            type="date"
-            value={checkIn}
-            onChange={(e) => setCheckIn(e.target.value)}
-          />
-        </div>
+        {isTemplate ? (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Check-in day *</Label>
+              <Select value={checkInDay} onValueChange={setCheckInDay}>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder="— pick a day —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: dayCount }, (_, i) => i + 1).map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      Day {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-xs">Check-out *</Label>
-          <Input
-            type="date"
-            value={checkOut}
-            onChange={(e) => setCheckOut(e.target.value)}
-          />
-        </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Check-out day *</Label>
+              <Select value={checkOutDay} onValueChange={setCheckOutDay}>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder="— pick a day —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Check-out is the departure morning: Day 2..N, plus Day N+1
+                      to cover the last night (mirrors an absolute endDate+1). */}
+                  {Array.from({ length: dayCount }, (_, i) => i + 2).map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n > dayCount ? `Day ${n} (after trip)` : `Day ${n}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Check-in *</Label>
+              <Input
+                type="date"
+                value={checkIn}
+                onChange={(e) => setCheckIn(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Check-out *</Label>
+              <Input
+                type="date"
+                value={checkOut}
+                onChange={(e) => setCheckOut(e.target.value)}
+              />
+            </div>
+          </>
+        )}
 
         <div className="space-y-1.5">
           <Label className="text-xs">Arrival time</Label>

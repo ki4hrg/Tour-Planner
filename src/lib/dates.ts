@@ -36,6 +36,23 @@ export function computeDayDate(
   return addDays(startDate, dayIndex - 1);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Inverse of `computeDayDate`: the 1-based day index a date falls on relative to
+ * a trip's startDate (day 1 == startDate). Used to templatize an absolute stay
+ * date into a day-relative anchor. Returns null when startDate is missing.
+ * Can exceed the trip's day count (e.g. a checkout the morning after the last
+ * day → dayCount + 1), matching how an absolute checkOut can be endDate + 1.
+ */
+export function dayIndexForDate(
+  startDate: Date | null,
+  date: Date | null | undefined,
+): number | null {
+  if (!startDate || !date) return null;
+  return Math.round((date.getTime() - startDate.getTime()) / DAY_MS) + 1;
+}
+
 const WEEKDAY_FMT = new Intl.DateTimeFormat("en-GB", {
   weekday: "short",
   day: "numeric",

@@ -11,7 +11,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "List Stays",
       description:
-        "List all lodging stays for a trip, showing location, check-in/out dates, board type, headcount, cost per person per night, and booking status. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
+        "List all lodging stays for a trip, showing location, check-in/out anchors, board type, headcount, cost per person per night, and booking status. A dated trip's stays carry calendar dates (checkIn/checkOut); a date-less template's stays carry 1-based day numbers (checkInDayIndex/checkOutDayIndex) instead — exactly one pair is set. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
       inputSchema: {
         tripId: z.string(),
       },
@@ -20,7 +20,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     async ({ tripId }) => {
       const stays = await prisma.stay.findMany({
         where: { tripId },
-        orderBy: { checkIn: "asc" },
+        orderBy: [{ checkIn: "asc" }, { checkInDayIndex: "asc" }],
         include: {
           location: { select: { id: true, name: true } },
         },
@@ -30,8 +30,10 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         id: s.id,
         location: s.location,
         label: s.label,
-        checkIn: toDateInput(s.checkIn),
-        checkOut: toDateInput(s.checkOut),
+        checkIn: s.checkIn ? toDateInput(s.checkIn) : null,
+        checkOut: s.checkOut ? toDateInput(s.checkOut) : null,
+        checkInDayIndex: s.checkInDayIndex,
+        checkOutDayIndex: s.checkOutDayIndex,
         arrivalTime: s.arrivalTime,
         departureTime: s.departureTime,
         board: s.board,
@@ -59,12 +61,14 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Stay",
       description:
-        "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues) and check-in/check-out dates (YYYY-MM-DD format). Board types: NONE (default), BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
+        "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues). For a DATED trip, pass check-in/check-out dates (YYYY-MM-DD). For a date-less TEMPLATE (get-trip shows isTemplate), pass day numbers instead: checkInDayIndex/checkOutDayIndex (1-based; check-out is the departure morning, so it may be one past the last day). Provide exactly one anchor mode matching the trip. Board types: NONE (default), BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
       inputSchema: {
         tripId: z.string(),
         locationId: z.string(),
-        checkIn: z.string(),
-        checkOut: z.string(),
+        checkIn: z.string().optional(),
+        checkOut: z.string().optional(),
+        checkInDayIndex: z.number().int().positive().optional(),
+        checkOutDayIndex: z.number().int().positive().optional(),
         label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
@@ -87,6 +91,8 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       locationId,
       checkIn,
       checkOut,
+      checkInDayIndex,
+      checkOutDayIndex,
       label,
       arrivalTime,
       departureTime,
@@ -109,29 +115,95 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         };
       }
 
-      if (checkOut <= checkIn) {
+      const trip = await prisma.trip.findUnique({
+        where: { id: tripId },
+        select: { isTemplate: true },
+      });
+      if (!trip) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Error: Check-out must be after check-in.",
-            },
-          ],
+          content: [{ type: "text" as const, text: "Error: Trip not found." }],
           isError: true,
         };
       }
 
-      const checkInDate = parseDateInput(checkIn);
-      const checkOutDate = parseDateInput(checkOut);
-      if (!checkInDate || !checkOutDate) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Error: Invalid date format. Use YYYY-MM-DD.",
-            },
-          ],
-          isError: true,
+      // Resolve the anchor from the trip's mode: templates take day numbers,
+      // dated trips take calendar dates (mirrors the web action + DB CHECK).
+      let anchor: {
+        checkIn: Date | null;
+        checkOut: Date | null;
+        checkInDayIndex: number | null;
+        checkOutDayIndex: number | null;
+      };
+      if (trip.isTemplate) {
+        if (checkInDayIndex == null || checkOutDayIndex == null) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: This is a template — pass checkInDayIndex and checkOutDayIndex (day numbers), not dates.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (checkOutDayIndex <= checkInDayIndex) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Check-out day must be after check-in day.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        anchor = {
+          checkIn: null,
+          checkOut: null,
+          checkInDayIndex,
+          checkOutDayIndex,
+        };
+      } else {
+        if (!checkIn || !checkOut) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: This trip has dates — pass checkIn and checkOut (YYYY-MM-DD).",
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (checkOut <= checkIn) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Check-out must be after check-in.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        const checkInDate = parseDateInput(checkIn);
+        const checkOutDate = parseDateInput(checkOut);
+        if (!checkInDate || !checkOutDate) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Invalid date format. Use YYYY-MM-DD.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        anchor = {
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
+          checkInDayIndex: null,
+          checkOutDayIndex: null,
         };
       }
 
@@ -140,8 +212,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
           tripId,
           locationId,
           label: label || null,
-          checkIn: checkInDate,
-          checkOut: checkOutDate,
+          ...anchor,
           arrivalTime: arrivalTime || null,
           departureTime: departureTime || null,
           board:
@@ -178,12 +249,14 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Stay",
       description:
-        "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. Dates use YYYY-MM-DD format. Board types: NONE, BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD.",
+        "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. To change the anchor, pass BOTH endpoints of one mode: checkIn+checkOut (YYYY-MM-DD, dated trips) or checkInDayIndex+checkOutDayIndex (1-based day numbers, templates) — a stay must match its trip's mode. Board types: NONE, BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD.",
       inputSchema: {
         stayId: z.string(),
         locationId: z.string().optional(),
         checkIn: z.string().optional(),
         checkOut: z.string().optional(),
+        checkInDayIndex: z.number().int().positive().optional(),
+        checkOutDayIndex: z.number().int().positive().optional(),
         label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
@@ -206,6 +279,8 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       locationId,
       checkIn,
       checkOut,
+      checkInDayIndex,
+      checkOutDayIndex,
       label,
       arrivalTime,
       departureTime,
@@ -230,35 +305,88 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
 
       const data: Record<string, unknown> = {};
       if (locationId !== undefined) data.locationId = locationId;
-      if (checkIn !== undefined) {
-        const d = parseDateInput(checkIn);
-        if (!d) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: Invalid checkIn format. Use YYYY-MM-DD.",
-              },
-            ],
-            isError: true,
-          };
-        }
-        data.checkIn = d;
+
+      const wantsDates = checkIn !== undefined || checkOut !== undefined;
+      const wantsIndices =
+        checkInDayIndex !== undefined || checkOutDayIndex !== undefined;
+      if (wantsDates && wantsIndices) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Use either calendar dates or day numbers, not both.",
+            },
+          ],
+          isError: true,
+        };
       }
-      if (checkOut !== undefined) {
-        const d = parseDateInput(checkOut);
-        if (!d) {
+      if (wantsDates) {
+        // Setting dates → clear any day-index anchor (exactly one mode holds).
+        if (checkIn === undefined || checkOut === undefined) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "Error: Invalid checkOut format. Use YYYY-MM-DD.",
+                text: "Error: Pass both checkIn and checkOut to change the dates.",
               },
             ],
             isError: true,
           };
         }
-        data.checkOut = d;
+        const ci = parseDateInput(checkIn);
+        const co = parseDateInput(checkOut);
+        if (!ci || !co) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Invalid date format. Use YYYY-MM-DD.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (co <= ci) {
+          return {
+            content: [
+              { type: "text" as const, text: "Error: Check-out must be after check-in." },
+            ],
+            isError: true,
+          };
+        }
+        data.checkIn = ci;
+        data.checkOut = co;
+        data.checkInDayIndex = null;
+        data.checkOutDayIndex = null;
+      }
+      if (wantsIndices) {
+        // Setting day numbers → clear any date anchor.
+        if (checkInDayIndex === undefined || checkOutDayIndex === undefined) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Pass both checkInDayIndex and checkOutDayIndex to change the day numbers.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (checkOutDayIndex <= checkInDayIndex) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Check-out day must be after check-in day.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        data.checkInDayIndex = checkInDayIndex;
+        data.checkOutDayIndex = checkOutDayIndex;
+        data.checkIn = null;
+        data.checkOut = null;
       }
       if (label !== undefined) data.label = label || null;
       if (arrivalTime !== undefined) data.arrivalTime = arrivalTime || null;

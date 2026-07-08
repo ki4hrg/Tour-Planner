@@ -107,13 +107,17 @@ export default async function TripOverviewPage({
       })
     : [];
   const allCosts = costLocations.flatMap((s) => s.costs);
+  // Scale per-person costs by the actual participant count, falling back to the
+  // planned capacity when it's unset — so templates (which have no participants)
+  // and not-yet-registered trips still estimate against capacity.
+  const estimateHeadcount = trip.participantCount ?? trip.capacity;
   const rollups = rollUpCosts(
     allCosts.map((c) => ({
       amount: Number(c.amount),
       currency: c.currency,
       unit: c.unit,
     })),
-    trip.participantCount,
+    estimateHeadcount,
   );
   const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
 
@@ -267,10 +271,14 @@ export default async function TripOverviewPage({
                     ) : null}
                     <dt className="text-muted-foreground">Capacity</dt>
                     <dd className="col-span-2">{trip.capacity ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Participants</dt>
-                    <dd className="col-span-2">
-                      {trip.participantCount ?? "—"}
-                    </dd>
+                    {!trip.isTemplate ? (
+                      <>
+                        <dt className="text-muted-foreground">Participants</dt>
+                        <dd className="col-span-2">
+                          {trip.participantCount ?? "—"}
+                        </dd>
+                      </>
+                    ) : null}
                     <dt className="text-muted-foreground">Notes</dt>
                     <dd className="col-span-2 whitespace-pre-wrap">
                       {trip.notes ?? "—"}
@@ -315,15 +323,17 @@ export default async function TripOverviewPage({
                 </p>
               ) : (
                 <>
-                  {trip.participantCount == null ? (
+                  {estimateHeadcount == null ? (
                     <p className="text-muted-foreground">
-                      Set a participant count to include per-person costs.
-                      Showing per-group costs only.
+                      Set a {trip.isTemplate ? "capacity" : "participant count or capacity"} to include
+                      per-person costs. Showing per-group costs only.
                     </p>
                   ) : (
                     <p className="text-muted-foreground">
-                      Estimated for {trip.participantCount} participant
-                      {trip.participantCount === 1 ? "" : "s"} across{" "}
+                      Estimated for {estimateHeadcount}{" "}
+                      {trip.participantCount != null ? "participant" : "capacity place"}
+                      {estimateHeadcount === 1 ? "" : "s"}
+                      {trip.participantCount == null ? " (capacity)" : ""} across{" "}
                       {locationIds.length} location
                       {locationIds.length === 1 ? "" : "s"}.
                     </p>
@@ -373,6 +383,8 @@ export default async function TripOverviewPage({
               <LodgingManager
                 tripId={trip.id}
                 canEdit={canEdit}
+                isTemplate={trip.isTemplate}
+                dayCount={trip.days.length}
                 locations={lodgingLocations.map((l) => ({
                   id: l.id,
                   name: l.name,
@@ -385,7 +397,7 @@ export default async function TripOverviewPage({
             </CardContent>
           </Card>
 
-          {canEdit ? (
+          {canEdit && !trip.isTemplate ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Share links</CardTitle>
