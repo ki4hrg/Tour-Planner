@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
+import { timedInsertIndex } from "@/lib/schedule-order";
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
   // ── list-schedule-categories (VIEWER+) ────────────────────────────────
@@ -249,30 +250,43 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           };
         }
 
-        const count = await prisma.scheduleItem.count({ where: { dayId } });
-        const item = await prisma.scheduleItem.create({
-          data: {
-            dayId,
-            order: count + 1,
-            categoryId: categoryId || null,
-            title: title || null,
-            startTime: startTime || null,
-            endTime: endTime || null,
-            notes: notes || null,
-            isBlock: isBlock ?? false,
-            presentationId: presentationId || null,
-            presenters: presenterIds?.length
-              ? { connect: presenterIds.map((id) => ({ id })) }
-              : undefined,
-            sites: locationIds?.length
-              ? {
-                  create: locationIds.map((locationId, i) => ({
-                    locationId,
-                    order: i,
-                  })),
-                }
-              : undefined,
-          },
+        // Slot the item into its chronological position rather than appending —
+        // items are ordered by an explicit `order`, not by time (mirrors the web
+        // addScheduleItem action).
+        const item = await prisma.$transaction(async (tx) => {
+          const items = await tx.scheduleItem.findMany({
+            where: { dayId },
+            select: { order: true, startTime: true },
+          });
+          const insertAt = timedInsertIndex(items, startTime);
+          await tx.scheduleItem.updateMany({
+            where: { dayId, order: { gt: insertAt } },
+            data: { order: { increment: 1 } },
+          });
+          return tx.scheduleItem.create({
+            data: {
+              dayId,
+              order: insertAt + 1,
+              categoryId: categoryId || null,
+              title: title || null,
+              startTime: startTime || null,
+              endTime: endTime || null,
+              notes: notes || null,
+              isBlock: isBlock ?? false,
+              presentationId: presentationId || null,
+              presenters: presenterIds?.length
+                ? { connect: presenterIds.map((id) => ({ id })) }
+                : undefined,
+              sites: locationIds?.length
+                ? {
+                    create: locationIds.map((locationId, i) => ({
+                      locationId,
+                      order: i,
+                    })),
+                  }
+                : undefined,
+            },
+          });
         });
 
         return {

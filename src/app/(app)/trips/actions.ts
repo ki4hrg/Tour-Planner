@@ -19,6 +19,7 @@ import { bookingSchema } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
 import { instantiateDays, instantiateVenueBookings } from "@/lib/templates";
+import { timedInsertIndex } from "@/lib/schedule-order";
 
 // --- Trip CRUD ---
 
@@ -406,20 +407,32 @@ export async function addScheduleItem(
   const idErr = await identityError(parsed.data);
   if (idErr) return { error: idErr };
 
-  const count = await prisma.scheduleItem.count({ where: { dayId } });
-  await prisma.scheduleItem.create({
-    data: {
-      dayId,
-      order: count + 1,
-      ...toItemScalars(parsed.data),
-      presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
-      sites: {
-        create: parsed.data.locationIds.map((locationId, i) => ({
-          locationId,
-          order: i,
-        })),
+  // Slot the item into its chronological position rather than always appending —
+  // items are ordered by an explicit (drag-reorderable) `order`, not by time.
+  await prisma.$transaction(async (tx) => {
+    const items = await tx.scheduleItem.findMany({
+      where: { dayId },
+      select: { order: true, startTime: true },
+    });
+    const insertAt = timedInsertIndex(items, parsed.data.startTime);
+    await tx.scheduleItem.updateMany({
+      where: { dayId, order: { gt: insertAt } },
+      data: { order: { increment: 1 } },
+    });
+    await tx.scheduleItem.create({
+      data: {
+        dayId,
+        order: insertAt + 1,
+        ...toItemScalars(parsed.data),
+        presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
+        sites: {
+          create: parsed.data.locationIds.map((locationId, i) => ({
+            locationId,
+            order: i,
+          })),
+        },
       },
-    },
+    });
   });
 
   const tripId = await tripIdForDay(dayId);
