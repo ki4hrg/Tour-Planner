@@ -155,8 +155,58 @@ export default async function LocationDetailPage({
       </div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-        {/* Main column (2/3): the full profile + the contact log you work in */}
-        <div className="min-w-0 space-y-6 lg:col-span-2">
+        {/* Contact log — right 2/3 on desktop, below the metadata on mobile. This
+            is the surface you work in, so it mirrors the itinerary on the trip page. */}
+        <div className="order-2 min-w-0 space-y-6 lg:col-span-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NotesThread
+            target="location"
+            targetId={location.id}
+            notes={location.siteNotes.map(serializeNote)}
+            contacts={linkedContacts}
+            canEdit={canEdit}
+            today={toDateInput(todayUtc())}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Visit history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {visits.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Not used by any trip yet.
+            </p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {visits.map((v) => (
+                <li
+                  key={v.id}
+                  className="flex items-baseline justify-between gap-2"
+                >
+                  <Link href={`/trips/${v.id}`} className="hover:underline">
+                    {v.name}
+                  </Link>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {v.startDate ? formatDate(v.startDate) : "—"} · {v.count}{" "}
+                    visit{v.count === 1 ? "" : "s"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+        </div>
+
+        {/* Reference/metadata — leads on mobile, left 1/3 on desktop. */}
+        <div className="order-1 min-w-0 space-y-6 lg:col-span-1">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
@@ -251,25 +301,6 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <NotesThread
-            target="location"
-            targetId={location.id}
-            notes={location.siteNotes.map(serializeNote)}
-            contacts={linkedContacts}
-            canEdit={canEdit}
-            today={toDateInput(todayUtc())}
-          />
-        </CardContent>
-      </Card>
-        </div>
-
-        {/* Side column (1/3): who we talk to, what it costs, how it's been used */}
-        <div className="min-w-0 space-y-6 lg:col-span-1">
-      <Card>
-        <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
         </CardHeader>
         <CardContent>
@@ -316,36 +347,6 @@ export default async function LocationDetailPage({
           </CardContent>
         </Card>
       ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Visit history</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {visits.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Not used by any trip yet.
-            </p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {visits.map((v) => (
-                <li
-                  key={v.id}
-                  className="flex items-baseline justify-between gap-2"
-                >
-                  <Link href={`/trips/${v.id}`} className="hover:underline">
-                    {v.name}
-                  </Link>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {v.startDate ? formatDate(v.startDate) : "—"} · {v.count}{" "}
-                    visit{v.count === 1 ? "" : "s"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
         </div>
       </div>
 

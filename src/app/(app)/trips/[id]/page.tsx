@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, toDateInput } from "@/lib/dates";
+import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
   TRIP_STATUS_LABELS,
   serializeStay,
@@ -76,6 +76,14 @@ export default async function TripOverviewPage({
     },
   });
   if (!trip) notFound();
+
+  // If the trip is happening now, find the day that falls on today so the
+  // itinerary panel opens straight to it. Templates/off-dates → null (day 1).
+  const todayMs = todayUtc().getTime();
+  const currentDayId =
+    !trip.isTemplate && isOngoing(trip.startDate, trip.endDate)
+      ? (trip.days.find((d) => d.date?.getTime() === todayMs)?.id ?? null)
+      : null;
 
   const allTripTypes = await prisma.tripType.findMany({
     orderBy: { name: "asc" },
@@ -210,6 +218,7 @@ export default async function TripOverviewPage({
             canEdit={canEdit}
             days={trip.days.map(serializeDay)}
             lodgingByDay={summarizeDayLodging(trip.days, stays)}
+            currentDayId={currentDayId}
           />
         </div>
 
@@ -238,14 +247,20 @@ export default async function TripOverviewPage({
                     <dd className="col-span-2">
                       {TRIP_STATUS_LABELS[trip.status]}
                     </dd>
-                    <dt className="text-muted-foreground">Dates</dt>
-                    <dd className="col-span-2">
-                      {trip.startDate
-                        ? `${formatDate(trip.startDate)}${
-                            trip.endDate ? ` → ${formatDate(trip.endDate)}` : ""
-                          }`
-                        : "—"}
-                    </dd>
+                    {!trip.isTemplate ? (
+                      <>
+                        <dt className="text-muted-foreground">Dates</dt>
+                        <dd className="col-span-2">
+                          {trip.startDate
+                            ? `${formatDate(trip.startDate)}${
+                                trip.endDate
+                                  ? ` → ${formatDate(trip.endDate)}`
+                                  : ""
+                              }`
+                            : "—"}
+                        </dd>
+                      </>
+                    ) : null}
                     <dt className="text-muted-foreground">Capacity</dt>
                     <dd className="col-span-2">{trip.capacity ?? "—"}</dd>
                     <dt className="text-muted-foreground">Participants</dt>

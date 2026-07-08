@@ -60,6 +60,11 @@ export function TripForm({
   const section = useEditSection();
   const [tripTypeId, setTripTypeId] = useState(initial?.tripTypeId ?? "");
   const [templateId, setTemplateId] = useState(BLANK);
+  // Templates carry no calendar dates — they're reusable skeletons. Track the
+  // flag reactively so the date fields disappear the moment "template" is chosen.
+  const [isTemplate, setIsTemplate] = useState(
+    initial?.isTemplate ?? defaultIsTemplate ?? false,
+  );
 
   // Templates are type-scoped: only show those matching the selected type.
   const typeTemplates = useMemo(
@@ -146,24 +151,28 @@ export function TripForm({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="startDate">Start date</Label>
-          <Input
-            id="startDate"
-            name="startDate"
-            type="date"
-            defaultValue={initial?.startDate ?? ""}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="endDate">End date</Label>
-          <Input
-            id="endDate"
-            name="endDate"
-            type="date"
-            defaultValue={initial?.endDate ?? ""}
-          />
-        </div>
+        {!isTemplate ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="startDate">Start date</Label>
+              <Input
+                id="startDate"
+                name="startDate"
+                type="date"
+                defaultValue={initial?.startDate ?? ""}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="endDate">End date</Label>
+              <Input
+                id="endDate"
+                name="endDate"
+                type="date"
+                defaultValue={initial?.endDate ?? ""}
+              />
+            </div>
+          </>
+        ) : null}
 
         <div className="space-y-1.5">
           <Label htmlFor="capacity">Capacity</Label>
@@ -204,9 +213,10 @@ export function TripForm({
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
             <Checkbox
               name="isTemplate"
-              defaultChecked={initial?.isTemplate ?? defaultIsTemplate ?? false}
+              checked={isTemplate}
+              onCheckedChange={(v) => setIsTemplate(v === true)}
             />
-            Save as a reusable template
+            Save as a reusable template (no calendar dates)
           </label>
         ) : null}
       </div>

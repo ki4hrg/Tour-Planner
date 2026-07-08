@@ -82,6 +82,13 @@ export async function createTrip(
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
   const data = toTripData(parsed.data);
+  const isTemplate = parsed.data.isTemplate ?? false;
+  // Templates are date-less skeletons — never persist calendar dates on one, even
+  // if the form somehow submitted them.
+  if (isTemplate) {
+    data.startDate = null;
+    data.endDate = null;
+  }
   const templateId = String(formData.get("templateId") ?? "");
 
   // Optionally instantiate from a template: deep-copy its days/items (dates
@@ -104,7 +111,7 @@ export async function createTrip(
   const trip = await prisma.trip.create({
     data: {
       ...data,
-      isTemplate: parsed.data.isTemplate ?? false,
+      isTemplate,
       createdById: user.id,
       ...(daysCreate ? { days: { create: daysCreate } } : {}),
       ...(venueBookingsCreate.length
@@ -143,7 +150,7 @@ export async function updateTrip(
 }
 
 // Snapshot an existing trip as a reusable template: deep-copy its itinerary
-// (bookings reset to NOT_BOOKED, dates re-derived from the trip's startDate) and
+// (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 export async function saveTripAsTemplate(formData: FormData): Promise<void> {
   const user = await assertRole("PLANNER");
@@ -171,15 +178,17 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
     data: {
       name: `${source.name} (template)`,
       tripTypeId: source.tripTypeId,
-      startDate: source.startDate,
-      endDate: source.endDate,
+      // Templates are date-less: drop start/end and derive day dates from null
+      // (day skeletons keep their dayIndex, dates fill in when instantiated).
+      startDate: null,
+      endDate: null,
       capacity: source.capacity,
       participantCount: source.participantCount,
       notes: source.notes,
       status: "PLANNING",
       isTemplate: true,
       createdById: user.id,
-      days: { create: instantiateDays(source.days, source.startDate) },
+      days: { create: instantiateDays(source.days, null) },
       ...(venueBookingsCreate.length
         ? { bookings: { create: venueBookingsCreate } }
         : {}),

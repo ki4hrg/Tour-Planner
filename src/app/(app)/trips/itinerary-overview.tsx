@@ -51,16 +51,24 @@ export function ItineraryOverview({
   canEdit,
   days,
   lodgingByDay,
+  currentDayId,
 }: {
   tripId: string;
   canEdit: boolean;
   days: SerializedDay[];
   lodgingByDay?: Record<string, DayLodgingSummary | null>;
+  // When the trip is happening now, the id of the day that falls on today — so we
+  // open straight to it instead of day 1. Null/absent → default to the first day.
+  currentDayId?: string | null;
 }) {
-  // Default: open the first day so the panel isn't a wall of collapsed rows.
-  const [open, setOpen] = useState<Set<string>>(
-    () => new Set(days.length ? [days[0].id] : []),
-  );
+  // Default: open today's day if the trip is in progress, else the first day, so
+  // the panel isn't a wall of collapsed rows.
+  const [open, setOpen] = useState<Set<string>>(() => {
+    if (currentDayId && days.some((d) => d.id === currentDayId)) {
+      return new Set([currentDayId]);
+    }
+    return new Set(days.length ? [days[0].id] : []);
+  });
 
   const allOpen = days.length > 0 && open.size === days.length;
   const toggleAll = () =>

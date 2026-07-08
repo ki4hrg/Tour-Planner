@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import {
@@ -9,16 +10,67 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, isOngoing } from "@/lib/dates";
+import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
 import { bookingWindow } from "@/lib/booking";
-import { TRIP_STATUS_LABELS } from "@/lib/trips";
+import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
+import { TimelineGroups } from "./trips/itinerary-timeline";
 
 export const dynamic = "force-dynamic";
 
+// The full item tree a single day needs to render its timeline (matches the
+// trip/day pages so serializeDay can consume it directly).
+const DAY_ITEMS_INCLUDE = {
+  orderBy: { order: "asc" },
+  include: {
+    category: { select: { id: true, name: true, color: true } },
+    presentation: {
+      select: {
+        id: true,
+        title: true,
+        defaultPresenters: { select: { id: true, name: true } },
+      },
+    },
+    presenters: { select: { id: true, name: true } },
+    sites: {
+      orderBy: { order: "asc" },
+      include: { location: { select: { id: true, name: true } } },
+    },
+    bookings: {
+      orderBy: { createdAt: "asc" },
+      include: { bookedContact: { select: { id: true, name: true } } },
+    },
+  },
+} satisfies Prisma.ItineraryDay$scheduleItemsArgs;
+
 export default async function Home() {
   await requireUser();
+  const today = todayUtc();
 
-  const [activeTrips, engagementBookings] = await Promise.all([
+  const [ongoingCandidates, activeTrips, engagementBookings] = await Promise.all([
+    // Trips underway right now, with just today's day + its schedule loaded so we
+    // can surface "what's happening today" front and center. The date bounds keep
+    // this cheap; isOngoing() below is the exact filter.
+    prisma.trip.findMany({
+      where: {
+        isTemplate: false,
+        startDate: { lte: today },
+        OR: [{ endDate: { gte: today } }, { endDate: null, startDate: today }],
+      },
+      orderBy: { startDate: "asc" },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+        tripType: { select: { name: true } },
+        days: {
+          where: { date: today },
+          orderBy: { dayIndex: "asc" },
+          include: { scheduleItems: DAY_ITEMS_INCLUDE },
+        },
+      },
+    }),
     // Trips still in play, soonest first (Postgres sorts NULL start dates last).
     prisma.trip.findMany({
       where: {
@@ -56,6 +108,19 @@ export default async function Home() {
     }),
   ]);
 
+  // Exact "is today within the trip span" filter, and pull out today's day.
+  const ongoing = ongoingCandidates
+    .filter((t) => isOngoing(t.startDate, t.endDate))
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      startDate: t.startDate,
+      endDate: t.endDate,
+      tripTypeName: t.tripType.name,
+      currentDay: t.days[0] ? serializeDay(t.days[0]) : null,
+    }));
+
   const alerts = engagementBookings
     .map((b) => {
       const trip = b.trip!;
@@ -84,6 +149,64 @@ export default async function Home() {
           Upcoming trips and bookings that need attention.
         </p>
       </div>
+
+      {ongoing.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Happening now
+              <Badge variant="secondary" className="ml-2 align-middle">
+                {ongoing.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm">
+            {ongoing.map((t) => (
+              <div key={t.id} className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/trips/${t.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {t.name}
+                    </Link>
+                    <span className="block text-xs text-muted-foreground">
+                      {t.tripTypeName}
+                      {t.currentDay
+                        ? ` · Day ${t.currentDay.dayIndex}${
+                            t.currentDay.title ? ` — ${t.currentDay.title}` : ""
+                          }`
+                        : ""}{" "}
+                      · {formatDate(today)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/trips/${t.id}/today`}>Today</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/trips/${t.id}/booking`}>Booking</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/trips/${t.id}`}>Details</Link>
+                    </Button>
+                  </div>
+                </div>
+                {t.currentDay && t.currentDay.items.length > 0 ? (
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <TimelineGroups items={t.currentDay.items} />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Nothing scheduled for today.
+                  </p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
