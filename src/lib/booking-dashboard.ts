@@ -85,7 +85,9 @@ type EngagementInput = {
   bookedContact: { id: string; name: string } | null;
 };
 
-type StayInput = { locationId: string; checkIn: Date; checkOut: Date };
+// checkIn/checkOut are null on a date-less template stay (day-relative anchors);
+// such a stay adds 0 nights and no dates to the engagement below.
+type StayInput = { locationId: string; checkIn: Date | null; checkOut: Date | null };
 
 type LocationInput = {
   id: string;
@@ -169,7 +171,7 @@ export function buildDashboardRows(data: DashboardData): {
   for (const stay of data.stays) {
     const v = ensure(stay.locationId);
     v.nights += nightsBetween(stay.checkIn, stay.checkOut);
-    v.dates.push(stay.checkIn);
+    if (stay.checkIn) v.dates.push(stay.checkIn);
   }
 
   // Engagements with no remaining itinerary/lodging coverage still surface.

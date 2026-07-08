@@ -1,5 +1,5 @@
-import type { BookingStatus } from "@prisma/client";
-import { computeDayDate } from "./dates";
+import type { BookingStatus, BoardType, Prisma } from "@prisma/client";
+import { computeDayDate, dayIndexForDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
 // pure, unit-testable function over plain data (no Prisma row instances needed).
@@ -159,4 +159,124 @@ export function instantiateDays(
         },
       };
     });
+}
+
+// --- Stay (lodging) templatize / instantiate ---
+//
+// A stay anchors EITHER to absolute dates (dated trip) or 1-based day indices
+// (date-less template). Reusable attributes (location, cost, board…) carry over
+// unchanged in both directions; only the anchor is converted. The venue-engagement
+// booking that covers the stay's location is handled by the booking copy path, so
+// it is not touched here.
+
+// The reusable, anchor-independent attributes shared across both directions.
+type StayCarryOver = {
+  locationId: string;
+  label: string | null;
+  arrivalTime: string | null;
+  departureTime: string | null;
+  board: BoardType;
+  headcount: number | null;
+  // Prisma.Decimal flows through untouched (never coerced across this boundary).
+  costPerPersonPerNight: Prisma.Decimal | null;
+  currency: string;
+  priority: number;
+  notes: string | null;
+};
+
+export type SourceStay = StayCarryOver & {
+  checkIn: Date | null;
+  checkOut: Date | null;
+  checkInDayIndex: number | null;
+  checkOutDayIndex: number | null;
+};
+
+export type TemplatizedStay = StayCarryOver & {
+  checkIn: null;
+  checkOut: null;
+  checkInDayIndex: number;
+  checkOutDayIndex: number;
+};
+
+export type InstantiatedStay = StayCarryOver & {
+  checkIn: Date | null;
+  checkOut: Date | null;
+  checkInDayIndex: number | null;
+  checkOutDayIndex: number | null;
+};
+
+function carryOver(s: StayCarryOver): StayCarryOver {
+  return {
+    locationId: s.locationId,
+    label: s.label,
+    arrivalTime: s.arrivalTime,
+    departureTime: s.departureTime,
+    board: s.board,
+    headcount: s.headcount,
+    costPerPersonPerNight: s.costPerPersonPerNight,
+    currency: s.currency,
+    priority: s.priority,
+    notes: s.notes,
+  };
+}
+
+/**
+ * Convert a trip's stays into day-relative template rows (dates → day indices,
+ * measured from the source trip's startDate). A stay that can't be anchored — the
+ * source trip has no startDate, or the stay is already day-relative with no dates —
+ * is dropped, since a template stay MUST carry indices. Returns Prisma create-data.
+ */
+export function templatizeStays(
+  stays: SourceStay[],
+  startDate: Date | null,
+): TemplatizedStay[] {
+  return stays.flatMap((s) => {
+    const ci = dayIndexForDate(startDate, s.checkIn);
+    const co = dayIndexForDate(startDate, s.checkOut);
+    if (ci == null || co == null) return [];
+    return [
+      {
+        ...carryOver(s),
+        checkIn: null,
+        checkOut: null,
+        checkInDayIndex: ci,
+        checkOutDayIndex: co,
+      },
+    ];
+  });
+}
+
+/**
+ * Copy stays into a new trip. When the target has a startDate the day-relative
+ * anchors are resolved to absolute dates (indices → dates); when the target is
+ * itself date-less (instantiating a template as another template) the indices are
+ * carried over as-is. Already-dated source stays keep their dates. Returns
+ * Prisma create-data.
+ */
+export function instantiateStays(
+  stays: SourceStay[],
+  startDate: Date | null,
+): InstantiatedStay[] {
+  return stays.map((s) => {
+    const base = carryOver(s);
+    // Prefer an explicit day-index anchor; fall back to an absolute one.
+    const idxIn = s.checkInDayIndex;
+    const idxOut = s.checkOutDayIndex;
+    if (idxIn != null && idxOut != null) {
+      const dateIn = computeDayDate(startDate, idxIn);
+      const dateOut = computeDayDate(startDate, idxOut);
+      // Dated target → materialize dates and clear indices; date-less target →
+      // keep indices (dates stay null). Exactly one mode is populated either way.
+      return dateIn && dateOut
+        ? { ...base, checkIn: dateIn, checkOut: dateOut, checkInDayIndex: null, checkOutDayIndex: null }
+        : { ...base, checkIn: null, checkOut: null, checkInDayIndex: idxIn, checkOutDayIndex: idxOut };
+    }
+    return {
+      ...base,
+      checkIn: s.checkIn,
+      checkOut: s.checkOut,
+      checkInDayIndex: null,
+      checkOutDayIndex: null,
+    };
+  });
 }

@@ -1,5 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { instantiateDays, type TemplateScheduleItem } from "./templates";
+import {
+  instantiateDays,
+  templatizeStays,
+  instantiateStays,
+  type TemplateScheduleItem,
+  type SourceStay,
+} from "./templates";
+
+const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
+
+function stay(over: Partial<SourceStay> = {}): SourceStay {
+  return {
+    locationId: "locH",
+    label: "Hotel",
+    checkIn: null,
+    checkOut: null,
+    checkInDayIndex: null,
+    checkOutDayIndex: null,
+    arrivalTime: null,
+    departureTime: null,
+    board: "NONE" as SourceStay["board"],
+    headcount: 10,
+    costPerPersonPerNight: null,
+    currency: "USD",
+    priority: 0,
+    notes: null,
+    ...over,
+  };
+}
 
 function item(
   order: number,
@@ -114,5 +142,86 @@ describe("instantiateDays", () => {
     const before = JSON.stringify(sample);
     instantiateDays(sample, null);
     expect(JSON.stringify(sample)).toBe(before);
+  });
+});
+
+describe("templatizeStays", () => {
+  const start = d("2026-07-06"); // trip day 1
+
+  it("converts absolute dates to 1-based day indices from startDate", () => {
+    // Check in day 1 (Jul 6), out the morning of day 11 (Jul 16) → 10 nights.
+    const out = templatizeStays(
+      [stay({ checkIn: d("2026-07-06"), checkOut: d("2026-07-16") })],
+      start,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].checkInDayIndex).toBe(1);
+    expect(out[0].checkOutDayIndex).toBe(11);
+    expect(out[0].checkIn).toBeNull();
+    expect(out[0].checkOut).toBeNull();
+  });
+
+  it("carries over the reusable attributes unchanged", () => {
+    const out = templatizeStays(
+      [stay({ checkIn: d("2026-07-08"), checkOut: d("2026-07-09"), label: "Inn", priority: 1 })],
+      start,
+    );
+    expect(out[0].label).toBe("Inn");
+    expect(out[0].priority).toBe(1);
+    expect(out[0].checkInDayIndex).toBe(3);
+    expect(out[0].checkOutDayIndex).toBe(4);
+  });
+
+  it("drops stays that can't be anchored (no startDate to measure from)", () => {
+    const out = templatizeStays(
+      [stay({ checkIn: d("2026-07-06"), checkOut: d("2026-07-08") })],
+      null,
+    );
+    expect(out).toEqual([]);
+  });
+});
+
+describe("instantiateStays", () => {
+  it("resolves day indices to dates against the new startDate", () => {
+    const out = instantiateStays(
+      [stay({ checkInDayIndex: 1, checkOutDayIndex: 11 })],
+      d("2026-08-01"),
+    );
+    expect(out[0].checkIn?.toISOString().slice(0, 10)).toBe("2026-08-01");
+    expect(out[0].checkOut?.toISOString().slice(0, 10)).toBe("2026-08-11");
+    expect(out[0].checkInDayIndex).toBeNull();
+    expect(out[0].checkOutDayIndex).toBeNull();
+  });
+
+  it("keeps day indices when the target is itself date-less", () => {
+    const out = instantiateStays(
+      [stay({ checkInDayIndex: 2, checkOutDayIndex: 4 })],
+      null,
+    );
+    expect(out[0].checkIn).toBeNull();
+    expect(out[0].checkOut).toBeNull();
+    expect(out[0].checkInDayIndex).toBe(2);
+    expect(out[0].checkOutDayIndex).toBe(4);
+  });
+
+  it("carries an already-dated source stay through unchanged", () => {
+    const out = instantiateStays(
+      [stay({ checkIn: d("2026-07-06"), checkOut: d("2026-07-08") })],
+      d("2026-08-01"),
+    );
+    expect(out[0].checkIn?.toISOString().slice(0, 10)).toBe("2026-07-06");
+    expect(out[0].checkOutDayIndex).toBeNull();
+  });
+
+  it("round-trips: templatize then instantiate lands on the same offsets", () => {
+    const source = stay({ checkIn: d("2026-07-08"), checkOut: d("2026-07-11") });
+    const templated = templatizeStays([source], d("2026-07-06")); // days 3 → 6
+    const instantiated = instantiateStays(
+      templated.map((t) => ({ ...t })),
+      d("2026-09-10"), // new day 1
+    );
+    // day 3 == Sep 12, day 6 == Sep 15
+    expect(instantiated[0].checkIn?.toISOString().slice(0, 10)).toBe("2026-09-12");
+    expect(instantiated[0].checkOut?.toISOString().slice(0, 10)).toBe("2026-09-15");
   });
 });

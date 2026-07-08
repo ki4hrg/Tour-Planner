@@ -135,21 +135,31 @@ export function TripForm({
           </div>
         ) : null}
 
-        <div className="space-y-1.5">
-          <Label htmlFor="status">Status</Label>
-          <Select name="status" defaultValue={initial?.status ?? "PLANNING"}>
-            <SelectTrigger id="status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TRIP_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {TRIP_STATUS_LABELS[s]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Status is a dated-trip lifecycle concern — templates have none (they're
+            always PLANNING). Submit it hidden so the required field still validates. */}
+        {isTemplate ? (
+          <input
+            type="hidden"
+            name="status"
+            value={initial?.status ?? "PLANNING"}
+          />
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="status">Status</Label>
+            <Select name="status" defaultValue={initial?.status ?? "PLANNING"}>
+              <SelectTrigger id="status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRIP_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {TRIP_STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {!isTemplate ? (
           <>
@@ -185,17 +195,21 @@ export function TripForm({
             defaultValue={initial?.capacity ?? ""}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="participantCount">Participants</Label>
-          <Input
-            id="participantCount"
-            name="participantCount"
-            type="number"
-            min={0}
-            placeholder="registered headcount"
-            defaultValue={initial?.participantCount ?? ""}
-          />
-        </div>
+        {/* Participants is a registered-headcount concern for real trips only;
+            templates estimate costs against capacity instead. */}
+        {!isTemplate ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="participantCount">Participants</Label>
+            <Input
+              id="participantCount"
+              name="participantCount"
+              type="number"
+              min={0}
+              placeholder="registered headcount"
+              defaultValue={initial?.participantCount ?? ""}
+            />
+          </div>
+        ) : null}
 
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">Notes</Label>

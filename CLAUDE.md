@@ -64,7 +64,10 @@ occurrences that deliver it), `create-presentation` (P), `update-presentation` (
 Passing `defaultPresenterIds` on a write REPLACES the default-presenter set.
 
 **stays.ts** — `list-stays` (V), `add-stay` (P), `update-stay` (P). Lodging booking
-state lives on the venue-engagement Booking, NOT the Stay — see `list-bookings`.
+state lives on the venue-engagement Booking, NOT the Stay — see `list-bookings`. A
+stay anchors EITHER to calendar dates (dated trip) OR to 1-based day numbers
+(date-less template): `add`/`update` pick the mode from the trip and pass the
+matching pair (`checkIn`/`checkOut` vs `checkInDayIndex`/`checkOutDayIndex`).
 
 **notes.ts** — `list-notes` (V), `add-note` (P). Polymorphic `target` ∈
 `location | booking | trip | stay`; `add-note` defaults `contactedOn` to today via
@@ -162,7 +165,12 @@ npm test                          # vitest
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
   `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).
   `Location` (renamed from `Site`) has a 1:1 `HostSite` extension; `Stay` is per-trip
-  lodging; `Region` is a hierarchical catalog.
+  lodging; `Region` is a hierarchical catalog. A `Stay` anchors EITHER by calendar
+  dates (`checkIn`/`checkOut`) on a dated trip OR by 1-based day indices
+  (`checkInDayIndex`/`checkOutDayIndex`) on a date-less template — exactly one mode
+  (DB CHECK `stay_anchor_mode`). Templatizing/instantiating a trip converts between
+  them (`templatizeStays`/`instantiateStays` in `src/lib/templates.ts`), mirroring
+  how `ItineraryDay.date` derives from `startDate + dayIndex`.
 - **Bookings = venue engagements**: a `Booking` targets **exactly one of** a `(trip,
   location)` engagement OR a `ScheduleItem` (DB CHECK `num_nonnulls(scheduleItemId,
   tripId) = 1`, plus `tripId ⇒ locationId`). The engagement is the normal case: ONE

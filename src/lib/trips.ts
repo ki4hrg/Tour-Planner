@@ -343,8 +343,12 @@ export type SerializedStay = {
   locationId: string;
   location: { id: string; name: string };
   label: string | null;
-  checkIn: string;
-  checkOut: string;
+  // A stay is anchored EITHER by calendar dates (dated trip) or 1-based day
+  // indices (date-less template). Exactly one pair is populated; the other is null.
+  checkIn: string | null;
+  checkOut: string | null;
+  checkInDayIndex: number | null;
+  checkOutDayIndex: number | null;
   arrivalTime: string | null;
   departureTime: string | null;
   board: BoardType;
@@ -371,8 +375,8 @@ export type DayLodgingSummary = {
 };
 
 type LodgingStayRow = {
-  checkIn: Date;
-  checkOut: Date;
+  checkIn: Date | null;
+  checkOut: Date | null;
   priority?: number;
   board: BoardType;
   label: string | null;
@@ -409,8 +413,12 @@ export function serializeStay(
     locationId: stay.locationId,
     location: { id: stay.location.id, name: stay.location.name },
     label: stay.label,
-    checkIn: toDateInput(stay.checkIn),
-    checkOut: toDateInput(stay.checkOut),
+    // toDateInput returns "" for null; normalize to null so the client can tell
+    // "no date" (template stay) from an empty string.
+    checkIn: stay.checkIn ? toDateInput(stay.checkIn) : null,
+    checkOut: stay.checkOut ? toDateInput(stay.checkOut) : null,
+    checkInDayIndex: stay.checkInDayIndex,
+    checkOutDayIndex: stay.checkOutDayIndex,
     arrivalTime: stay.arrivalTime,
     departureTime: stay.departureTime,
     board: stay.board,

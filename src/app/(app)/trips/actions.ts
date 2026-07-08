@@ -18,7 +18,12 @@ import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
 import { bookingSchema } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
-import { instantiateDays, instantiateVenueBookings } from "@/lib/templates";
+import {
+  instantiateDays,
+  instantiateVenueBookings,
+  instantiateStays,
+  templatizeStays,
+} from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
 
 // --- Trip CRUD ---
@@ -74,6 +79,27 @@ const TEMPLATE_DAYS_SELECT = {
   },
 } satisfies Prisma.ItineraryDaySelect;
 
+// Field selection for deep-copying a trip's lodging (template ⇄ trip). Feeds
+// templatizeStays / instantiateStays, which convert the anchor (dates ⇄ day
+// indices). The venue-engagement booking is copied via the bookings path, so
+// booking state is intentionally omitted here.
+const TEMPLATE_STAYS_SELECT = {
+  locationId: true,
+  label: true,
+  checkIn: true,
+  checkOut: true,
+  checkInDayIndex: true,
+  checkOutDayIndex: true,
+  arrivalTime: true,
+  departureTime: true,
+  board: true,
+  headcount: true,
+  costPerPersonPerNight: true,
+  currency: true,
+  priority: true,
+  notes: true,
+} satisfies Prisma.StaySelect;
+
 export async function createTrip(
   _prev: FormState,
   formData: FormData,
@@ -96,17 +122,22 @@ export async function createTrip(
   // derived from the new startDate, bookings reset). Templates are snapshots.
   let daysCreate;
   let venueBookingsCreate: ReturnType<typeof instantiateVenueBookings> = [];
+  let staysCreate: ReturnType<typeof instantiateStays> = [];
   if (templateId) {
     const template = await prisma.trip.findUnique({
       where: { id: templateId },
       select: {
         days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
         bookings: { select: { locationId: true, label: true, notes: true } },
+        stays: { select: TEMPLATE_STAYS_SELECT },
       },
     });
     if (!template) return { error: "Selected template no longer exists." };
     daysCreate = instantiateDays(template.days, data.startDate);
     venueBookingsCreate = instantiateVenueBookings(template.bookings);
+    // Day-relative template stays resolve to dates against the new startDate (or
+    // stay day-relative when the new trip is itself a date-less template).
+    staysCreate = instantiateStays(template.stays, data.startDate);
   }
 
   const trip = await prisma.trip.create({
@@ -118,6 +149,7 @@ export async function createTrip(
       ...(venueBookingsCreate.length
         ? { bookings: { create: venueBookingsCreate } }
         : {}),
+      ...(staysCreate.length ? { stays: { create: staysCreate } } : {}),
     },
   });
 
@@ -170,11 +202,16 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       notes: true,
       days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
       bookings: { select: { locationId: true, label: true, notes: true } },
+      stays: { select: TEMPLATE_STAYS_SELECT },
     },
   });
   if (!source) return;
 
   const venueBookingsCreate = instantiateVenueBookings(source.bookings);
+  // Capture lodging as day-relative anchors (dates → day indices, measured from
+  // this trip's startDate). Stays that can't be anchored — the source trip is
+  // itself date-less — are dropped; a template stay must carry day indices.
+  const staysCreate = templatizeStays(source.stays, source.startDate);
   const template = await prisma.trip.create({
     data: {
       name: `${source.name} (template)`,
@@ -193,6 +230,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       ...(venueBookingsCreate.length
         ? { bookings: { create: venueBookingsCreate } }
         : {}),
+      ...(staysCreate.length ? { stays: { create: staysCreate } } : {}),
     },
   });
 
@@ -761,8 +799,10 @@ export async function createPresentationInline(
 export type StayInputData = {
   locationId: string;
   label?: string;
-  checkIn: string;
-  checkOut: string;
+  checkIn?: string;
+  checkOut?: string;
+  checkInDayIndex?: string;
+  checkOutDayIndex?: string;
   arrivalTime?: string;
   departureTime?: string;
   board?: string;
@@ -773,12 +813,18 @@ export type StayInputData = {
   notes?: string;
 };
 
+// Translate validated input into a Stay row, resolving the anchor mode. Exactly
+// one of (dates) / (day indices) is populated — the DB CHECK `stay_anchor_mode`
+// enforces the same invariant. Day indices are the template mode.
 function toStayData(d: ReturnType<typeof staySchema.parse>) {
+  const dayRelative = d.checkInDayIndex != null;
   return {
     locationId: d.locationId,
     label: d.label || null,
-    checkIn: parseDateInput(d.checkIn)!,
-    checkOut: parseDateInput(d.checkOut)!,
+    checkIn: dayRelative ? null : parseDateInput(d.checkIn ?? "")!,
+    checkOut: dayRelative ? null : parseDateInput(d.checkOut ?? "")!,
+    checkInDayIndex: dayRelative ? d.checkInDayIndex! : null,
+    checkOutDayIndex: dayRelative ? d.checkOutDayIndex! : null,
     arrivalTime: d.arrivalTime || null,
     departureTime: d.departureTime || null,
     board: d.board as BoardType,
@@ -790,6 +836,20 @@ function toStayData(d: ReturnType<typeof staySchema.parse>) {
   };
 }
 
+// A stay's anchor mode must match its trip: templates (date-less) take day
+// indices, dated trips take calendar dates. Returns an error message on mismatch.
+function anchorModeError(
+  data: ReturnType<typeof toStayData>,
+  isTemplate: boolean,
+): string | null {
+  const dayRelative = data.checkInDayIndex != null;
+  if (isTemplate && !dayRelative)
+    return "Templates use day numbers for lodging, not calendar dates.";
+  if (!isTemplate && dayRelative)
+    return "This trip has dates — use calendar dates for lodging, not day numbers.";
+  return null;
+}
+
 export async function addStay(
   tripId: string,
   input: StayInputData,
@@ -798,7 +858,17 @@ export async function addStay(
   const parsed = staySchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  await prisma.stay.create({ data: { tripId, ...toStayData(parsed.data) } });
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    select: { isTemplate: true },
+  });
+  if (!trip) return { error: "Trip not found." };
+
+  const data = toStayData(parsed.data);
+  const modeError = anchorModeError(data, trip.isTemplate);
+  if (modeError) return { error: modeError };
+
+  await prisma.stay.create({ data: { tripId, ...data } });
   revalidateTrip(tripId);
   return { ok: true, message: "Stay added." };
 }
@@ -811,12 +881,18 @@ export async function updateStay(
   const parsed = staySchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  await prisma.stay.update({
+  const stay = await prisma.stay.findUnique({
     where: { id: stayId },
-    data: toStayData(parsed.data),
+    select: { tripId: true, trip: { select: { isTemplate: true } } },
   });
-  const tripId = await tripIdForStay(stayId);
-  if (tripId) revalidateTrip(tripId);
+  if (!stay) return { error: "Stay not found." };
+
+  const data = toStayData(parsed.data);
+  const modeError = anchorModeError(data, stay.trip.isTemplate);
+  if (modeError) return { error: modeError };
+
+  await prisma.stay.update({ where: { id: stayId }, data });
+  revalidateTrip(stay.tripId);
   return { ok: true, message: "Stay saved." };
 }
 

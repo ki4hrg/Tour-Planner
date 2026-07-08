@@ -5,8 +5,10 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type StayLike = {
-  checkIn: Date;
-  checkOut: Date;
+  // Null on a date-less template stay (day-relative anchors instead); such a stay
+  // has no calendar position, so it contributes 0 nights / 0 cost here.
+  checkIn: Date | null;
+  checkOut: Date | null;
   headcount?: number | null;
   costPerPersonPerNight?: number | null;
   currency?: string;
@@ -14,8 +16,13 @@ export type StayLike = {
 };
 
 /** Nights in [checkIn, checkOut). The checkout morning has no night (watch the
- * off-by-one): Jul 6 → Jul 8 is 2 nights (6th, 7th). Negative spans clamp to 0. */
-export function nightsBetween(checkIn: Date, checkOut: Date): number {
+ * off-by-one): Jul 6 → Jul 8 is 2 nights (6th, 7th). Negative spans clamp to 0.
+ * A missing endpoint (date-less template stay) → 0 nights. */
+export function nightsBetween(
+  checkIn: Date | null,
+  checkOut: Date | null,
+): number {
+  if (!checkIn || !checkOut) return 0;
   const n = Math.round((checkOut.getTime() - checkIn.getTime()) / DAY_MS);
   return n > 0 ? n : 0;
 }
@@ -45,8 +52,13 @@ export function rollUpStays(stays: StayLike[]): StayCurrencyTotal[] {
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
-/** True when a stay covers the night of date `night` (checkIn ≤ night < checkOut). */
-function covers(stay: { checkIn: Date; checkOut: Date }, night: Date): boolean {
+/** True when a stay covers the night of date `night` (checkIn ≤ night < checkOut).
+ * A date-less template stay (null endpoints) covers nothing. */
+function covers(
+  stay: { checkIn: Date | null; checkOut: Date | null },
+  night: Date,
+): boolean {
+  if (!stay.checkIn || !stay.checkOut) return false;
   const t = night.getTime();
   return stay.checkIn.getTime() <= t && t < stay.checkOut.getTime();
 }
@@ -56,7 +68,7 @@ function covers(stay: { checkIn: Date; checkOut: Date }, night: Date): boolean {
  * (ties broken by the shortest span — an excursion overrides the base). Returns
  * one entry per input night date (null when nothing covers it).
  */
-export function lodgingByNight<T extends { checkIn: Date; checkOut: Date; priority?: number }>(
+export function lodgingByNight<T extends { checkIn: Date | null; checkOut: Date | null; priority?: number }>(
   stays: T[],
   nights: Date[],
 ): (T | null)[] {
@@ -83,7 +95,7 @@ export function lodgingByNight<T extends { checkIn: Date; checkOut: Date; priori
  */
 export function lodgingForDays<
   D extends { id: string; date: Date | null },
-  S extends { checkIn: Date; checkOut: Date; priority?: number },
+  S extends { checkIn: Date | null; checkOut: Date | null; priority?: number },
 >(days: D[], stays: S[]): Map<string, S | null> {
   const map = new Map<string, S | null>();
   const dated = days.filter((d): d is D & { date: Date } => d.date != null);
