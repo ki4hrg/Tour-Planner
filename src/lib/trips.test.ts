@@ -79,6 +79,30 @@ describe("scheduleItemPrimaryLabel", () => {
     expect(r.labelFromCategory).toBe(true);
   });
 
+  it("qualifies a bare category label with its venue(s)", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: null,
+      presentation: null,
+      category: { name: "Visit" },
+      sites: [{ location: { name: "The Old Rectory" } }],
+    });
+    expect(r.primary).toBe("Visit: The Old Rectory");
+    expect(r.labelFromCategory).toBe(true);
+  });
+
+  it("joins multiple venues on a category-labelled block", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: null,
+      presentation: null,
+      category: { name: "Visit" },
+      sites: [
+        { location: { name: "Close Walk" } },
+        { location: { name: "Old Sarum" } },
+      ],
+    });
+    expect(r.primary).toBe("Visit: Close Walk, Old Sarum");
+  });
+
   it("falls back to 'Untitled item' when nothing identifies it", () => {
     const r = scheduleItemPrimaryLabel({
       title: null,

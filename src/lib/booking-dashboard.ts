@@ -134,7 +134,9 @@ export function buildDashboardRows(data: DashboardData): {
   const itemRows: ItemBookingRow[] = [];
   for (const day of data.days) {
     for (const item of day.scheduleItems) {
-      const label = scheduleItemPrimaryLabel(item).primary;
+      // The venue is already this row's heading, so keep the session label bare
+      // ("Visit", not "Visit: The Old Rectory") by folding in no sites.
+      const label = scheduleItemPrimaryLabel({ ...item, sites: [] }).primary;
       for (const site of item.sites) {
         const v = ensure(site.locationId);
         v.sessions.push({

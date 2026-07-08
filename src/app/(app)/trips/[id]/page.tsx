@@ -27,6 +27,7 @@ import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
+import { TemplateChip } from "../template-chip";
 import { updateTrip, deleteTrip, saveTripAsTemplate } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -192,8 +193,11 @@ export default async function TripOverviewPage({
       <div className="flex items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
           {trip.name}
-          <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
-          {trip.isTemplate ? <Badge variant="outline">template</Badge> : null}
+          {trip.isTemplate ? (
+            <TemplateChip />
+          ) : (
+            <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+          )}
         </h1>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           {!trip.isTemplate ? (
@@ -243,12 +247,12 @@ export default async function TripOverviewPage({
                   <dl className="grid grid-cols-3 gap-2 text-sm">
                     <dt className="text-muted-foreground">Trip type</dt>
                     <dd className="col-span-2">{trip.tripType.name}</dd>
-                    <dt className="text-muted-foreground">Status</dt>
-                    <dd className="col-span-2">
-                      {TRIP_STATUS_LABELS[trip.status]}
-                    </dd>
                     {!trip.isTemplate ? (
                       <>
+                        <dt className="text-muted-foreground">Status</dt>
+                        <dd className="col-span-2">
+                          {TRIP_STATUS_LABELS[trip.status]}
+                        </dd>
                         <dt className="text-muted-foreground">Dates</dt>
                         <dd className="col-span-2">
                           {trip.startDate
@@ -267,12 +271,6 @@ export default async function TripOverviewPage({
                     <dd className="col-span-2">
                       {trip.participantCount ?? "—"}
                     </dd>
-                    {trip.isTemplate ? (
-                      <>
-                        <dt className="text-muted-foreground">Template</dt>
-                        <dd className="col-span-2">Yes</dd>
-                      </>
-                    ) : null}
                     <dt className="text-muted-foreground">Notes</dt>
                     <dd className="col-span-2 whitespace-pre-wrap">
                       {trip.notes ?? "—"}
