@@ -98,6 +98,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 role: true,
               },
             },
+            primaryContact: {
+              select: { id: true, name: true },
+            },
             costs: {
               select: {
                 id: true,
@@ -511,6 +514,75 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             {
               type: "text" as const,
               text: JSON.stringify({ success: true, id: hostSite.id }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── set-primary-contact (PLANNER+) ─────────────────────────────────────
+  server.registerTool(
+    "set-primary-contact",
+    {
+      title: "Set Primary Contact",
+      description:
+        "Designate a contact as the primary/go-to person for a location. The contact is linked to the location if it isn't already, then set as primary. Set clear=true (or omit contactId) to remove the designation without unlinking the contact. Use search-contacts to find the contactId and get-location to see the current primary.",
+      inputSchema: {
+        locationId: z.string(),
+        contactId: z.string().optional(),
+        clear: z.boolean().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ locationId, contactId, clear }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        const setPrimary = !clear && contactId;
+        await prisma.location.update({
+          where: { id: locationId },
+          data: setPrimary
+            ? {
+                contacts: { connect: { id: contactId } },
+                primaryContact: { connect: { id: contactId } },
+              }
+            : { primaryContact: { disconnect: true } },
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  locationId,
+                  primaryContactId: setPrimary ? contactId : null,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };

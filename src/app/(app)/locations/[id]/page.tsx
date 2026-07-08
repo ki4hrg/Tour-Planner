@@ -282,6 +282,7 @@ export default async function LocationDetailPage({
               organization: c.organization,
             }))}
             available={availableContacts}
+            primaryContactId={location.primaryContactId}
             canEdit={canEdit}
           />
         </CardContent>
