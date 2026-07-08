@@ -44,13 +44,6 @@ enum ShareAudience {
   HOST_SITE
 }
 
-enum BoardType {
-  NONE
-  BED_AND_BREAKFAST
-  HALF_BOARD
-  FULL_BOARD
-}
-
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -387,7 +380,6 @@ model Stay {
   checkOutDayIndex      Int?
   arrivalTime           String? // "HH:MM"
   departureTime         String?
-  board                 BoardType @default(NONE)
   headcount             Int?
   costPerPersonPerNight Decimal?  @db.Decimal(10, 2)
   currency              String    @default("USD")

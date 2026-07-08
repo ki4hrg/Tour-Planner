@@ -63,6 +63,33 @@ function covers(
   return stay.checkIn.getTime() <= t && t < stay.checkOut.getTime();
 }
 
+/** True when a day-relative stay covers the night of day `dayIndex`
+ * (checkInDayIndex ≤ dayIndex < checkOutDayIndex). The 1-based day-number analog
+ * of `covers`, for date-less template stays. A stay with no index anchor (a dated
+ * stay) covers nothing here. */
+function coversDayIndex(
+  stay: { checkInDayIndex?: number | null; checkOutDayIndex?: number | null },
+  dayIndex: number,
+): boolean {
+  if (stay.checkInDayIndex == null || stay.checkOutDayIndex == null) return false;
+  return stay.checkInDayIndex <= dayIndex && dayIndex < stay.checkOutDayIndex;
+}
+
+/** Shared "tonight's bed" pick: highest `priority` wins; ties broken by the
+ * shortest span (the more specific override — an excursion beats the base). */
+function pickBed<T extends { priority?: number }>(
+  covering: T[],
+  spanOf: (s: T) => number,
+): T | null {
+  if (covering.length === 0) return null;
+  return covering.reduce((best, s) => {
+    const bp = best.priority ?? 0;
+    const sp = s.priority ?? 0;
+    if (sp !== bp) return sp > bp ? s : best;
+    return spanOf(s) < spanOf(best) ? s : best;
+  });
+}
+
 /**
  * "Tonight's bed" per night: the covering stay with the highest `priority`
  * (ties broken by the shortest span — an excursion overrides the base). Returns
@@ -72,38 +99,67 @@ export function lodgingByNight<T extends { checkIn: Date | null; checkOut: Date 
   stays: T[],
   nights: Date[],
 ): (T | null)[] {
-  return nights.map((night) => {
-    const covering = stays.filter((s) => covers(s, night));
-    if (covering.length === 0) return null;
-    return covering.reduce((best, s) => {
-      const bp = best.priority ?? 0;
-      const sp = s.priority ?? 0;
-      if (sp !== bp) return sp > bp ? s : best;
-      // tie on priority → shorter span wins (the more specific override)
-      const bSpan = nightsBetween(best.checkIn, best.checkOut);
-      const sSpan = nightsBetween(s.checkIn, s.checkOut);
-      return sSpan < bSpan ? s : best;
-    });
-  });
+  return nights.map((night) =>
+    pickBed(
+      stays.filter((s) => covers(s, night)),
+      (s) => nightsBetween(s.checkIn, s.checkOut),
+    ),
+  );
 }
 
 /**
- * Resolve, per itinerary day, the stay the group sleeps in that night — keyed by
- * the day's own date and using the same priority rules as `lodgingByNight`. Days
- * with no date (trip has no startDate) map to null. Lets the itinerary surface
- * where everyone is staying each night (GH #15).
+ * Day-number analog of `lodgingByNight` for date-less templates: resolve, per
+ * 1-based day index, the day-relative stay the group sleeps in that night. Same
+ * priority rules. Returns one entry per input day index (null when uncovered).
+ */
+export function lodgingByDayIndex<
+  T extends { checkInDayIndex?: number | null; checkOutDayIndex?: number | null; priority?: number },
+>(stays: T[], dayIndices: number[]): (T | null)[] {
+  return dayIndices.map((di) =>
+    pickBed(
+      stays.filter((s) => coversDayIndex(s, di)),
+      (s) => (s.checkOutDayIndex ?? 0) - (s.checkInDayIndex ?? 0),
+    ),
+  );
+}
+
+/**
+ * Resolve, per itinerary day, the stay the group sleeps in that night — using the
+ * same priority rules for both anchor modes. Dated days match stays by calendar
+ * night; date-less template days match day-relative stays by 1-based day index.
+ * Days that fit neither mode map to null. Lets the itinerary surface where
+ * everyone is staying each night on real trips AND templates (GH #15).
  */
 export function lodgingForDays<
-  D extends { id: string; date: Date | null },
-  S extends { checkIn: Date | null; checkOut: Date | null; priority?: number },
+  D extends { id: string; date: Date | null; dayIndex?: number },
+  S extends {
+    checkIn: Date | null;
+    checkOut: Date | null;
+    checkInDayIndex?: number | null;
+    checkOutDayIndex?: number | null;
+    priority?: number;
+  },
 >(days: D[], stays: S[]): Map<string, S | null> {
   const map = new Map<string, S | null>();
+
+  // Dated days → match by calendar night.
   const dated = days.filter((d): d is D & { date: Date } => d.date != null);
-  const picks = lodgingByNight(
+  const datedPicks = lodgingByNight(
     stays,
     dated.map((d) => d.date),
   );
-  dated.forEach((d, i) => map.set(d.id, picks[i]));
+  dated.forEach((d, i) => map.set(d.id, datedPicks[i]));
+
+  // Date-less template days (have a dayIndex, no date) → match by day number.
+  const templated = days.filter(
+    (d): d is D & { dayIndex: number } => d.date == null && d.dayIndex != null,
+  );
+  const templatedPicks = lodgingByDayIndex(
+    stays,
+    templated.map((d) => d.dayIndex),
+  );
+  templated.forEach((d, i) => map.set(d.id, templatedPicks[i]));
+
   for (const d of days) if (!map.has(d.id)) map.set(d.id, null);
   return map;
 }

@@ -211,7 +211,6 @@ describe("summarizeDayLodging", () => {
         checkIn: d("2026-07-06"),
         checkOut: d("2026-07-08"),
         priority: 0,
-        board: "BED_AND_BREAKFAST" as const,
         label: "Group block",
         location: { name: "Sarum College" },
       },
@@ -220,7 +219,6 @@ describe("summarizeDayLodging", () => {
       day6: {
         locationName: "Sarum College",
         label: "Group block",
-        board: "BED_AND_BREAKFAST",
       },
     });
   });

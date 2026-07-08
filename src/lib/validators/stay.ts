@@ -28,13 +28,6 @@ const optionalDayIndex = z.preprocess(
     .optional(),
 );
 
-export const BOARD_TYPES = [
-  "NONE",
-  "BED_AND_BREAKFAST",
-  "HALF_BOARD",
-  "FULL_BOARD",
-] as const;
-
 // A stay anchors EITHER to absolute dates (dated trip) or 1-based day indices
 // (date-less template). All four anchor fields are optional at the field level;
 // the superRefine enforces that exactly one complete, well-ordered pair is set.
@@ -48,7 +41,6 @@ export const staySchema = z
     checkOutDayIndex: optionalDayIndex,
     arrivalTime: optionalTime,
     departureTime: optionalTime,
-    board: z.enum(BOARD_TYPES).default("NONE"),
     headcount: optionalInt,
     costPerPersonPerNight: optionalMoney,
     currency: z.string().trim().min(1).default("USD"),

@@ -6,7 +6,6 @@ import type {
   Prisma,
   TripStatus,
   BookingStatus,
-  BoardType,
   ShareAudience,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -92,7 +91,6 @@ const TEMPLATE_STAYS_SELECT = {
   checkOutDayIndex: true,
   arrivalTime: true,
   departureTime: true,
-  board: true,
   headcount: true,
   costPerPersonPerNight: true,
   currency: true,
@@ -805,7 +803,6 @@ export type StayInputData = {
   checkOutDayIndex?: string;
   arrivalTime?: string;
   departureTime?: string;
-  board?: string;
   headcount?: string;
   costPerPersonPerNight?: string;
   currency?: string;
@@ -827,7 +824,6 @@ function toStayData(d: ReturnType<typeof staySchema.parse>) {
     checkOutDayIndex: dayRelative ? d.checkOutDayIndex! : null,
     arrivalTime: d.arrivalTime || null,
     departureTime: d.departureTime || null,
-    board: d.board as BoardType,
     headcount: d.headcount ?? null,
     costPerPersonPerNight: d.costPerPersonPerNight ?? null,
     currency: d.currency,

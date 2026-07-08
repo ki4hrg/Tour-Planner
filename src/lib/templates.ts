@@ -1,4 +1,4 @@
-import type { BookingStatus, BoardType, Prisma } from "@prisma/client";
+import type { BookingStatus, Prisma } from "@prisma/client";
 import { computeDayDate, dayIndexForDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
@@ -164,7 +164,7 @@ export function instantiateDays(
 // --- Stay (lodging) templatize / instantiate ---
 //
 // A stay anchors EITHER to absolute dates (dated trip) or 1-based day indices
-// (date-less template). Reusable attributes (location, cost, board…) carry over
+// (date-less template). Reusable attributes (location, cost…) carry over
 // unchanged in both directions; only the anchor is converted. The venue-engagement
 // booking that covers the stay's location is handled by the booking copy path, so
 // it is not touched here.
@@ -175,7 +175,6 @@ type StayCarryOver = {
   label: string | null;
   arrivalTime: string | null;
   departureTime: string | null;
-  board: BoardType;
   headcount: number | null;
   // Prisma.Decimal flows through untouched (never coerced across this boundary).
   costPerPersonPerNight: Prisma.Decimal | null;
@@ -211,7 +210,6 @@ function carryOver(s: StayCarryOver): StayCarryOver {
     label: s.label,
     arrivalTime: s.arrivalTime,
     departureTime: s.departureTime,
-    board: s.board,
     headcount: s.headcount,
     costPerPersonPerNight: s.costPerPersonPerNight,
     currency: s.currency,

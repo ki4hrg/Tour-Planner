@@ -107,4 +107,33 @@ describe("lodgingForDays", () => {
     expect(out.get("undated")).toBeNull();
     expect(out.get("day6")?.id).toBe("sarum");
   });
+
+  it("resolves template days by 1-based day index (no dates)", () => {
+    // A date-less template: days carry a dayIndex, stays carry day-index anchors.
+    const templateStay = {
+      id: "sarum",
+      checkIn: null,
+      checkOut: null,
+      checkInDayIndex: 1,
+      checkOutDayIndex: 3, // checkout the morning of day 3 — nights on days 1 & 2
+      priority: 0,
+    };
+    const days = [
+      { id: "d1", date: null, dayIndex: 1 },
+      { id: "d2", date: null, dayIndex: 2 },
+      { id: "d3", date: null, dayIndex: 3 }, // checkout morning — no night
+    ];
+    const out = lodgingForDays(days, [templateStay]);
+    expect(out.get("d1")?.id).toBe("sarum");
+    expect(out.get("d2")?.id).toBe("sarum");
+    expect(out.get("d3")).toBeNull();
+  });
+
+  it("higher priority wins on template day-index overlap", () => {
+    const baseStay = { id: "base", checkIn: null, checkOut: null, checkInDayIndex: 1, checkOutDayIndex: 4, priority: 0 };
+    const excursion = { id: "exc", checkIn: null, checkOut: null, checkInDayIndex: 2, checkOutDayIndex: 3, priority: 1 };
+    const days = [{ id: "d2", date: null, dayIndex: 2 }];
+    const out = lodgingForDays(days, [baseStay, excursion]);
+    expect(out.get("d2")?.id).toBe("exc");
+  });
 });
