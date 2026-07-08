@@ -33,7 +33,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-36 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+37 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -52,8 +52,9 @@ recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs + host
 site), `list-regions` (V, resolves `regionId`), `list-trip-types` (V, resolves
 `tripTypeId`), `create-location` (P), `update-location` (P), `set-host-site` (P,
-upserts capability flags or `remove`s host-site status), `add-location-cost` (P),
-`update-location-cost` (P).
+upserts capability flags or `remove`s host-site status), `set-primary-contact` (P,
+links the contact + marks it primary, or clears the designation),
+`add-location-cost` (P), `update-location-cost` (P).
 
 **contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P).
 Passing `locationIds` on a write REPLACES the linked-location set.

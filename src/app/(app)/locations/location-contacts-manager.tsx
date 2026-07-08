@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,7 +13,11 @@ import {
 } from "@/components/ui/select";
 import { ContactForm } from "../contacts/contact-form";
 import { createContact } from "../contacts/actions";
-import { linkContactToLocation, unlinkContactFromLocation } from "./actions";
+import {
+  linkContactToLocation,
+  unlinkContactFromLocation,
+  setPrimaryContact,
+} from "./actions";
 
 type LinkedContact = {
   id: string;
@@ -25,11 +30,13 @@ export function LocationContactsManager({
   locationId,
   linked,
   available,
+  primaryContactId,
   canEdit,
 }: {
   locationId: string;
   linked: LinkedContact[];
   available: { id: string; name: string }[];
+  primaryContactId: string | null;
   canEdit: boolean;
 }) {
   const [mode, setMode] = useState<"none" | "existing" | "new">("none");
@@ -37,7 +44,9 @@ export function LocationContactsManager({
   return (
     <div className="space-y-4">
       <div className="divide-y">
-        {linked.map((c) => (
+        {linked.map((c) => {
+          const isPrimary = c.id === primaryContactId;
+          return (
           <div
             key={c.id}
             className="flex items-center justify-between gap-3 py-2"
@@ -46,6 +55,11 @@ export function LocationContactsManager({
               <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">
                 {c.name}
               </Link>
+              {isPrimary ? (
+                <Badge variant="secondary" className="ml-2 align-middle">
+                  Primary
+                </Badge>
+              ) : null}
               <span className="text-sm text-muted-foreground">
                 {[c.role, c.organization].filter(Boolean).length
                   ? ` — ${[c.role, c.organization].filter(Boolean).join(", ")}`
@@ -53,16 +67,30 @@ export function LocationContactsManager({
               </span>
             </div>
             {canEdit ? (
-              <form action={unlinkContactFromLocation}>
-                <input type="hidden" name="locationId" value={locationId} />
-                <input type="hidden" name="contactId" value={c.id} />
-                <Button variant="ghost" size="sm" className="text-destructive">
-                  Unlink
-                </Button>
-              </form>
+              <div className="flex shrink-0 items-center gap-1">
+                <form action={setPrimaryContact}>
+                  <input type="hidden" name="locationId" value={locationId} />
+                  <input
+                    type="hidden"
+                    name="contactId"
+                    value={isPrimary ? "" : c.id}
+                  />
+                  <Button variant="ghost" size="sm">
+                    {isPrimary ? "Clear primary" : "Make primary"}
+                  </Button>
+                </form>
+                <form action={unlinkContactFromLocation}>
+                  <input type="hidden" name="locationId" value={locationId} />
+                  <input type="hidden" name="contactId" value={c.id} />
+                  <Button variant="ghost" size="sm" className="text-destructive">
+                    Unlink
+                  </Button>
+                </form>
+              </div>
             ) : null}
           </div>
-        ))}
+          );
+        })}
         {linked.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
             No contacts linked.

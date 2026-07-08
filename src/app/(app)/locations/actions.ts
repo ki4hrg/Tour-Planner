@@ -213,9 +213,40 @@ export async function unlinkContactFromLocation(formData: FormData): Promise<voi
   const locationId = String(formData.get("locationId") ?? "");
   const contactId = String(formData.get("contactId") ?? "");
   if (!locationId || !contactId) return;
+  // Unlinking the primary contact also clears its designation — the primary
+  // must always be one of the linked contacts.
+  const current = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: { primaryContactId: true },
+  });
   await prisma.location.update({
     where: { id: locationId },
-    data: { contacts: { disconnect: { id: contactId } } },
+    data: {
+      contacts: { disconnect: { id: contactId } },
+      ...(current?.primaryContactId === contactId
+        ? { primaryContact: { disconnect: true } }
+        : {}),
+    },
+  });
+  revalidatePath(`/locations/${locationId}`);
+}
+
+// Designate (or clear) the go-to contact for a venue. Passing no/blank
+// contactId clears it; otherwise the contact is linked (if it isn't already)
+// and set as primary.
+export async function setPrimaryContact(formData: FormData): Promise<void> {
+  await assertRole("PLANNER");
+  const locationId = String(formData.get("locationId") ?? "");
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!locationId) return;
+  await prisma.location.update({
+    where: { id: locationId },
+    data: contactId
+      ? {
+          contacts: { connect: { id: contactId } },
+          primaryContact: { connect: { id: contactId } },
+        }
+      : { primaryContact: { disconnect: true } },
   });
   revalidatePath(`/locations/${locationId}`);
 }

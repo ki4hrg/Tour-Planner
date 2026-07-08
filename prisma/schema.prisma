@@ -106,7 +106,9 @@ model Location {
   scheduleLimitations  String?
   archivedAt           DateTime? // set instead of deleting when referenced by a schedule item
   tripTypes            TripType[] // tags; drives default filtering
-  contacts             Contact[] // implicit m2m
+  contacts             Contact[]          @relation("ContactToLocation") // implicit m2m
+  primaryContact       Contact?           @relation("LocationPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  primaryContactId     String? // the go-to contact for this venue; must be one of `contacts`
   costs                Cost[]
   scheduleItems        ScheduleItemSite[] // schedule items that visit this site
   bookings             Booking[] // bookings made against this location
@@ -118,6 +120,7 @@ model Location {
   updatedAt            DateTime           @updatedAt
 
   @@index([regionId])
+  @@index([primaryContactId])
 }
 
 model Contact {
@@ -128,7 +131,8 @@ model Contact {
   email                String?
   phone                String?
   notes                String?
-  locations            Location[] // implicit m2m
+  locations            Location[]     @relation("ContactToLocation") // implicit m2m
+  primaryForLocations  Location[]     @relation("LocationPrimaryContact") // venues where this is the go-to contact
   bookings             Booking[]      @relation("BookedBy") // venue contact a booking was made with
   presentedItems       ScheduleItem[] @relation("Presenting") // occurrences this contact speaks at (override)
   presentationDefaults Presentation[] @relation("PresentationDefaults") // talks they're the usual speaker for
