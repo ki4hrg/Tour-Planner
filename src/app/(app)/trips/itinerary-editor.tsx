@@ -101,6 +101,7 @@ export function ItineraryEditor({
   tripId,
   canEdit,
   hasStartDate,
+  isTemplate,
   days,
   categories,
   locations: initialLocations,
@@ -110,6 +111,7 @@ export function ItineraryEditor({
   tripId: string;
   canEdit: boolean;
   hasStartDate: boolean;
+  isTemplate?: boolean;
   days: SerializedDay[];
   categories: Category[];
   locations: Location[];
@@ -212,7 +214,7 @@ export function ItineraryEditor({
 
   return (
     <div className="space-y-4">
-      {!hasStartDate ? (
+      {!hasStartDate && !isTemplate ? (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           This trip has no start date, so day dates aren&apos;t shown. Set a
           start date on the overview to date the itinerary.

@@ -101,21 +101,23 @@ export type SerializedScheduleItem = {
   bookings: SerializedBooking[];
 };
 
-// The heading shown for a schedule item: always the "what", never the venue
-// (location is rendered once per venue-run subheader, see groupItemsByVenue).
-// Precedence:
+// The heading shown for a schedule item. Precedence:
 //   1. an explicit title override on the item,
 //   2. the linked talk's title,
-//   3. the category name (e.g. Free time, Break — self-describing kinds),
+//   3. the category name, qualified by the venue(s) when placed — a bare "Visit"
+//      is uninformative, so a located category-labelled item reads
+//      "Visit: The Old Rectory" (self-describing kinds like Free time / Break are
+//      location-less, so they stay bare),
 //   4. "Untitled item".
 // `presentationIsPrimary` is true when the talk title IS the heading, so callers
-// avoid echoing it. `labelFromCategory` is true when the category name is the
+// avoid echoing it. `labelFromCategory` is true when the category name drives the
 // heading, so callers drop the (now redundant) category chip and instead tint
 // the label in the category colour.
 export function scheduleItemPrimaryLabel(item: {
   title: string | null;
   presentation: { title: string } | null;
   category: { name: string } | null;
+  sites?: { location: { name: string } }[];
 }): {
   primary: string;
   presentationIsPrimary: boolean;
@@ -136,8 +138,11 @@ export function scheduleItemPrimaryLabel(item: {
     };
   }
   if (item.category) {
+    const venues = (item.sites ?? []).map((s) => s.location.name);
     return {
-      primary: item.category.name,
+      primary: venues.length
+        ? `${item.category.name}: ${venues.join(", ")}`
+        : item.category.name,
       presentationIsPrimary: false,
       labelFromCategory: true,
     };

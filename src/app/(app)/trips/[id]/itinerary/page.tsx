@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/dates";
 import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
 import { ItineraryEditor } from "../../itinerary-editor";
+import { TemplateChip } from "../../template-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +94,11 @@ export default async function ItineraryPage({
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             {trip.name}
-            <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+            {trip.isTemplate ? (
+              <TemplateChip />
+            ) : (
+              <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+            )}
           </h1>
           <p className="text-sm text-muted-foreground">
             {trip.tripType.name}
@@ -112,6 +117,7 @@ export default async function ItineraryPage({
         tripId={trip.id}
         canEdit={canEdit}
         hasStartDate={trip.startDate != null}
+        isTemplate={trip.isTemplate}
         days={trip.days.map(serializeDay)}
         categories={categories}
         locations={locations.map((l) => ({

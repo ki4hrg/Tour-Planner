@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { TRIP_STATUS_LABELS, TRIP_STATUSES } from "@/lib/trips";
+import { TemplateChip } from "./template-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -145,20 +146,26 @@ export default async function TripsPage({
                 <Link href={`/trips/${t.id}`} className="hover:underline">
                   {t.name}
                 </Link>
-                <Badge variant="secondary" className="shrink-0">
-                  {TRIP_STATUS_LABELS[t.status]}
-                </Badge>
+                {t.isTemplate ? (
+                  <TemplateChip />
+                ) : (
+                  <Badge variant="secondary" className="shrink-0">
+                    {TRIP_STATUS_LABELS[t.status]}
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm text-muted-foreground">
               <p>{t.tripType.name}</p>
-              <p>
-                {t.startDate
-                  ? `${formatDate(t.startDate)}${
-                      t.endDate ? ` → ${formatDate(t.endDate)}` : ""
-                    }`
-                  : "Dates not set"}
-              </p>
+              {!t.isTemplate ? (
+                <p>
+                  {t.startDate
+                    ? `${formatDate(t.startDate)}${
+                        t.endDate ? ` → ${formatDate(t.endDate)}` : ""
+                      }`
+                    : "Dates not set"}
+                </p>
+              ) : null}
               <p>
                 {t._count.days} day{t._count.days === 1 ? "" : "s"}
                 {t.participantCount != null
