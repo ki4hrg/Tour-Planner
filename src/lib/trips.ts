@@ -1,6 +1,5 @@
 import type {
   BookingStatus,
-  BoardType,
   Booking,
   ItineraryDay,
   ScheduleItem,
@@ -10,13 +9,6 @@ import type {
 } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
 import { lodgingForDays } from "@/lib/stays";
-
-export const BOARD_LABELS: Record<BoardType, string> = {
-  NONE: "No meals",
-  BED_AND_BREAKFAST: "B&B",
-  HALF_BOARD: "Half board",
-  FULL_BOARD: "Full board",
-};
 
 export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
   PLANNING: "Planning",
@@ -351,7 +343,6 @@ export type SerializedStay = {
   checkOutDayIndex: number | null;
   arrivalTime: string | null;
   departureTime: string | null;
-  board: BoardType;
   headcount: number | null;
   costPerPersonPerNight: number | null;
   currency: string;
@@ -371,14 +362,14 @@ type StayRow = Stay & {
 export type DayLodgingSummary = {
   locationName: string;
   label: string | null;
-  board: BoardType;
 };
 
 type LodgingStayRow = {
   checkIn: Date | null;
   checkOut: Date | null;
+  checkInDayIndex?: number | null;
+  checkOutDayIndex?: number | null;
   priority?: number;
-  board: BoardType;
   label: string | null;
   location: { name: string };
 };
@@ -389,14 +380,14 @@ type LodgingStayRow = {
  * serializing days. Pairs with `lodgingForDays` in `lib/stays.ts`.
  */
 export function summarizeDayLodging(
-  days: { id: string; date: Date | null }[],
+  days: { id: string; date: Date | null; dayIndex?: number }[],
   stays: LodgingStayRow[],
 ): Record<string, DayLodgingSummary | null> {
   const byDay = lodgingForDays(days, stays);
   const out: Record<string, DayLodgingSummary | null> = {};
   for (const [id, s] of byDay) {
     out[id] = s
-      ? { locationName: s.location.name, label: s.label, board: s.board }
+      ? { locationName: s.location.name, label: s.label }
       : null;
   }
   return out;
@@ -421,7 +412,6 @@ export function serializeStay(
     checkOutDayIndex: stay.checkOutDayIndex,
     arrivalTime: stay.arrivalTime,
     departureTime: stay.departureTime,
-    board: stay.board,
     headcount: stay.headcount,
     // Prisma Decimal → number at the server/client boundary (never pass Decimal).
     costPerPersonPerNight:

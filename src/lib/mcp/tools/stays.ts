@@ -11,7 +11,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "List Stays",
       description:
-        "List all lodging stays for a trip, showing location, check-in/out anchors, board type, headcount, cost per person per night, and booking status. A dated trip's stays carry calendar dates (checkIn/checkOut); a date-less template's stays carry 1-based day numbers (checkInDayIndex/checkOutDayIndex) instead — exactly one pair is set. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
+        "List all lodging stays for a trip, showing location, check-in/out anchors, headcount, cost per person per night, and booking status. A dated trip's stays carry calendar dates (checkIn/checkOut); a date-less template's stays carry 1-based day numbers (checkInDayIndex/checkOutDayIndex) instead — exactly one pair is set. Stays can overlap — higher priority wins for resolving which location the group sleeps at on a given night.",
       inputSchema: {
         tripId: z.string(),
       },
@@ -36,7 +36,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         checkOutDayIndex: s.checkOutDayIndex,
         arrivalTime: s.arrivalTime,
         departureTime: s.departureTime,
-        board: s.board,
         headcount: s.headcount,
         costPerPersonPerNight:
           s.costPerPersonPerNight != null
@@ -61,7 +60,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Stay",
       description:
-        "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues). For a DATED trip, pass check-in/check-out dates (YYYY-MM-DD). For a date-less TEMPLATE (get-trip shows isTemplate), pass day numbers instead: checkInDayIndex/checkOutDayIndex (1-based; check-out is the departure morning, so it may be one past the last day). Provide exactly one anchor mode matching the trip. Board types: NONE (default), BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
+        "Add a lodging stay to a trip. Requires a location ID (use search-locations with hostSitesOnly to find lodging venues). For a DATED trip, pass check-in/check-out dates (YYYY-MM-DD). For a date-less TEMPLATE (get-trip shows isTemplate), pass day numbers instead: checkInDayIndex/checkOutDayIndex (1-based; check-out is the departure morning, so it may be one past the last day). Provide exactly one anchor mode matching the trip. Stays can overlap — set priority > 0 for excursion stays that override the base lodging.",
       inputSchema: {
         tripId: z.string(),
         locationId: z.string(),
@@ -72,7 +71,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
-        board: z.string().optional(),
         headcount: z.number().optional(),
         costPerPersonPerNight: z.number().optional(),
         currency: z.string().optional(),
@@ -96,7 +94,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       label,
       arrivalTime,
       departureTime,
-      board,
       headcount,
       costPerPersonPerNight,
       currency,
@@ -215,12 +212,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
           ...anchor,
           arrivalTime: arrivalTime || null,
           departureTime: departureTime || null,
-          board:
-            (board as
-              | "NONE"
-              | "BED_AND_BREAKFAST"
-              | "HALF_BOARD"
-              | "FULL_BOARD") || "NONE",
           headcount: headcount ?? null,
           costPerPersonPerNight: costPerPersonPerNight ?? null,
           currency: currency || "USD",
@@ -249,7 +240,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Stay",
       description:
-        "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. To change the anchor, pass BOTH endpoints of one mode: checkIn+checkOut (YYYY-MM-DD, dated trips) or checkInDayIndex+checkOutDayIndex (1-based day numbers, templates) — a stay must match its trip's mode. Board types: NONE, BED_AND_BREAKFAST, HALF_BOARD, FULL_BOARD.",
+        "Update a stay's details. Only include fields you want to change. Use list-stays to find stay IDs. To change the anchor, pass BOTH endpoints of one mode: checkIn+checkOut (YYYY-MM-DD, dated trips) or checkInDayIndex+checkOutDayIndex (1-based day numbers, templates) — a stay must match its trip's mode.",
       inputSchema: {
         stayId: z.string(),
         locationId: z.string().optional(),
@@ -260,7 +251,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
-        board: z.string().optional(),
         headcount: z.number().optional(),
         costPerPersonPerNight: z.number().optional(),
         currency: z.string().optional(),
@@ -284,7 +274,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       label,
       arrivalTime,
       departureTime,
-      board,
       headcount,
       costPerPersonPerNight,
       currency,
@@ -392,7 +381,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       if (arrivalTime !== undefined) data.arrivalTime = arrivalTime || null;
       if (departureTime !== undefined)
         data.departureTime = departureTime || null;
-      if (board !== undefined) data.board = board;
       if (headcount !== undefined) data.headcount = headcount;
       if (costPerPersonPerNight !== undefined)
         data.costPerPersonPerNight = costPerPersonPerNight;

@@ -19,7 +19,6 @@ function stay(over: Partial<SourceStay> = {}): SourceStay {
     checkOutDayIndex: null,
     arrivalTime: null,
     departureTime: null,
-    board: "NONE" as SourceStay["board"],
     headcount: 10,
     costPerPersonPerNight: null,
     currency: "USD",

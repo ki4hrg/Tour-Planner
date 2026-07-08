@@ -17,14 +17,12 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import Link from "next/link";
 import {
-  BOARD_LABELS,
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_CLASSES,
   type SerializedStay,
   type SerializedBooking,
 } from "@/lib/trips";
 import { nightsBetween, stayTotal } from "@/lib/stays";
-import { BOARD_TYPES } from "@/lib/validators/stay";
 import {
   addStay,
   updateStay,
@@ -205,9 +203,6 @@ function StayRow({
               </div>
 
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {stay.board && stay.board !== "NONE" ? (
-                  <span>· {BOARD_LABELS[stay.board]}</span>
-                ) : null}
                 {stay.headcount != null ? <span>· {stay.headcount} person{stay.headcount === 1 ? "" : "s"}</span> : null}
                 {stay.costPerPersonPerNight != null ? (
                   <span>
@@ -327,7 +322,6 @@ function StayFields({
   );
   const [arrivalTime, setArrivalTime] = useState(initial?.arrivalTime ?? "");
   const [departureTime, setDepartureTime] = useState(initial?.departureTime ?? "");
-  const [board, setBoard] = useState<string>(initial?.board ?? "NONE");
   const [headcount, setHeadcount] = useState<string>(
     initial?.headcount != null ? String(initial.headcount) : "",
   );
@@ -355,7 +349,6 @@ function StayFields({
         checkOutDayIndex: isTemplate ? checkOutDay || undefined : undefined,
         arrivalTime: arrivalTime || undefined,
         departureTime: departureTime || undefined,
-        board: board || undefined,
         headcount: headcount || undefined,
         costPerPersonPerNight: costPerPersonPerNight || undefined,
         currency,
@@ -372,7 +365,6 @@ function StayFields({
           setCheckOutDay("");
           setArrivalTime("");
           setDepartureTime("");
-          setBoard("NONE");
           setHeadcount("");
           setCostPerPersonPerNight("");
           setCurrency("USD");
@@ -386,10 +378,10 @@ function StayFields({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
+        <div className="min-w-0 space-y-1.5">
           <Label className="text-xs">Location *</Label>
           <Select value={locationId} onValueChange={setLocationId}>
-            <SelectTrigger size="sm">
+            <SelectTrigger size="sm" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -404,7 +396,7 @@ function StayFields({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="min-w-0 space-y-1.5">
           <Label className="text-xs">Label</Label>
           <Input
             value={label}
@@ -487,22 +479,6 @@ function StayFields({
             value={departureTime}
             onChange={(e) => setDepartureTime(e.target.value)}
           />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">Board type</Label>
-          <Select value={board} onValueChange={setBoard}>
-            <SelectTrigger size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BOARD_TYPES.map((bt) => (
-                <SelectItem key={bt} value={bt}>
-                  {BOARD_LABELS[bt as keyof typeof BOARD_LABELS]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         <div className="space-y-1.5">
