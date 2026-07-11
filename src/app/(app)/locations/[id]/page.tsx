@@ -345,14 +345,18 @@ export default async function LocationDetailPage({
                 </dd>
                 <dt className="text-muted-foreground">Bookable</dt>
                 <dd className="col-span-2">
-                  {location.bookable ? "Yes" : "No — walk-by stop"}
+                  {location.bookable ? "Yes" : "No"}
                 </dd>
-                <dt className="text-muted-foreground">Booking opens</dt>
-                <dd className="col-span-2">
-                  {location.bookingOpensLeadDays != null
-                    ? `${location.bookingOpensLeadDays} days before`
-                    : "—"}
-                </dd>
+                {location.bookable ? (
+                  <>
+                    <dt className="text-muted-foreground">Booking opens</dt>
+                    <dd className="col-span-2">
+                      {location.bookingOpensLeadDays != null
+                        ? `${location.bookingOpensLeadDays} days before`
+                        : "—"}
+                    </dd>
+                  </>
+                ) : null}
                 <dt className="text-muted-foreground">Host site</dt>
                 <dd className="col-span-2">
                   {hostSiteSummary
