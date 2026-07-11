@@ -27,6 +27,7 @@ export function TimelineGroups({
   linkVenues = false,
   showVenueContacts = false,
   renderItemExtra,
+  itemLinkBase,
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
@@ -40,6 +41,10 @@ export function TimelineGroups({
   // Per-item slot rendered under the row content — the day view mounts its
   // inline quick-edit here. The timeline itself stays a read component.
   renderItemExtra?: (item: SerializedScheduleItem) => React.ReactNode;
+  // Opt-in: link each item row to `${itemLinkBase}#item-{id}` (dashboard → the
+  // trip's day view). A plain string so Server Components can pass it; share
+  // and print views stay non-interactive by simply not passing it.
+  itemLinkBase?: string;
 }) {
   const runs = groupItemsByVenue(items);
   return (
@@ -58,6 +63,7 @@ export function TimelineGroups({
                 item={item}
                 showBookings={showBookings}
                 extra={renderItemExtra?.(item)}
+                href={itemLinkBase ? `${itemLinkBase}#item-${item.id}` : null}
               />
             ))}
           </ul>
@@ -146,10 +152,12 @@ function TimelineRow({
   item,
   showBookings,
   extra,
+  href,
 }: {
   item: SerializedScheduleItem;
   showBookings: boolean;
   extra?: React.ReactNode;
+  href?: string | null;
 }) {
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
@@ -163,7 +171,10 @@ function TimelineRow({
   return (
     // <sm: a narrow two-column grid (the time range wraps onto two lines); the
     // chip column collapses and the chip renders inline before the title instead.
-    <li className="grid grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[5.25rem_7rem_1fr]">
+    <li
+      id={`item-${item.id}`}
+      className="grid scroll-mt-20 grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[5.25rem_7rem_1fr]"
+    >
       <time className="font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
         {time}
       </time>
@@ -176,16 +187,30 @@ function TimelineRow({
             <CategoryChip category={item.category!} />
           </span>
         ) : null}
-        <span
-          className="font-medium"
-          style={
-            labelFromCategory && item.category?.color
-              ? { color: item.category.color }
-              : undefined
-          }
-        >
-          {primary}
-        </span>
+        {href ? (
+          <Link
+            href={href}
+            className="font-medium underline-offset-4 hover:underline"
+            style={
+              labelFromCategory && item.category?.color
+                ? { color: item.category.color }
+                : undefined
+            }
+          >
+            {primary}
+          </Link>
+        ) : (
+          <span
+            className="font-medium"
+            style={
+              labelFromCategory && item.category?.color
+                ? { color: item.category.color }
+                : undefined
+            }
+          >
+            {primary}
+          </span>
+        )}
         {hasSecondary ? (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             {showPresentation ? (

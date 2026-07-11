@@ -59,6 +59,7 @@ export function LocationForm({
   // Region posts via a hidden input so "— none —" can clear it (a Select can't
   // post an empty value cleanly).
   const [regionId, setRegionId] = useState(initial?.regionId ?? NO_REGION);
+  const [bookable, setBookable] = useState(initial?.bookable ?? true);
   const options = regionOptions(regions);
 
   const section = useEditSection();
@@ -162,29 +163,37 @@ export function LocationForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex items-center gap-2 text-sm sm:col-span-2">
-          <Checkbox name="bookable" defaultChecked={initial?.bookable ?? true} />
+          <Checkbox
+            name="bookable"
+            checked={bookable}
+            onCheckedChange={(checked) => setBookable(checked === true)}
+          />
           Bookable
           <span className="text-muted-foreground">
             — uncheck for walk-by stops that never need a reservation
           </span>
         </label>
-        <div className="space-y-1.5">
-          <Label htmlFor="bookingOpensLeadDays">Booking opens (days before)</Label>
-          <Input
-            id="bookingOpensLeadDays"
-            name="bookingOpensLeadDays"
-            type="number"
-            min={0}
-            placeholder="e.g. 180"
-            defaultValue={initial?.bookingOpensLeadDays ?? ""}
-          />
-        </div>
-        <div className="space-y-1.5">
+        {bookable ? (
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="bookingOpensLeadDays">Booking opens (days before)</Label>
+            <Input
+              id="bookingOpensLeadDays"
+              name="bookingOpensLeadDays"
+              type="number"
+              min={0}
+              placeholder="e.g. 180"
+              defaultValue={initial?.bookingOpensLeadDays ?? ""}
+              className="sm:max-w-[50%]"
+            />
+          </div>
+        ) : null}
+        <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="scheduleLimitations">Schedule limitations</Label>
-          <Input
+          <Textarea
             id="scheduleLimitations"
             name="scheduleLimitations"
-            placeholder="e.g. Open Wed–Sat"
+            rows={2}
+            placeholder="e.g. Open Wed–Sat; groups over 20 need advance notice"
             defaultValue={initial?.scheduleLimitations ?? ""}
           />
         </div>

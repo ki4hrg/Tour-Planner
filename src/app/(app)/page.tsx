@@ -255,7 +255,11 @@ export default async function Home({
                 </div>
                 {t.currentDay && t.currentDay.items.length > 0 ? (
                   <div className="rounded-md border bg-muted/30 p-3">
-                    <TimelineGroups items={t.currentDay.items} linkVenues />
+                    <TimelineGroups
+                      items={t.currentDay.items}
+                      linkVenues
+                      itemLinkBase={`/trips/${t.id}/days/${t.currentDay.id}`}
+                    />
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
