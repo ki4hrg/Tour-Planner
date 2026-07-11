@@ -451,7 +451,6 @@ model Stay {
   tripId                String
   location              Location  @relation("Lodging", fields: [locationId], references: [id], onDelete: Restrict)
   locationId            String
-  label                 String?
   // A stay anchors EITHER to absolute dates (dated trip) OR to 1-based day
   // indices (date-less template). Exactly one mode is populated — enforced by a
   // DB CHECK (invisible to Prisma; see the migration). checkInDayIndex mirrors

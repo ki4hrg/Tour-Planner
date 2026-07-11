@@ -34,7 +34,6 @@ const optionalDayIndex = z.preprocess(
 export const staySchema = z
   .object({
     locationId: z.string().min(1, "Pick a lodging location."),
-    label: z.string().trim().optional(),
     checkIn: z.string().optional(),
     checkOut: z.string().optional(),
     checkInDayIndex: optionalDayIndex,
