@@ -31,6 +31,8 @@ export type VenueBookingRow = {
   notes: string | null;
   bookedContactId: string | null;
   contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
   sessions: CoveredSession[];
   nightCount: number;
   costs: SerializedCost[];
@@ -82,7 +84,12 @@ type EngagementInput = {
   confirmationRef: string | null;
   notes: string | null;
   bookedContactId: string | null;
-  bookedContact: { id: string; name: string } | null;
+  bookedContact: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
 };
 
 // checkIn/checkOut are null on a date-less template stay (day-relative anchors);
@@ -214,6 +221,8 @@ export function buildDashboardRows(data: DashboardData): {
       notes: eng?.notes ?? null,
       bookedContactId: eng?.bookedContactId ?? null,
       contactName: eng?.bookedContact?.name ?? null,
+      contactPhone: eng?.bookedContact?.phone ?? null,
+      contactEmail: eng?.bookedContact?.email ?? null,
       sessions: v.sessions,
       nightCount: v.nights,
       costs,

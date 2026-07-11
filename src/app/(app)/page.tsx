@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
 import { bookingWindow } from "@/lib/booking";
+import { noteTarget } from "@/lib/notes";
+import { cn } from "@/lib/utils";
 import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
 import { TimelineGroups } from "./trips/itinerary-timeline";
 
@@ -42,11 +44,17 @@ const DAY_ITEMS_INCLUDE = {
   },
 } satisfies Prisma.ItineraryDay$scheduleItemsArgs;
 
-export default async function Home() {
-  await requireUser();
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ followups?: string }>;
+}) {
+  const user = await requireUser();
+  const { followups } = await searchParams;
+  const onlyMine = followups === "mine";
   const today = todayUtc();
 
-  const [ongoingCandidates, activeTrips, engagementBookings] = await Promise.all([
+  const [ongoingCandidates, activeTrips, engagementBookings, followUpNotes] = await Promise.all([
     // Trips underway right now, with just today's day + its schedule loaded so we
     // can surface "what's happening today" front and center. The date bounds keep
     // this cheap; isOngoing() below is the exact filter.
@@ -106,7 +114,54 @@ export default async function Home() {
         trip: { select: { id: true, name: true, startDate: true } },
       },
     }),
+    // Open follow-ups (everyone's by default; ?followups=mine narrows). Due-dated
+    // ones first, soonest first; undated ones trail.
+    prisma.note.findMany({
+      where: {
+        followUp: true,
+        ...(onlyMine ? { createdById: user.id } : {}),
+      },
+      orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { contactedOn: "asc" }],
+      take: 20,
+      select: {
+        id: true,
+        body: true,
+        dueDate: true,
+        createdBy: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true } },
+        booking: {
+          select: {
+            tripId: true,
+            label: true,
+            location: { select: { name: true } },
+            trip: { select: { id: true, name: true } },
+            scheduleItem: {
+              select: {
+                day: { select: { trip: { select: { id: true, name: true } } } },
+              },
+            },
+          },
+        },
+        trip: { select: { id: true, name: true } },
+        stay: {
+          select: {
+            trip: { select: { id: true, name: true } },
+            location: { select: { name: true } },
+          },
+        },
+      },
+    }),
   ]);
+
+  const followUps = followUpNotes.map((n) => ({
+    id: n.id,
+    firstLine: n.body.split("\n")[0],
+    dueDate: n.dueDate,
+    overdue: n.dueDate != null && n.dueDate.getTime() < today.getTime(),
+    author: n.createdBy?.name ?? "Unknown",
+    mine: n.createdBy?.id === user.id,
+    target: noteTarget(n),
+  }));
 
   // Exact "is today within the trip span" filter, and pull out today's day.
   const ongoing = ongoingCandidates
@@ -195,7 +250,7 @@ export default async function Home() {
                 </div>
                 {t.currentDay && t.currentDay.items.length > 0 ? (
                   <div className="rounded-md border bg-muted/30 p-3">
-                    <TimelineGroups items={t.currentDay.items} />
+                    <TimelineGroups items={t.currentDay.items} linkVenues />
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -207,6 +262,82 @@ export default async function Home() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">
+            Follow-ups due
+            {followUps.length ? (
+              <Badge variant="secondary" className="ml-2 align-middle">
+                {followUps.length}
+              </Badge>
+            ) : null}
+          </CardTitle>
+          <div className="flex gap-1 text-xs">
+            <Link
+              href="/"
+              className={cn(
+                "rounded-full border px-2.5 py-0.5",
+                !onlyMine ? "bg-muted font-medium" : "text-muted-foreground",
+              )}
+            >
+              Everyone
+            </Link>
+            <Link
+              href="/?followups=mine"
+              className={cn(
+                "rounded-full border px-2.5 py-0.5",
+                onlyMine ? "bg-muted font-medium" : "text-muted-foreground",
+              )}
+            >
+              Only mine
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {followUps.length === 0 ? (
+            <p className="text-muted-foreground">
+              {onlyMine
+                ? "No open follow-ups of yours."
+                : "No open follow-ups — log one from a note."}
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {followUps.map((f) => (
+                <li
+                  key={f.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <span className="min-w-0">
+                    <Link
+                      href={f.target.href}
+                      className="font-medium hover:underline"
+                    >
+                      {f.target.label}
+                    </Link>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {f.firstLine}
+                      {!onlyMine ? ` · ${f.author}` : ""}
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-xs",
+                      f.overdue
+                        ? "font-medium text-red-600 dark:text-red-400"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {f.dueDate
+                      ? `${f.overdue ? "Overdue · " : "Due "}${formatDate(f.dueDate)}`
+                      : "No due date"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

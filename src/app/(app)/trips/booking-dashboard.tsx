@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import { isBookingSecured } from "@/lib/booking";
-import { VenueRow, ItemRow } from "./booking-row";
+import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
 
 type ContactOption = { id: string; name: string };
 
@@ -104,19 +104,39 @@ export function BookingDashboard({
           Nothing matches these filters — everything&apos;s handled.
         </p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Venue</TableHead>
-              <TableHead>Window</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Point of Contact</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          {/* Desktop: the table. Below sm it doesn't stack, so cards take over. */}
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Venue</TableHead>
+                  <TableHead>Window</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Point of Contact</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shownVenues.map((row) => (
+                  <VenueRow
+                    key={row.locationId}
+                    row={row}
+                    tripId={tripId}
+                    canEdit={canEdit}
+                    contacts={contacts}
+                  />
+                ))}
+                {shownItems.map((row) => (
+                  <ItemRow key={row.bookingId} row={row} canEdit={canEdit} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="space-y-2 sm:hidden">
             {shownVenues.map((row) => (
-              <VenueRow
+              <VenueCard
                 key={row.locationId}
                 row={row}
                 tripId={tripId}
@@ -125,10 +145,10 @@ export function BookingDashboard({
               />
             ))}
             {shownItems.map((row) => (
-              <ItemRow key={row.bookingId} row={row} canEdit={canEdit} />
+              <ItemCard key={row.bookingId} row={row} canEdit={canEdit} />
             ))}
-          </TableBody>
-        </Table>
+          </div>
+        </>
       )}
     </div>
   );

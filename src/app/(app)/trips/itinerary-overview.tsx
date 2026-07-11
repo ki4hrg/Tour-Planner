@@ -187,7 +187,7 @@ function DayRow({
             </div>
           ) : (
             <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
-              <TimelineGroups items={day.items} lodging={lodging} />
+              <TimelineGroups items={day.items} lodging={lodging} linkVenues />
             </div>
           )}
         </CollapsibleContent>

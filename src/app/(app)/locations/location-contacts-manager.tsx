@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ContactChannels } from "@/components/contact-channels";
 import {
   Select,
   SelectContent,
@@ -24,6 +25,8 @@ type LinkedContact = {
   name: string;
   role: string | null;
   organization: string | null;
+  phone: string | null;
+  email: string | null;
 };
 
 export function LocationContactsManager({
@@ -32,12 +35,14 @@ export function LocationContactsManager({
   available,
   primaryContactId,
   canEdit,
+  defaultDialCode,
 }: {
   locationId: string;
   linked: LinkedContact[];
   available: { id: string; name: string }[];
   primaryContactId: string | null;
   canEdit: boolean;
+  defaultDialCode?: string | null;
 }) {
   const [mode, setMode] = useState<"none" | "existing" | "new">("none");
 
@@ -65,6 +70,11 @@ export function LocationContactsManager({
                   ? ` — ${[c.role, c.organization].filter(Boolean).join(", ")}`
                   : ""}
               </span>
+              <ContactChannels
+                phone={c.phone}
+                email={c.email}
+                className="ml-2 align-middle"
+              />
             </div>
             {canEdit ? (
               <div className="flex shrink-0 items-center gap-1">
@@ -146,6 +156,7 @@ export function LocationContactsManager({
                 submitLabel="Create & link"
                 locationId={locationId}
                 resetOnSuccess
+                defaultDialCode={defaultDialCode}
               />
             </div>
           ) : null}

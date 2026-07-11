@@ -47,11 +47,19 @@ export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---
 
+// mapUrl/primaryContact are only loaded (and serialized) on staff surfaces that
+// need them (the day view); they must never reach the public share page — see
+// redactDaysForShare, which strips them defensively.
 export type SerializedItemLocation = {
   id: string;
   locationId: string;
   order: number;
-  location: { id: string; name: string };
+  location: {
+    id: string;
+    name: string;
+    mapUrl?: string | null;
+    primaryContact?: { name: string; phone: string | null } | null;
+  };
 };
 
 export type SerializedPerson = { id: string; name: string };
@@ -148,10 +156,16 @@ export function scheduleItemPrimaryLabel(item: {
 
 // A run of consecutive (time-ordered) items sharing the same venue signature.
 // `kind`: 'single' = one venue, 'multi' = a multi-site / block stop, 'none' = no
-// location set. Read views render one subheader per run so location appears once.
+// location set. Read views render one subheader per run so location appears once;
+// venues carry their location id so app surfaces can link through to the venue page.
 export type VenueRun = {
   kind: "single" | "multi" | "none";
-  venues: string[];
+  venues: {
+    id: string;
+    name: string;
+    mapUrl?: string | null;
+    primaryContact?: { name: string; phone: string | null } | null;
+  }[];
   items: SerializedScheduleItem[];
 };
 
@@ -176,7 +190,11 @@ const KEEPS_PLACE_CATEGORIES = new Set<string>(["Break"]);
 // location-less ever tucks under a multi-site / block run.
 export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
   const runs: VenueRun[] = [];
-  const sigOf = (venues: string[]) => [...venues].sort().join("|");
+  const sigOf = (venues: { id: string }[]) =>
+    venues
+      .map((v) => v.id)
+      .sort()
+      .join("|");
   for (const item of items) {
     const last = runs[runs.length - 1];
     if (item.sites.length === 0) {
@@ -191,7 +209,12 @@ export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
       }
       continue;
     }
-    const venues = item.sites.map((s) => s.location.name);
+    const venues = item.sites.map((s) => ({
+      id: s.location.id,
+      name: s.location.name,
+      mapUrl: s.location.mapUrl,
+      primaryContact: s.location.primaryContact,
+    }));
     if (last && last.venues.length > 0 && sigOf(last.venues) === sigOf(venues)) {
       last.items.push(item);
       continue;
@@ -231,7 +254,12 @@ type ItemLocationRow = {
   id: string;
   locationId: string;
   order: number;
-  location: { id: string; name: string };
+  location: {
+    id: string;
+    name: string;
+    mapUrl?: string | null;
+    primaryContact?: { name: string; phone: string | null } | null;
+  };
 };
 
 type BookingRow = Booking & {
@@ -304,6 +332,11 @@ export function serializeScheduleItem(
         location: {
           id: s.location.id,
           name: s.location.name,
+          // Staff-only extras, present only when the caller's query loaded them.
+          ...(s.location.mapUrl !== undefined ? { mapUrl: s.location.mapUrl } : {}),
+          ...(s.location.primaryContact !== undefined
+            ? { primaryContact: s.location.primaryContact }
+            : {}),
         },
       })),
     bookings: item.bookings.map(serializeBooking),

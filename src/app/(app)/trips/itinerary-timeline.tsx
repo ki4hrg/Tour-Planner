@@ -1,7 +1,10 @@
 "use client";
 
-import { Moon } from "lucide-react";
+import Link from "next/link";
+import { MapPin, Moon } from "lucide-react";
+import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
+import { mapHref } from "@/lib/maps";
 import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUS_CLASSES,
@@ -21,23 +24,40 @@ export function TimelineGroups({
   items,
   showBookings = false,
   lodging,
+  linkVenues = false,
+  showVenueContacts = false,
+  renderItemExtra,
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
   lodging?: DayLodgingSummary | null;
+  // Link venue subheaders to their location pages. Only for authenticated app
+  // surfaces — the public share page and print view keep plain text.
+  linkVenues?: boolean;
+  // Call/WhatsApp + map affordances on venue subheaders. Day-view only; the
+  // data (primaryContact/mapUrl) is only loaded there anyway.
+  showVenueContacts?: boolean;
+  // Per-item slot rendered under the row content — the day view mounts its
+  // inline quick-edit here. The timeline itself stays a read component.
+  renderItemExtra?: (item: SerializedScheduleItem) => React.ReactNode;
 }) {
   const runs = groupItemsByVenue(items);
   return (
     <div className="space-y-5">
       {runs.map((run, i) => (
         <div key={i}>
-          <RunHeader run={run} />
+          <RunHeader
+            run={run}
+            linkVenues={linkVenues}
+            showVenueContacts={showVenueContacts}
+          />
           <ul className="space-y-1">
             {run.items.map((item) => (
               <TimelineRow
                 key={item.id}
                 item={item}
                 showBookings={showBookings}
+                extra={renderItemExtra?.(item)}
               />
             ))}
           </ul>
@@ -67,11 +87,54 @@ export function OvernightLine({ lodging }: { lodging: DayLodgingSummary }) {
 
 // The venue subheader for a run: simply the venue name(s). Location-less
 // (leading / post-block) runs render no heading at all.
-function RunHeader({ run }: { run: VenueRun }) {
+function RunHeader({
+  run,
+  linkVenues,
+  showVenueContacts,
+}: {
+  run: VenueRun;
+  linkVenues?: boolean;
+  showVenueContacts?: boolean;
+}) {
   if (run.venues.length === 0) return null;
   return (
     <h4 className="mb-2 text-base font-semibold tracking-tight text-foreground">
-      {run.venues.join(" · ")}
+      {run.venues.map((v, i) => {
+        const maps = showVenueContacts ? mapHref(v) : null;
+        return (
+          <span key={v.id} className="[&:not(:first-child)]:ml-1.5">
+            {i > 0 ? "· " : ""}
+            {linkVenues ? (
+              <Link
+                href={`/locations/${v.id}`}
+                className="underline-offset-4 hover:underline"
+              >
+                {v.name}
+              </Link>
+            ) : (
+              v.name
+            )}
+            {showVenueContacts && v.primaryContact?.phone ? (
+              <ContactChannels
+                phone={v.primaryContact.phone}
+                className="ml-1.5 align-middle"
+              />
+            ) : null}
+            {maps ? (
+              <a
+                href={maps}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${v.name} in Maps`}
+                title={`Open ${v.name} in Maps`}
+                className="ml-1 inline-flex size-7 items-center justify-center rounded-full border align-middle text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <MapPin className="size-3.5" />
+              </a>
+            ) : null}
+          </span>
+        );
+      })}
     </h4>
   );
 }
@@ -82,9 +145,11 @@ function RunHeader({ run }: { run: VenueRun }) {
 function TimelineRow({
   item,
   showBookings,
+  extra,
 }: {
   item: SerializedScheduleItem;
   showBookings: boolean;
+  extra?: React.ReactNode;
 }) {
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
@@ -96,12 +161,21 @@ function TimelineRow({
     showPresentation || speakers.length > 0 || Boolean(item.notes);
 
   return (
-    <li className="grid grid-cols-[5.25rem_7rem_1fr] items-baseline gap-x-2">
-      <time className="font-mono text-xs tabular-nums text-muted-foreground">
+    // <sm: a narrow two-column grid (the time range wraps onto two lines); the
+    // chip column collapses and the chip renders inline before the title instead.
+    <li className="grid grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[5.25rem_7rem_1fr]">
+      <time className="font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
         {time}
       </time>
-      <span>{showChip ? <CategoryChip category={item.category!} /> : null}</span>
+      <span className="hidden sm:block">
+        {showChip ? <CategoryChip category={item.category!} /> : null}
+      </span>
       <div className="min-w-0">
+        {showChip ? (
+          <span className="mr-1.5 align-middle sm:hidden">
+            <CategoryChip category={item.category!} />
+          </span>
+        ) : null}
         <span
           className="font-medium"
           style={
@@ -133,6 +207,7 @@ function TimelineRow({
             ))}
           </div>
         ) : null}
+        {extra}
       </div>
     </li>
   );

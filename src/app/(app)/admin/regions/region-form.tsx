@@ -25,6 +25,7 @@ export type RegionInitial = {
   name: string;
   parentId: string | null;
   tripTypeIds: string[];
+  dialCode: string | null;
 };
 
 export function RegionForm({
@@ -98,6 +99,21 @@ export function RegionForm({
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="dialCode">Phone country code</Label>
+          <Input
+            id="dialCode"
+            name="dialCode"
+            defaultValue={initial?.dialCode ?? ""}
+            placeholder="e.g. 44"
+            inputMode="numeric"
+            className="w-28"
+          />
+          <p className="text-xs text-muted-foreground">
+            Set on top-level regions; sub-regions inherit. Drives the default
+            dial code when adding contact phone numbers.
+          </p>
         </div>
       </div>
 
