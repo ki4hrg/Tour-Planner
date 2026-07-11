@@ -82,13 +82,14 @@ export function scopeDaysToLocation(
  * just hide it at render. Booking rows ride along in the RSC payload (and would be
  * view-source visible on a public link) unless removed here. Drops bookings for
  * audiences that don't see them; for a host-site link, keeps only bookings tied to
- * that site (or unscoped). */
+ * that site (or unscoped). Also strips staff-only location extras (primary-contact
+ * phone, map link) from every site, for every audience — no share query should load
+ * them, but a leak here would be public, so belt and braces. */
 export function redactDaysForShare(
   days: SerializedDay[],
   view: AudienceView,
   locationId: string | null,
 ): SerializedDay[] {
-  if (view.showBookings && !view.scopeToLocation) return days;
   return days.map((d) => ({
     ...d,
     items: d.items.map((it) => {
@@ -100,7 +101,11 @@ export function redactDaysForShare(
           (b) => b.locationId == null || b.locationId === locationId,
         );
       }
-      return bookings === it.bookings ? it : { ...it, bookings };
+      const sites = it.sites.map((s) => ({
+        ...s,
+        location: { id: s.location.id, name: s.location.name },
+      }));
+      return { ...it, bookings, sites };
     }),
   }));
 }

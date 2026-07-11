@@ -8,6 +8,7 @@ import { RegionForm } from "./region-form";
 import { updateRegion, deleteRegion } from "./actions";
 
 export type RegionRow = RegionNode & {
+  dialCode: string | null;
   tripTypes: { id: string; name: string }[];
   locationCount: number;
   childCount: number;
@@ -49,6 +50,7 @@ export function RegionsManager({
                 {r.childCount > 0
                   ? ` · ${r.childCount} sub-region${r.childCount === 1 ? "" : "s"}`
                   : ""}
+                {r.dialCode ? ` · +${r.dialCode}` : ""}
               </span>
               {r.tripTypes.length ? (
                 <div className="mt-1 flex flex-wrap gap-1">
@@ -95,6 +97,7 @@ export function RegionsManager({
                   name: r.name,
                   parentId: r.parentId,
                   tripTypeIds: r.tripTypes.map((t) => t.id),
+                  dialCode: r.dialCode,
                 }}
                 onSaved={() => setEditingId(null)}
               />

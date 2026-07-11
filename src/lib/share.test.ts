@@ -157,9 +157,28 @@ describe("redactDaysForShare", () => {
     expect(out[0].items[0].bookings).toEqual([]);
   });
 
-  it("passes bookings through untouched for an unscoped staff view", () => {
+  it("keeps bookings for an unscoped staff view", () => {
     const days = wrap([itemWith(["sarum"], [booking("sarum")])]);
-    expect(redactDaysForShare(days, audienceView("STAFF"), null)).toBe(days);
+    const out = redactDaysForShare(days, audienceView("STAFF"), null);
+    expect(out[0].items[0].bookings.map((b) => b.id)).toEqual(["bsarum"]);
+  });
+
+  it("strips staff-only location extras (contact phone, map link) for EVERY audience", () => {
+    const days = wrap([itemWith(["sarum"], [booking("sarum")])]);
+    // Simulate a query that (wrongly) loaded the staff-only site extras.
+    days[0].items[0].sites[0].location = {
+      id: "sarum",
+      name: "sarum",
+      mapUrl: "https://maps.example/sarum",
+      primaryContact: { name: "Verger", phone: "+441722555555" },
+    };
+    for (const audience of ["STAFF", "PARTICIPANT", "HOST_SITE"] as const) {
+      const out = redactDaysForShare(days, audienceView(audience), "sarum");
+      const loc = out[0].items[0].sites[0].location;
+      expect(loc).toEqual({ id: "sarum", name: "sarum" });
+      expect(JSON.stringify(out)).not.toContain("+441722555555");
+      expect(JSON.stringify(out)).not.toContain("maps.example");
+    }
   });
 
   it("for a host-site link keeps only that site's (or unscoped) bookings", () => {

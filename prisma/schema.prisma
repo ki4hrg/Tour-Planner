@@ -71,6 +71,7 @@ model TripType {
 model Region {
   id        String     @id @default(cuid())
   name      String
+  dialCode  String? // phone country code, digits only (e.g. "44"); children inherit via the parent chain
   parent    Region?    @relation("RegionTree", fields: [parentId], references: [id], onDelete: SetNull)
   parentId  String?
   children  Region[]   @relation("RegionTree")

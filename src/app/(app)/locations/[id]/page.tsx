@@ -11,12 +11,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale } from "@/lib/money";
+import { mapHref } from "@/lib/maps";
+import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
-import { todayUtc, toDateInput, formatDate } from "@/lib/dates";
+import { todayUtc, toDateInput, formatDate, addDays, isOngoing } from "@/lib/dates";
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
 import { LocationContactsManager } from "../location-contacts-manager";
+import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
 import { HostSitePanel } from "../host-site-panel";
 import { NotesThread } from "../../notes/notes-thread";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
@@ -72,9 +75,15 @@ export default async function LocationDetailPage({
     }),
     prisma.region.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true, parentId: true },
+      select: { id: true, name: true, parentId: true, dialCode: true },
     }),
   ]);
+
+  // Default dial code for new contact phones: the region chain's, else +1.
+  const defaultDialCode = effectiveDialCode(
+    location.regionId,
+    new Map(allRegions.map((r) => [r.id, r])),
+  );
 
   const linkedIds = new Set(location.contacts.map((c) => c.id));
   const availableContacts = allContacts.filter((c) => !linkedIds.has(c.id));
@@ -91,6 +100,56 @@ export default async function LocationDetailPage({
   const costs = location.costs.map((c) => ({
     ...serializeCost(c),
     stale: isCostStale(c.confirmedAt),
+  }));
+
+  // Trips touching this venue that are ongoing or start within 30 days — the
+  // on-site working set. Touch = engagement booking, schedule-item site, or stay.
+  const today = todayUtc();
+  const currentTripRows = await prisma.trip.findMany({
+    where: {
+      isTemplate: false,
+      startDate: { lte: addDays(today, 30) },
+      endDate: { gte: today },
+      OR: [
+        { bookings: { some: { locationId: id } } },
+        { stays: { some: { locationId: id } } },
+        {
+          days: {
+            some: {
+              scheduleItems: { some: { sites: { some: { locationId: id } } } },
+            },
+          },
+        },
+      ],
+    },
+    orderBy: { startDate: "asc" },
+    select: {
+      id: true,
+      name: true,
+      startDate: true,
+      endDate: true,
+      bookings: { where: { locationId: id }, select: { status: true } },
+      stays: { where: { locationId: id }, select: { id: true } },
+      days: {
+        select: {
+          scheduleItems: {
+            where: { sites: { some: { locationId: id } } },
+            select: { id: true },
+          },
+        },
+      },
+    },
+  });
+  const currentTrips: LocationTripRow[] = currentTripRows.map((t) => ({
+    tripId: t.id,
+    tripName: t.name,
+    dates: [formatDate(t.startDate), formatDate(t.endDate)]
+      .filter(Boolean)
+      .join(" – "),
+    ongoing: isOngoing(t.startDate, t.endDate),
+    bookingStatus: t.bookings[0]?.status ?? "NOT_BOOKED",
+    sessionCount: t.days.reduce((n, d) => n + d.scheduleItems.length, 0),
+    hasLodging: t.stays.length > 0,
   }));
 
   // Visit history: which non-template trips this venue appears in, newest first.
@@ -207,6 +266,22 @@ export default async function LocationDetailPage({
 
         {/* Reference/metadata — leads on mobile, left 1/3 on desktop. */}
         <div className="order-1 min-w-0 space-y-6 lg:col-span-1">
+      {currentTrips.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Current trips here</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LocationTripsPanel
+              locationId={location.id}
+              rows={currentTrips}
+              canEdit={canEdit}
+              bookable={location.bookable}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
@@ -219,7 +294,19 @@ export default async function LocationDetailPage({
                 <dt className="text-muted-foreground">Region</dt>
                 <dd className="col-span-2">{location.region?.name ?? "—"}</dd>
                 <dt className="text-muted-foreground">Address</dt>
-                <dd className="col-span-2">{location.address ?? "—"}</dd>
+                <dd className="col-span-2">
+                  {location.address ?? "—"}
+                  {mapHref(location) ? (
+                    <a
+                      href={mapHref(location)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 whitespace-nowrap text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Open in Maps
+                    </a>
+                  ) : null}
+                </dd>
                 <dt className="text-muted-foreground">Trip types</dt>
                 <dd className="col-span-2">
                   {location.tripTypes.length
@@ -311,10 +398,13 @@ export default async function LocationDetailPage({
               name: c.name,
               role: c.role,
               organization: c.organization,
+              phone: c.phone,
+              email: c.email,
             }))}
             available={availableContacts}
             primaryContactId={location.primaryContactId}
             canEdit={canEdit}
+            defaultDialCode={defaultDialCode}
           />
         </CardContent>
       </Card>

@@ -11,7 +11,7 @@ import {
   serializeDay,
   summarizeDayLodging,
 } from "@/lib/trips";
-import { TimelineGroups } from "../../../itinerary-timeline";
+import { DayTimeline } from "./day-timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,19 @@ export default async function TripDayPage({
               presenters: { select: { id: true, name: true } },
               sites: {
                 orderBy: { order: "asc" },
-                include: { location: { select: { id: true, name: true } } },
+                include: {
+                  location: {
+                    select: {
+                      id: true,
+                      name: true,
+                      // Staff-only on-site affordances (maps link, one-tap call).
+                      // Never load these on share-page queries — and
+                      // redactDaysForShare strips them defensively regardless.
+                      mapUrl: true,
+                      primaryContact: { select: { name: true, phone: true } },
+                    },
+                  },
+                },
               },
               bookings: {
                 orderBy: { createdAt: "asc" },
@@ -112,10 +124,11 @@ export default async function TripDayPage({
         {serialized.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
         ) : (
-          <TimelineGroups
+          <DayTimeline
+            tripId={trip.id}
             items={serialized.items}
             lodging={lodging}
-            showBookings={canEdit}
+            canEdit={canEdit}
           />
         )}
       </div>

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -17,16 +18,18 @@ export const dynamic = "force-dynamic";
 export default async function LocationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; archived?: string }>;
+  searchParams: Promise<{ type?: string; archived?: string; q?: string }>;
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
-  const { type, archived } = await searchParams;
+  const { type, archived, q } = await searchParams;
   const showArchived = archived === "1";
+  const query = q?.trim() || undefined;
 
   const where: Prisma.LocationWhereInput = {
     archivedAt: showArchived ? { not: null } : null,
     ...(type ? { tripTypes: { some: { id: type } } } : {}),
+    ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
   };
 
   const [locations, tripTypes] = await Promise.all([
@@ -49,6 +52,7 @@ export default async function LocationsPage({
     const sp = new URLSearchParams();
     if (params.type) sp.set("type", params.type);
     if (params.archived) sp.set("archived", params.archived);
+    if (params.q) sp.set("q", params.q);
     const s = sp.toString();
     return s ? `/locations?${s}` : "/locations";
   };
@@ -69,9 +73,26 @@ export default async function LocationsPage({
         ) : null}
       </div>
 
+      {/* GET form: name search composes with the trip-type filter links below,
+          which round-trip q via qs(). */}
+      <form action="/locations" method="get" className="flex max-w-sm gap-2">
+        {type ? <input type="hidden" name="type" value={type} /> : null}
+        {showArchived ? <input type="hidden" name="archived" value="1" /> : null}
+        <Input
+          type="search"
+          name="q"
+          defaultValue={query ?? ""}
+          placeholder="Search by name…"
+          aria-label="Search locations by name"
+        />
+        <Button type="submit" variant="outline">
+          Search
+        </Button>
+      </form>
+
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          href={qs({ archived: showArchived ? "1" : undefined })}
+          href={qs({ archived: showArchived ? "1" : undefined, q: query })}
           className={cn(
             "rounded-full border px-3 py-1 text-sm",
             !type ? "bg-muted font-medium" : "text-muted-foreground",
@@ -82,7 +103,11 @@ export default async function LocationsPage({
         {tripTypes.map((t) => (
           <Link
             key={t.id}
-            href={qs({ type: t.id, archived: showArchived ? "1" : undefined })}
+            href={qs({
+              type: t.id,
+              archived: showArchived ? "1" : undefined,
+              q: query,
+            })}
             className={cn(
               "rounded-full border px-3 py-1 text-sm",
               type === t.id ? "bg-muted font-medium" : "text-muted-foreground",
@@ -93,7 +118,7 @@ export default async function LocationsPage({
         ))}
         <span className="ml-auto">
           <Link
-            href={qs({ type, archived: showArchived ? undefined : "1" })}
+            href={qs({ type, archived: showArchived ? undefined : "1", q: query })}
             className="text-sm text-muted-foreground underline-offset-2 hover:underline"
           >
             {showArchived ? "← Active locations" : "Show archived"}

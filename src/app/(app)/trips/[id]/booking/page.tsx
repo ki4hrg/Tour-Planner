@@ -62,7 +62,9 @@ export default async function BookingDashboardPage({
           confirmationRef: true,
           notes: true,
           bookedContactId: true,
-          bookedContact: { select: { id: true, name: true } },
+          bookedContact: {
+            select: { id: true, name: true, phone: true, email: true },
+          },
         },
       },
       stays: {

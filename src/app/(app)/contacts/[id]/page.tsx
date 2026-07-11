@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ContactChannels } from "@/components/contact-channels";
 import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
@@ -38,7 +39,10 @@ export default async function ContactDetailPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{contact.name}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">{contact.name}</h1>
+          <ContactChannels phone={contact.phone} email={contact.email} />
+        </div>
         <Link
           href="/contacts"
           className="text-sm text-muted-foreground hover:underline"

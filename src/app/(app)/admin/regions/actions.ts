@@ -12,6 +12,7 @@ function parse(formData: FormData) {
     name: formData.get("name"),
     parentId: formData.get("parentId") || undefined,
     tripTypeIds: formData.getAll("tripTypeIds").map(String),
+    dialCode: formData.get("dialCode") ?? undefined,
   });
 }
 
@@ -45,11 +46,12 @@ export async function createRegion(
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const { name, parentId, tripTypeIds } = parsed.data;
+  const { name, parentId, tripTypeIds, dialCode } = parsed.data;
   try {
     await prisma.region.create({
       data: {
         name,
+        dialCode: dialCode ?? null,
         ...(parentId ? { parent: { connect: { id: parentId } } } : {}),
         tripTypes: { connect: (tripTypeIds ?? []).map((id) => ({ id })) },
       },
@@ -77,7 +79,7 @@ export async function updateRegion(
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const { name, parentId, tripTypeIds } = parsed.data;
+  const { name, parentId, tripTypeIds, dialCode } = parsed.data;
   if (parentId && (await wouldCycle(id, parentId))) {
     return { error: "A region can't sit under itself or its own descendant." };
   }
@@ -87,6 +89,7 @@ export async function updateRegion(
       where: { id },
       data: {
         name,
+        dialCode: dialCode ?? null,
         parent: parentId
           ? { connect: { id: parentId } }
           : { disconnect: true },

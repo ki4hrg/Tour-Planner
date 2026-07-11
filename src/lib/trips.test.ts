@@ -121,7 +121,10 @@ describe("groupItemsByVenue", () => {
       item({ venues: ["Sarum"] }),
     ]);
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ kind: "single", venues: ["Sarum"] });
+    expect(runs[0]).toMatchObject({
+      kind: "single",
+      venues: [{ id: "Sarum", name: "Sarum" }],
+    });
     expect(runs[0].items).toHaveLength(2);
   });
 
@@ -131,7 +134,7 @@ describe("groupItemsByVenue", () => {
       item({ venues: ["Cathedral"] }),
       item({ venues: ["Sarum"] }),
     ]);
-    expect(runs.map((r) => r.venues[0])).toEqual([
+    expect(runs.map((r) => r.venues[0]?.name)).toEqual([
       "Sarum",
       "Cathedral",
       "Sarum",

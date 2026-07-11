@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ContactChannels } from "@/components/contact-channels";
 import { ContactForm } from "./contact-form";
 import { createContact } from "./actions";
 
@@ -71,7 +72,10 @@ export default async function ContactsPage() {
                   {c.phone ? ` · ${c.phone}` : ""}
                 </div>
               </div>
-              <Badge variant="outline">{c._count.locations} locations</Badge>
+              <div className="flex shrink-0 items-center gap-2">
+                <ContactChannels phone={c.phone} email={c.email} />
+                <Badge variant="outline">{c._count.locations} locations</Badge>
+              </div>
             </div>
           ))}
           {contacts.length === 0 ? (

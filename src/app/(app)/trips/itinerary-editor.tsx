@@ -444,7 +444,7 @@ function DayCard({
             ))}
           </ol>
         ) : (
-          <TimelineGroups items={day.items} showBookings />
+          <TimelineGroups items={day.items} showBookings linkVenues />
         )}
       </div>
 
@@ -545,7 +545,8 @@ function ItemRow({
     scheduleItemPrimaryLabel(item);
 
   return (
-    <li className="relative pl-5">
+    // Anchor target for deep links from the day view's quick-edit ("All options →").
+    <li id={`item-${item.id}`} className="relative scroll-mt-20 pl-5">
       <Marker item={item} />
       <div className="flex items-start justify-between gap-3 py-1.5">
         <div className="min-w-0 flex-1">
