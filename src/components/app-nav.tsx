@@ -22,6 +22,7 @@ const LINKS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/locations", label: "Locations" },
   { href: "/contacts", label: "Contacts" },
   { href: "/presentations", label: "Presentations" },
+  { href: "/settings", label: "Settings" },
   { href: "/admin", label: "Admin", adminOnly: true },
 ];
 

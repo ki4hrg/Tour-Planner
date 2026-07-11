@@ -53,6 +53,58 @@ model User {
   createdAt    DateTime @default(now())
   trips        Trip[]   @relation("CreatedTrips")
   authoredNotes Note[]  @relation("AuthoredNotes")
+  todoistConnection    TodoistConnection?
+  tripTodoistLinks     TripTodoistLink[]
+  tripTypeTodoistLinks TripTypeTodoistLink[]
+}
+
+enum TodoistAuthType {
+  PERSONAL_TOKEN
+  OAUTH
+}
+
+// A user's Todoist account link. Personal-token auth today; the shape (authType,
+// refreshToken, expiresAt) is ready for an OAuth upgrade without a migration.
+// Tokens are AES-256-GCM encrypted at rest (src/lib/crypto.ts) and never
+// serialized to the client.
+model TodoistConnection {
+  id               String          @id @default(cuid())
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String          @unique
+  authType         TodoistAuthType @default(PERSONAL_TOKEN)
+  accessToken      String // encrypted
+  refreshToken     String? // encrypted; OAuth only
+  expiresAt        DateTime? // OAuth access-token expiry
+  defaultProjectId String? // fallback Todoist project for pushed follow-ups
+  lastReconciledAt DateTime? // throttles the lazy completion reconcile
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+// Per-user routing: this trip's follow-ups go to this Todoist project.
+model TripTodoistLink {
+  id               String @id @default(cuid())
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  trip             Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId           String
+  todoistProjectId String
+
+  @@unique([userId, tripId])
+  @@index([tripId])
+}
+
+// Per-user routing default for a trip type (e.g. all Wesley trips → one project).
+model TripTypeTodoistLink {
+  id               String   @id @default(cuid())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  tripType         TripType @relation(fields: [tripTypeId], references: [id], onDelete: Cascade)
+  tripTypeId       String
+  todoistProjectId String
+
+  @@unique([userId, tripTypeId])
+  @@index([tripTypeId])
 }
 
 model TripType {
@@ -64,6 +116,7 @@ model TripType {
   locations       Location[] // implicit m2m (tags)
   regions         Region[]   @relation("RegionTripTypes") // regions this type plans in
   trips           Trip[]
+  todoistLinks    TripTypeTodoistLink[]
 }
 
 // Admin-managed, hierarchical place catalog (e.g. England → London). A region can
@@ -164,6 +217,7 @@ model Trip {
   stays            Stay[]
   bookings         Booking[] // venue-engagement bookings scoped to this trip
   notesLog         Note[]         @relation("TripNotes")
+  todoistLinks     TripTodoistLink[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
@@ -307,6 +361,7 @@ model Note {
   contactedOn DateTime   @db.Date // when the contact happened (may differ from createdAt)
   followUp    Boolean    @default(false)
   dueDate     DateTime?  @db.Date // optional follow-up deadline
+  todoistTaskId String? // the Todoist task mirroring this follow-up, if pushed
 
   location   Location? @relation("LocationNotes", fields: [locationId], references: [id], onDelete: Cascade)
   locationId String?

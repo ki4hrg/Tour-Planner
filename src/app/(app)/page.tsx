@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
 import { bookingWindow } from "@/lib/booking";
 import { noteTarget } from "@/lib/notes";
+import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
 import { cn } from "@/lib/utils";
 import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
 import { TimelineGroups } from "./trips/itinerary-timeline";
@@ -53,6 +54,10 @@ export default async function Home({
   const { followups } = await searchParams;
   const onlyMine = followups === "mine";
   const today = todayUtc();
+
+  // Lazy Todoist completion pull before the follow-ups card renders. Throttled
+  // (~60s) inside; best-effort — a Todoist outage must not break the dashboard.
+  await reconcileTodoistFollowUps(user.id).catch(() => 0);
 
   const [ongoingCandidates, activeTrips, engagementBookings, followUpNotes] = await Promise.all([
     // Trips underway right now, with just today's day + its schedule loaded so we

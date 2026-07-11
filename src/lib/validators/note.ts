@@ -32,6 +32,9 @@ export const noteSchema = z.object({
   contactedOn: z.string().min(1, "Pick the date you made contact."),
   followUp: z.boolean().default(false),
   dueDate: optionalDate,
+  // Explicit Todoist destination for a follow-up on a location-only note
+  // (trip-context notes route by trip/trip-type links automatically).
+  todoistProjectId: optionalId,
 });
 
 export type NoteInput = z.infer<typeof noteSchema>;
