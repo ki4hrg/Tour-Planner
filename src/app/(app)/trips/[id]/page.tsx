@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
   TRIP_STATUS_LABELS,
+  BOOKING_STATUS_LABELS,
   serializeStay,
   serializeDay,
   serializeBooking,
@@ -28,7 +29,12 @@ import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
 import { TemplateChip } from "../template-chip";
-import { updateTrip, deleteTrip, saveTripAsTemplate } from "../actions";
+import {
+  updateTrip,
+  deleteTrip,
+  saveTripAsTemplate,
+  markTripCompleted,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +109,7 @@ export default async function TripOverviewPage({
   const costLocations = locationIds.length
     ? await prisma.location.findMany({
         where: { id: { in: locationIds } },
-        select: { costs: true },
+        select: { id: true, name: true, costs: true },
       })
     : [];
   const allCosts = costLocations.flatMap((s) => s.costs);
@@ -134,7 +140,11 @@ export default async function TripOverviewPage({
   // reflect the single booking covering its lodging venue.
   const engagementBookings = await prisma.booking.findMany({
     where: { tripId: id },
-    include: { bookedContact: { select: { id: true, name: true } } },
+    include: {
+      bookedContact: { select: { id: true, name: true } },
+      location: { select: { name: true } },
+      payments: { select: { amount: true } },
+    },
   });
   const bookingByLocation = bookingsByLocation(
     engagementBookings.map(serializeBooking),
@@ -173,6 +183,89 @@ export default async function TripOverviewPage({
     orderBy: { name: "asc" },
     select: { id: true, name: true, region: { select: { name: true } } },
   });
+
+  // Trip wrap-up: once the dates have passed but the status hasn't caught up,
+  // surface what's left to reconcile before marking the trip completed.
+  const pastEnd =
+    !trip.isTemplate &&
+    trip.endDate != null &&
+    trip.endDate.getTime() < todayMs &&
+    (trip.status === "IN_PROGRESS" || trip.status === "CONFIRMED");
+
+  const engagedVenueIds = [
+    ...new Set([
+      ...locationIds,
+      ...stays.map((s) => s.locationId),
+      ...engagementBookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
+    ]),
+  ];
+  const wrapUpFollowUps = pastEnd
+    ? await prisma.note.findMany({
+        where: {
+          followUp: true,
+          OR: [
+            { tripId: id },
+            { booking: { tripId: id } },
+            { stay: { tripId: id } },
+            ...(engagedVenueIds.length
+              ? [{ locationId: { in: engagedVenueIds } }]
+              : []),
+          ],
+        },
+        orderBy: [{ dueDate: { sort: "asc" as const, nulls: "last" as const } }],
+        take: 10,
+        select: {
+          id: true,
+          body: true,
+          location: { select: { name: true } },
+          booking: { select: { location: { select: { name: true } }, label: true } },
+          trip: { select: { name: true } },
+          stay: { select: { location: { select: { name: true } } } },
+        },
+      })
+    : [];
+  const wrapUp = pastEnd
+    ? {
+        followUps: wrapUpFollowUps.map((n) => ({
+          id: n.id,
+          firstLine: n.body.split("\n")[0],
+          where:
+            n.location?.name ??
+            n.booking?.location?.name ??
+            n.booking?.label ??
+            n.stay?.location.name ??
+            n.trip?.name ??
+            "Note",
+        })),
+        // Venue prices to re-confirm while the visit is fresh.
+        staleCostLocations: costLocations
+          .filter(
+            (l) =>
+              l.costs.length === 0 ||
+              l.costs.some((c) => isCostStale(c.confirmedAt)),
+          )
+          .map((l) => ({ id: l.id, name: l.name })),
+        // Engagements not yet financially/administratively closed.
+        openEngagements: engagementBookings
+          .map((b) => {
+            const agreed =
+              b.agreedAmount == null ? null : Number(b.agreedAmount);
+            const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
+            const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
+            const openStatus =
+              b.status !== "FINALIZED" && b.status !== "NOT_NEEDED";
+            if (!unpaid && !openStatus) return null;
+            return {
+              id: b.id,
+              name: b.location?.name ?? b.label ?? "Booking",
+              status: b.status,
+              unpaid,
+              currency: b.agreedCurrency,
+            };
+          })
+          .filter((e) => e != null),
+      }
+    : null;
 
   // Share links (PLANNER-managed) + the host sites a HOST_SITE link can target.
   const shareLinks = canEdit
@@ -232,6 +325,111 @@ export default async function TripOverviewPage({
 
         {/* Trip meta — leads on mobile, left 1/3 on desktop. */}
         <div className="order-1 min-w-0 space-y-6 lg:col-span-1">
+          {wrapUp ? (
+            <Card className="border-amber-300 dark:border-amber-800">
+              <CardHeader>
+                <CardTitle className="text-base">Wrap up this trip</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  The trip ended {formatDate(trip.endDate)} but is still marked{" "}
+                  {TRIP_STATUS_LABELS[trip.status]}. Loose ends:
+                </p>
+
+                {wrapUp.followUps.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      Open follow-ups
+                    </p>
+                    <ul className="space-y-0.5">
+                      {wrapUp.followUps.map((f) => (
+                        <li key={f.id} className="truncate">
+                          <span className="font-medium">{f.where}</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            — {f.firstLine}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {wrapUp.openEngagements.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      Bookings to close out
+                    </p>
+                    <ul className="space-y-0.5">
+                      {wrapUp.openEngagements.map((e) => (
+                        <li key={e.id}>
+                          <Link
+                            href={`/trips/${trip.id}/booking`}
+                            className="font-medium hover:underline"
+                          >
+                            {e.name}
+                          </Link>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            — {BOOKING_STATUS_LABELS[e.status]}
+                            {e.unpaid > 0
+                              ? ` · ${formatMoney(e.unpaid, e.currency)} unpaid`
+                              : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {wrapUp.staleCostLocations.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      Prices to re-confirm while it&apos;s fresh
+                    </p>
+                    <ul className="space-y-0.5">
+                      {wrapUp.staleCostLocations.map((l) => (
+                        <li key={l.id}>
+                          <Link
+                            href={`/locations/${l.id}`}
+                            className="hover:underline"
+                          >
+                            {l.name}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {wrapUp.followUps.length === 0 &&
+                wrapUp.openEngagements.length === 0 &&
+                wrapUp.staleCostLocations.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    Nothing outstanding — ready to close.
+                  </p>
+                ) : null}
+
+                {canEdit ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <form action={markTripCompleted}>
+                      <input type="hidden" name="id" value={trip.id} />
+                      <Button type="submit" size="sm">
+                        Mark completed
+                      </Button>
+                    </form>
+                    <form action={saveTripAsTemplate}>
+                      <input type="hidden" name="id" value={trip.id} />
+                      <Button type="submit" size="sm" variant="outline">
+                        Save as template
+                      </Button>
+                    </form>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">Details</CardTitle>

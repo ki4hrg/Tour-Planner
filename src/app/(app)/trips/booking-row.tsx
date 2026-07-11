@@ -19,7 +19,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { formatMoney, isCostStale, COST_UNIT_LABELS } from "@/lib/money";
+import { formatMoney, isCostStale, COST_UNIT_LABELS, CURRENCIES } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -27,6 +27,8 @@ import {
   setVenueBookingStatus,
   setBookingStatus,
   upsertVenueBooking,
+  addPayment,
+  deletePayment,
 } from "./actions";
 import { StatusControl } from "./status-control";
 
@@ -72,6 +74,28 @@ function WindowCell({ row }: { row: VenueBookingRow }) {
 function PriceCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable)
     return <span className="text-muted-foreground">—</span>;
+  // The negotiated engagement price beats the catalog's asking price.
+  if (row.agreedAmount != null) {
+    return (
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-1.5">
+          <span>
+            {formatMoney(row.agreedAmount, row.agreedCurrency)}
+            {row.agreedUnit ? (
+              <span className="text-muted-foreground">
+                {" "}
+                {COST_UNIT_LABELS[row.agreedUnit]}
+              </span>
+            ) : null}
+          </span>
+          <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+            agreed
+          </span>
+        </div>
+        <PaymentState row={row} />
+      </div>
+    );
+  }
   if (row.costs.length === 0)
     return (
       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
@@ -98,6 +122,24 @@ function PriceCell({ row }: { row: VenueBookingRow }) {
       ))}
     </div>
   );
+}
+
+// Settled / unpaid chip under an agreed price.
+function PaymentState({ row }: { row: VenueBookingRow }) {
+  if (row.agreedAmount == null) return null;
+  if (row.settled)
+    return (
+      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+        Paid in full
+      </span>
+    );
+  if (row.paidTotal > 0)
+    return (
+      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+        {formatMoney(row.unpaidBalance ?? 0, row.agreedCurrency)} unpaid
+      </span>
+    );
+  return <span className="text-xs text-muted-foreground">Nothing paid yet</span>;
 }
 
 function coverageLine(row: VenueBookingRow): string {
@@ -133,6 +175,11 @@ function VenueDetails({
   const [contactId, setContactId] = useState(row.bookedContactId ?? NONE);
   const [confirmationRef, setConfirmationRef] = useState(row.confirmationRef ?? "");
   const [notes, setNotes] = useState(row.notes ?? "");
+  const [agreedAmount, setAgreedAmount] = useState(
+    row.agreedAmount != null ? String(row.agreedAmount) : "",
+  );
+  const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
+  const [agreedUnit, setAgreedUnit] = useState<string>(row.agreedUnit ?? NONE);
 
   // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
@@ -143,6 +190,9 @@ function VenueDetails({
         bookedContactId: contactId === NONE ? undefined : contactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
+        agreedAmount: agreedAmount.trim() || undefined,
+        agreedCurrency,
+        agreedUnit: agreedUnit === NONE ? undefined : agreedUnit,
       }),
     );
 
@@ -200,6 +250,43 @@ function VenueDetails({
             </div>
           </div>
           <div className="space-y-1">
+            <Label className="text-xs">Agreed price</Label>
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={agreedAmount}
+                onChange={(e) => setAgreedAmount(e.target.value)}
+                placeholder="e.g. 450"
+                className="w-28"
+              />
+              <Select value={agreedCurrency} onValueChange={setAgreedCurrency}>
+                <SelectTrigger size="sm" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={agreedUnit} onValueChange={setAgreedUnit}>
+                <SelectTrigger size="sm" className="flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>— flat —</SelectItem>
+                  <SelectItem value="PER_PERSON">per person</SelectItem>
+                  <SelectItem value="PER_GROUP">per group</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1">
             <Label className="text-xs">Point of contact</Label>
             <Select value={contactId} onValueChange={setContactId}>
               <SelectTrigger size="sm">
@@ -226,6 +313,150 @@ function VenueDetails({
           </div>
           <Button size="sm" disabled={pending} onClick={save}>
             Save booking
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Payment log — spans the grid; needs the engagement to exist first. */}
+      {row.bookingId && (row.payments.length > 0 || canEdit) ? (
+        <div className="md:col-span-2">
+          <PaymentLog row={row} canEdit={canEdit} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// The engagement's payment log: what's been paid against the agreed price,
+// plus an add-payment row for planners.
+function PaymentLog({ row, canEdit }: { row: VenueBookingRow; canEdit: boolean }) {
+  const { pending, run } = useAction();
+
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState(row.agreedCurrency);
+  const [paidOn, setPaidOn] = useState("");
+  const [method, setMethod] = useState("");
+  const [note, setNote] = useState("");
+
+  const add = () =>
+    run(
+      () =>
+        addPayment(row.bookingId!, {
+          amount,
+          currency,
+          paidOn,
+          method: method.trim() || undefined,
+          note: note.trim() || undefined,
+        }),
+      () => {
+        setAmount("");
+        setPaidOn("");
+        setMethod("");
+        setNote("");
+      },
+    );
+
+  return (
+    <div className="space-y-2 border-t pt-2">
+      <p className="text-xs font-medium text-muted-foreground">
+        Payments
+        {row.agreedAmount != null ? (
+          <span className="ml-2 font-normal">
+            {formatMoney(row.paidTotal, row.agreedCurrency)} of{" "}
+            {formatMoney(row.agreedAmount, row.agreedCurrency)} paid
+          </span>
+        ) : null}
+      </p>
+      {row.payments.length > 0 ? (
+        <ul className="space-y-0.5 text-sm">
+          {row.payments.map((p) => (
+            <li key={p.id} className="flex items-center gap-2">
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {formatDate(p.paidOn)}
+              </span>
+              <span>{formatMoney(p.amount, p.currency)}</span>
+              {p.method ? (
+                <span className="text-xs text-muted-foreground">{p.method}</span>
+              ) : null}
+              {p.note ? (
+                <span className="truncate text-xs text-muted-foreground">
+                  · {p.note}
+                </span>
+              ) : null}
+              {canEdit ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => run(() => deletePayment(p.id))}
+                  className="ml-auto text-xs text-destructive underline-offset-2 hover:underline"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">No payments logged.</p>
+      )}
+      {canEdit ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Amount</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-28"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Currency</Label>
+            <Select value={currency} onValueChange={setCurrency}>
+              <SelectTrigger size="sm" className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Paid on</Label>
+            <Input
+              type="date"
+              value={paidOn}
+              onChange={(e) => setPaidOn(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Method</Label>
+            <Input
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              placeholder="e.g. bank transfer"
+              className="w-36"
+            />
+          </div>
+          <div className="min-w-32 flex-1 space-y-1">
+            <Label className="text-xs">Note</Label>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || !amount || !paidOn}
+            onClick={add}
+          >
+            Log payment
           </Button>
         </div>
       ) : null}
