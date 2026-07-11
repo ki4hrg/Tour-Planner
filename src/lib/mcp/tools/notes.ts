@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, parseDateInput, todayUtc } from "@/lib/dates";
 import { NOTE_TARGETS, type NoteTarget } from "@/lib/validators/note";
+import { syncNoteFollowUp } from "@/lib/todoist-sync";
 
 // Map a polymorphic target to its FK column.
 function targetColumn(
@@ -151,11 +152,18 @@ export function registerNoteTools(server: McpServer, user: SessionUser) {
           },
         });
 
+        // Best-effort Todoist push (no-op unless this user has a connection).
+        const todoistWarning = await syncNoteFollowUp(user.id, note.id);
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ id: note.id }, null, 2),
+              text: JSON.stringify(
+                { id: note.id, ...(todoistWarning ? { todoistWarning } : {}) },
+                null,
+                2,
+              ),
             },
           ],
         };

@@ -23,7 +23,12 @@ import {
   type NoteInput,
   type NoteTarget,
 } from "@/lib/validators/note";
-import { addNote, updateNote, deleteNote } from "./actions";
+import {
+  addNote,
+  updateNote,
+  deleteNote,
+  getTodoistDestination,
+} from "./actions";
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
@@ -50,6 +55,7 @@ export function NotesThread({
   contacts,
   canEdit,
   today,
+  todoistDestinationPicker = false,
 }: {
   target: NoteTarget;
   targetId: string;
@@ -57,6 +63,10 @@ export function NotesThread({
   contacts: ContactOption[];
   canEdit: boolean;
   today: string; // yyyy-mm-dd default for the "contacted on" field
+  // Location page only (and only when the viewer has a Todoist connection):
+  // follow-ups on location notes offer a Todoist project destination select.
+  // Trip-context notes route via trip/trip-type links automatically.
+  todoistDestinationPicker?: boolean;
 }) {
   const { run } = useAction();
   const [adding, setAdding] = useState(false);
@@ -76,6 +86,11 @@ export function NotesThread({
                 contacts={contacts}
                 initial={note}
                 today={today}
+                todoistLocationId={
+                  todoistDestinationPicker && target === "location"
+                    ? targetId
+                    : undefined
+                }
                 submitLabel="Save note"
                 onSubmit={(data, done) =>
                   run(() => updateNote(note.id, data), () => {
@@ -138,6 +153,11 @@ export function NotesThread({
           <NoteForm
             contacts={contacts}
             today={today}
+            todoistLocationId={
+              todoistDestinationPicker && target === "location"
+                ? targetId
+                : undefined
+            }
             submitLabel="Add note"
             onSubmit={(data, done) =>
               run(() => addNote(target, targetId, data), () => {
@@ -157,10 +177,16 @@ export function NotesThread({
   );
 }
 
+type TodoistDestination = {
+  projects: { id: string; name: string }[];
+  preselectedId: string | null;
+};
+
 function NoteForm({
   contacts,
   initial,
   today,
+  todoistLocationId,
   submitLabel,
   onSubmit,
   onCancel,
@@ -168,6 +194,7 @@ function NoteForm({
   contacts: ContactOption[];
   initial?: SerializedNote;
   today: string;
+  todoistLocationId?: string;
   submitLabel: string;
   onSubmit: (data: NoteInput, done: () => void) => void;
   onCancel: () => void;
@@ -181,6 +208,21 @@ function NoteForm({
   const [followUp, setFollowUp] = useState(initial?.followUp ?? false);
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
 
+  // Todoist destination for a location follow-up. Options load lazily the first
+  // time follow-up is checked (from the event handler, so no effect needed).
+  const [destination, setDestination] = useState<TodoistDestination | null>(null);
+  const [destinationLoaded, setDestinationLoaded] = useState(false);
+  const [todoistProjectId, setTodoistProjectId] = useState<string>(NONE);
+  const loadDestination = () => {
+    if (!todoistLocationId || destinationLoaded) return;
+    setDestinationLoaded(true);
+    getTodoistDestination(todoistLocationId).then((d) => {
+      if (!d) return;
+      setDestination(d);
+      setTodoistProjectId(d.preselectedId ?? NONE);
+    });
+  };
+
   const submit = () =>
     onSubmit(
       {
@@ -190,6 +232,8 @@ function NoteForm({
         contactedOn,
         followUp,
         dueDate: followUp ? dueDate || undefined : undefined,
+        todoistProjectId:
+          followUp && todoistProjectId !== NONE ? todoistProjectId : undefined,
       },
       () => {
         if (!initial) {
@@ -264,7 +308,10 @@ function NoteForm({
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={followUp}
-            onCheckedChange={(v) => setFollowUp(v === true)}
+            onCheckedChange={(v) => {
+              setFollowUp(v === true);
+              if (v === true) loadDestination();
+            }}
           />
           Needs follow-up
         </label>
@@ -277,6 +324,24 @@ function NoteForm({
               onChange={(e) => setDueDate(e.target.value)}
               className="w-auto"
             />
+          </div>
+        ) : null}
+        {followUp && destination ? (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">Todoist project</Label>
+            <Select value={todoistProjectId} onValueChange={setTodoistProjectId}>
+              <SelectTrigger size="sm" className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Inbox</SelectItem>
+                {destination.projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         ) : null}
       </div>

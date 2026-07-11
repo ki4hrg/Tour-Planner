@@ -24,6 +24,8 @@ import {
   templatizeStays,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { getTodoistAuth } from "@/lib/todoist-sync";
+import { createProject } from "@/lib/todoist";
 
 // --- Trip CRUD ---
 
@@ -698,6 +700,56 @@ async function tripIdForBooking(bookingId: string): Promise<string | null> {
   });
   if (!b) return null;
   return b.tripId ?? b.scheduleItem?.day.tripId ?? null;
+}
+
+// --- Todoist project link for a trip (per-user routing) ---
+
+export async function linkTripTodoistProject(
+  tripId: string,
+  projectId: string | null,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  if (projectId) {
+    await prisma.tripTodoistLink.upsert({
+      where: { userId_tripId: { userId: user.id, tripId } },
+      create: { userId: user.id, tripId, todoistProjectId: projectId },
+      update: { todoistProjectId: projectId },
+    });
+  } else {
+    await prisma.tripTodoistLink.deleteMany({
+      where: { userId: user.id, tripId },
+    });
+  }
+  revalidatePath(`/trips/${tripId}`);
+  return { ok: true, message: projectId ? "Project linked." : "Project unlinked." };
+}
+
+export async function createTripTodoistProject(
+  tripId: string,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const auth = await getTodoistAuth(user.id);
+  if (!auth) return { error: "Connect Todoist in Settings first." };
+
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    select: { name: true },
+  });
+  if (!trip) return { error: "Trip not found." };
+
+  try {
+    const project = await createProject(auth.token, trip.name);
+    await prisma.tripTodoistLink.upsert({
+      where: { userId_tripId: { userId: user.id, tripId } },
+      create: { userId: user.id, tripId, todoistProjectId: project.id },
+      update: { todoistProjectId: project.id },
+    });
+  } catch {
+    return { error: "Todoist could not be reached — try again." };
+  }
+
+  revalidatePath(`/trips/${tripId}`);
+  return { ok: true, message: `Created Todoist project “${trip.name}”.` };
 }
 
 // --- Payment log (against a booking's agreed price) ---

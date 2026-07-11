@@ -73,7 +73,8 @@ matching pair (`checkIn`/`checkOut` vs `checkInDayIndex`/`checkOutDayIndex`).
 
 **notes.ts** — `list-notes` (V), `add-note` (P). Polymorphic `target` ∈
 `location | booking | trip | stay`; `add-note` defaults `contactedOn` to today via
-`todayUtc()`.
+`todayUtc()` and best-effort pushes a flagged follow-up to the caller's Todoist
+(see Todoist section; failures come back as `todoistWarning`, never an error).
 
 ### Deliberately NOT exposed over MCP (revisit if needed)
 
@@ -115,6 +116,22 @@ matching pair (`checkIn`/`checkOut` vs `checkInDayIndex`/`checkOutDayIndex`).
 - Scope-to-role mapping: VIEWER → `mcp:read`, PLANNER → `mcp:read mcp:write`, ADMIN → `mcp:read mcp:write mcp:admin`.
 - The authorize endpoint (`/api/oauth/authorize`) renders a minimal HTML login form — not the React app login page.
 - OAuth/MCP routes are excluded from the auth middleware in `src/proxy.ts`.
+
+## Todoist follow-ups
+
+Per-user, personal-token integration (`/settings`); the model (`TodoistConnection`
+`authType`/`refreshToken`/`expiresAt`) is pre-shaped for OAuth. Flagging a note as
+follow-up pushes a Todoist task (label `tour-planner`, due = `dueDate`, description
+= `AUTH_URL` deep link); unchecking/deleting closes it. Completions flow back via
+`reconcileTodoistFollowUps` (lazy, ~60s-throttled via `lastReconciledAt`), called
+from the dashboard render. Routing: trip-context note → `TripTodoistLink` →
+`TripTypeTodoistLink` → connection default → Inbox; location-only note → the note
+form's destination select (pre-picked by `resolveLocationProject`). Layers:
+`src/lib/todoist.ts` (pure API v1 client), `src/lib/todoist-sync.ts` (Prisma-aware
+push/reconcile; NO revalidatePath — MCP-safe), `src/lib/crypto.ts` (AES-256-GCM
+token encryption keyed off `AUTH_SECRET`; tokens never reach the client — the UI
+shows last-4 only). Everything Todoist is best-effort: an outage downgrades the
+toast message but never fails the note save.
 
 ## Stack
 

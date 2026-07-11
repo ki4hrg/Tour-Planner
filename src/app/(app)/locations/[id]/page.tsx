@@ -85,6 +85,12 @@ export default async function LocationDetailPage({
     new Map(allRegions.map((r) => [r.id, r])),
   );
 
+  // Follow-ups on location notes can pick a Todoist destination when the
+  // viewer has a connection (the picker lazy-loads project options itself).
+  const todoistConnected =
+    canEdit &&
+    (await prisma.todoistConnection.count({ where: { userId: user.id } })) > 0;
+
   const linkedIds = new Set(location.contacts.map((c) => c.id));
   const availableContacts = allContacts.filter((c) => !linkedIds.has(c.id));
   // The contact-log picker is scoped to the people actually linked to this
@@ -229,6 +235,7 @@ export default async function LocationDetailPage({
             contacts={linkedContacts}
             canEdit={canEdit}
             today={toDateInput(todayUtc())}
+            todoistDestinationPicker={todoistConnected}
           />
         </CardContent>
       </Card>

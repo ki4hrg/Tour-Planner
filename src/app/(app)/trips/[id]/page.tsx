@@ -29,6 +29,7 @@ import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
 import { TemplateChip } from "../template-chip";
+import { TripTodoistPanel } from "../trip-todoist-panel";
 import {
   updateTrip,
   deleteTrip,
@@ -265,6 +266,18 @@ export default async function TripOverviewPage({
           })
           .filter((e) => e != null),
       }
+    : null;
+
+  // Todoist routing row — only for planners with a connection, on real trips.
+  const todoistConnected =
+    canEdit && !trip.isTemplate
+      ? (await prisma.todoistConnection.count({ where: { userId: user.id } })) > 0
+      : false;
+  const tripTodoistLink = todoistConnected
+    ? await prisma.tripTodoistLink.findUnique({
+        where: { userId_tripId: { userId: user.id, tripId: id } },
+        select: { todoistProjectId: true },
+      })
     : null;
 
   // Share links (PLANNER-managed) + the host sites a HOST_SITE link can target.
@@ -594,6 +607,20 @@ export default async function TripOverviewPage({
               />
             </CardContent>
           </Card>
+
+          {todoistConnected ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Todoist</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TripTodoistPanel
+                  tripId={trip.id}
+                  linkedProjectId={tripTodoistLink?.todoistProjectId ?? null}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
 
           {canEdit && !trip.isTemplate ? (
             <Card>
