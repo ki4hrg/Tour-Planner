@@ -172,7 +172,6 @@ export function instantiateDays(
 // The reusable, anchor-independent attributes shared across both directions.
 type StayCarryOver = {
   locationId: string;
-  label: string | null;
   arrivalTime: string | null;
   departureTime: string | null;
   headcount: number | null;
@@ -207,7 +206,6 @@ export type InstantiatedStay = StayCarryOver & {
 function carryOver(s: StayCarryOver): StayCarryOver {
   return {
     locationId: s.locationId,
-    label: s.label,
     arrivalTime: s.arrivalTime,
     departureTime: s.departureTime,
     headcount: s.headcount,

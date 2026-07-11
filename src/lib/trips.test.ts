@@ -214,15 +214,11 @@ describe("summarizeDayLodging", () => {
         checkIn: d("2026-07-06"),
         checkOut: d("2026-07-08"),
         priority: 0,
-        label: "Group block",
         location: { name: "Sarum College" },
       },
     ];
     expect(summarizeDayLodging(days, stays)).toEqual({
-      day6: {
-        locationName: "Sarum College",
-        label: "Group block",
-      },
+      day6: { locationName: "Sarum College" },
     });
   });
 

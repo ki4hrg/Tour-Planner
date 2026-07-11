@@ -86,7 +86,6 @@ const TEMPLATE_DAYS_SELECT = {
 // booking state is intentionally omitted here.
 const TEMPLATE_STAYS_SELECT = {
   locationId: true,
-  label: true,
   checkIn: true,
   checkOut: true,
   checkInDayIndex: true,
@@ -917,7 +916,6 @@ export async function createPresentationInline(
 
 export type StayInputData = {
   locationId: string;
-  label?: string;
   checkIn?: string;
   checkOut?: string;
   checkInDayIndex?: string;
@@ -938,7 +936,6 @@ function toStayData(d: ReturnType<typeof staySchema.parse>) {
   const dayRelative = d.checkInDayIndex != null;
   return {
     locationId: d.locationId,
-    label: d.label || null,
     checkIn: dayRelative ? null : parseDateInput(d.checkIn ?? "")!,
     checkOut: dayRelative ? null : parseDateInput(d.checkOut ?? "")!,
     checkInDayIndex: dayRelative ? d.checkInDayIndex! : null,

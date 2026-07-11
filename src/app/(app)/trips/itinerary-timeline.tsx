@@ -77,9 +77,8 @@ export function OvernightLine({ lodging }: { lodging: DayLodgingSummary }) {
       <span>
         Overnight ·{" "}
         <span className="font-medium text-foreground">
-          {lodging.label ?? lodging.locationName}
+          {lodging.locationName}
         </span>
-        {lodging.label ? ` (${lodging.locationName})` : ""}
       </span>
     </div>
   );

@@ -12,7 +12,6 @@ const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 function stay(over: Partial<SourceStay> = {}): SourceStay {
   return {
     locationId: "locH",
-    label: "Hotel",
     checkIn: null,
     checkOut: null,
     checkInDayIndex: null,
@@ -162,10 +161,10 @@ describe("templatizeStays", () => {
 
   it("carries over the reusable attributes unchanged", () => {
     const out = templatizeStays(
-      [stay({ checkIn: d("2026-07-08"), checkOut: d("2026-07-09"), label: "Inn", priority: 1 })],
+      [stay({ checkIn: d("2026-07-08"), checkOut: d("2026-07-09"), notes: "Inn", priority: 1 })],
       start,
     );
-    expect(out[0].label).toBe("Inn");
+    expect(out[0].notes).toBe("Inn");
     expect(out[0].priority).toBe(1);
     expect(out[0].checkInDayIndex).toBe(3);
     expect(out[0].checkOutDayIndex).toBe(4);

@@ -29,7 +29,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       const serialized = stays.map((s) => ({
         id: s.id,
         location: s.location,
-        label: s.label,
         checkIn: s.checkIn ? toDateInput(s.checkIn) : null,
         checkOut: s.checkOut ? toDateInput(s.checkOut) : null,
         checkInDayIndex: s.checkInDayIndex,
@@ -68,7 +67,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         checkOut: z.string().optional(),
         checkInDayIndex: z.number().int().positive().optional(),
         checkOutDayIndex: z.number().int().positive().optional(),
-        label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
         headcount: z.number().optional(),
@@ -91,7 +89,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       checkOut,
       checkInDayIndex,
       checkOutDayIndex,
-      label,
       arrivalTime,
       departureTime,
       headcount,
@@ -208,7 +205,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         data: {
           tripId,
           locationId,
-          label: label || null,
           ...anchor,
           arrivalTime: arrivalTime || null,
           departureTime: departureTime || null,
@@ -248,7 +244,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         checkOut: z.string().optional(),
         checkInDayIndex: z.number().int().positive().optional(),
         checkOutDayIndex: z.number().int().positive().optional(),
-        label: z.string().optional(),
         arrivalTime: z.string().optional(),
         departureTime: z.string().optional(),
         headcount: z.number().optional(),
@@ -271,7 +266,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
       checkOut,
       checkInDayIndex,
       checkOutDayIndex,
-      label,
       arrivalTime,
       departureTime,
       headcount,
@@ -377,7 +371,6 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
         data.checkIn = null;
         data.checkOut = null;
       }
-      if (label !== undefined) data.label = label || null;
       if (arrivalTime !== undefined) data.arrivalTime = arrivalTime || null;
       if (departureTime !== undefined)
         data.departureTime = departureTime || null;

@@ -310,7 +310,6 @@ function StayFields({
   const [locationId, setLocationId] = useState<string>(
     initial?.locationId ?? NONE,
   );
-  const [label, setLabel] = useState(initial?.label ?? "");
   const [checkIn, setCheckIn] = useState(initial?.checkIn ?? "");
   const [checkOut, setCheckOut] = useState(initial?.checkOut ?? "");
   // Day-relative anchors (template mode). Stored as strings for the <Select>.
@@ -340,7 +339,6 @@ function StayFields({
     onSubmit(
       {
         locationId,
-        label: label.trim() || undefined,
         // Send exactly one anchor mode — the server rejects a mismatch with the
         // trip's template flag.
         checkIn: isTemplate ? undefined : checkIn,
@@ -358,7 +356,6 @@ function StayFields({
       () => {
         if (!initial) {
           setLocationId(NONE);
-          setLabel("");
           setCheckIn("");
           setCheckOut("");
           setCheckInDay("");
@@ -394,15 +391,6 @@ function StayFields({
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="min-w-0 space-y-1.5">
-          <Label className="text-xs">Label</Label>
-          <Input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Hotel, Airbnb"
-          />
         </div>
 
         {isTemplate ? (
