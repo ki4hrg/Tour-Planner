@@ -41,6 +41,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           include: {
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
+            payments: { select: { amount: true } },
           },
         });
 
@@ -58,8 +59,29 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             },
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
+            payments: { select: { amount: true } },
           },
         });
+
+        // Agreed price + running payment total (details via list-payments).
+        const money = (b: {
+          agreedAmount: unknown;
+          agreedCurrency: string;
+          payments: { amount: unknown }[];
+        }) => {
+          const agreedAmount =
+            b.agreedAmount == null ? null : Number(b.agreedAmount);
+          const paidTotal = b.payments.reduce(
+            (sum, p) => sum + Number(p.amount),
+            0,
+          );
+          return {
+            agreedAmount,
+            agreedCurrency: b.agreedCurrency,
+            paidTotal,
+            settled: agreedAmount != null && paidTotal >= agreedAmount,
+          };
+        };
 
         const bookings = [
           ...engagementBookings.map((b) => ({
@@ -71,6 +93,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             notes: b.notes,
             location: b.location,
             bookedContact: b.bookedContact,
+            ...money(b),
           })),
           ...itemBookings.map((b) => ({
             type: "schedule_item" as const,
@@ -88,6 +111,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
               : null,
             location: b.location,
             bookedContact: b.bookedContact,
+            ...money(b),
           })),
         ];
 
@@ -116,7 +140,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -126,6 +150,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
+        agreedAmount: z.number().nonnegative().optional(),
+        agreedCurrency: z.string().optional(),
+        agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -143,6 +170,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       bookedContactId,
       confirmationRef,
       notes,
+      agreedAmount,
+      agreedCurrency,
+      agreedUnit,
     }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -189,6 +219,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           bookedContactId: bookedContactId || null,
           confirmationRef: confirmationRef || null,
           notes: notes || null,
+          agreedAmount: agreedAmount ?? null,
+          agreedCurrency: agreedCurrency || "USD",
+          agreedUnit: agreedUnit ?? null,
         };
         const booking = isVenue
           ? await prisma.booking.upsert({
@@ -230,13 +263,16 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Booking",
       description:
-        "Update a booking's status, contact, confirmation reference, or notes. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
+        "Update a booking's status, contact, confirmation reference, notes, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; pass agreedAmount: 0 to keep, omit to leave unchanged). Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
       inputSchema: {
         bookingId: z.string(),
         status: z.string().optional(),
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
+        agreedAmount: z.number().nonnegative().optional(),
+        agreedCurrency: z.string().optional(),
+        agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -245,7 +281,16 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         openWorldHint: false,
       },
     },
-    async ({ bookingId, status, bookedContactId, confirmationRef, notes }) => {
+    async ({
+      bookingId,
+      status,
+      bookedContactId,
+      confirmationRef,
+      notes,
+      agreedAmount,
+      agreedCurrency,
+      agreedUnit,
+    }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
           return {
@@ -266,6 +311,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         if (confirmationRef !== undefined)
           data.confirmationRef = confirmationRef;
         if (notes !== undefined) data.notes = notes;
+        if (agreedAmount !== undefined) data.agreedAmount = agreedAmount;
+        if (agreedCurrency !== undefined) data.agreedCurrency = agreedCurrency;
+        if (agreedUnit !== undefined) data.agreedUnit = agreedUnit;
 
         const booking = await prisma.booking.update({
           where: { id: bookingId },
@@ -277,6 +325,177 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             {
               type: "text" as const,
               text: JSON.stringify({ success: true, id: booking.id }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── list-payments (VIEWER+) ──────────────────────────────────────────
+  server.registerTool(
+    "list-payments",
+    {
+      title: "List Payments",
+      description:
+        "List the payments logged against a booking (get bookingId from list-bookings), with the booking's agreed price and the outstanding balance. A booking is settled when payments cover the agreed amount.",
+      inputSchema: {
+        bookingId: z.string(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ bookingId }) => {
+      try {
+        if (!hasRole(user.role, "VIEWER")) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. VIEWER role or higher required.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const booking = await prisma.booking.findUnique({
+          where: { id: bookingId },
+          select: {
+            agreedAmount: true,
+            agreedCurrency: true,
+            agreedUnit: true,
+            payments: { orderBy: { paidOn: "asc" } },
+          },
+        });
+        if (!booking) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Booking not found." }],
+            isError: true,
+          };
+        }
+
+        const agreedAmount =
+          booking.agreedAmount == null ? null : Number(booking.agreedAmount);
+        const payments = booking.payments.map((p) => ({
+          id: p.id,
+          amount: Number(p.amount),
+          currency: p.currency,
+          paidOn: p.paidOn.toISOString().slice(0, 10),
+          method: p.method,
+          note: p.note,
+        }));
+        const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  agreedAmount,
+                  agreedCurrency: booking.agreedCurrency,
+                  agreedUnit: booking.agreedUnit,
+                  paidTotal,
+                  unpaidBalance:
+                    agreedAmount == null
+                      ? null
+                      : Math.max(0, agreedAmount - paidTotal),
+                  settled: agreedAmount != null && paidTotal >= agreedAmount,
+                  payments,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── add-payment (PLANNER+) ───────────────────────────────────────────
+  server.registerTool(
+    "add-payment",
+    {
+      title: "Add Payment",
+      description:
+        "Log a payment against a booking (get bookingId from list-bookings). amount is a positive number, paidOn is yyyy-mm-dd; method (e.g. 'bank transfer') and note are optional. Payments count toward the booking's agreed price — see list-payments for the running balance.",
+      inputSchema: {
+        bookingId: z.string(),
+        amount: z.number().positive(),
+        currency: z.string().optional(),
+        paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        method: z.string().optional(),
+        note: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ bookingId, amount, currency, paidOn, method, note }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. PLANNER role or higher required.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const booking = await prisma.booking.findUnique({
+          where: { id: bookingId },
+          select: { agreedCurrency: true },
+        });
+        if (!booking) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Booking not found." }],
+            isError: true,
+          };
+        }
+
+        const payment = await prisma.payment.create({
+          data: {
+            bookingId,
+            amount,
+            currency: currency || booking.agreedCurrency,
+            paidOn: new Date(`${paidOn}T00:00:00.000Z`),
+            method: method || null,
+            note: note || null,
+          },
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ id: payment.id }, null, 2),
             },
           ],
         };

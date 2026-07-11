@@ -1,7 +1,13 @@
-import type { BookingStatus, Cost } from "@prisma/client";
+import type { BookingStatus, Cost, CostUnit, Payment } from "@prisma/client";
 import { toDateInput } from "./dates";
 import { bookingWindow, bookingNeedsInfo, earliestCoveredDate } from "./booking";
-import { serializeCost, isCostStale, type SerializedCost } from "./money";
+import {
+  serializeCost,
+  serializePayment,
+  isCostStale,
+  type SerializedCost,
+  type SerializedPayment,
+} from "./money";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { nightsBetween } from "./stays";
 
@@ -36,6 +42,15 @@ export type VenueBookingRow = {
   sessions: CoveredSession[];
   nightCount: number;
   costs: SerializedCost[];
+  // The engagement's negotiated price + payment log. `unpaidBalance` is null
+  // until an agreed amount is set; `settled` means payments cover it.
+  agreedAmount: number | null;
+  agreedCurrency: string;
+  agreedUnit: CostUnit | null;
+  payments: SerializedPayment[];
+  paidTotal: number;
+  unpaidBalance: number | null;
+  settled: boolean;
   earliest: string | null;
   open: boolean;
   daysUntilOpen: number | null;
@@ -90,6 +105,11 @@ type EngagementInput = {
     phone?: string | null;
     email?: string | null;
   } | null;
+  // Prisma Decimal (or already-numeric) — flattened to number in the row.
+  agreedAmount?: Payment["amount"] | number | null;
+  agreedCurrency?: string;
+  agreedUnit?: CostUnit | null;
+  payments?: Payment[];
 };
 
 // checkIn/checkOut are null on a date-less template stay (day-relative anchors);
@@ -192,9 +212,18 @@ export function buildDashboardRows(data: DashboardData): {
     const eng = engByLoc.get(locationId) ?? null;
     const bookable = loc?.bookable ?? true;
     const costs = (loc?.costs ?? []).map(serializeCost);
+    // The agreed price settles the "what does this cost" question outright; only
+    // without one does the (possibly stale) catalog price leave the row "missing".
+    const agreedAmount =
+      eng?.agreedAmount == null ? null : Number(eng.agreedAmount);
+    const payments = (eng?.payments ?? []).map(serializePayment);
+    const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
+    const unpaidBalance =
+      agreedAmount == null ? null : Math.max(0, agreedAmount - paidTotal);
     const isMissingCost =
-      (loc?.costs.length ?? 0) === 0 ||
-      (loc?.costs.every((c) => isCostStale(c.confirmedAt)) ?? true);
+      agreedAmount == null &&
+      ((loc?.costs.length ?? 0) === 0 ||
+        (loc?.costs.every((c) => isCostStale(c.confirmedAt)) ?? true));
     const isMissingTime = v.sessions.some((s) => !s.startTime && !s.endTime);
 
     const earliest = earliestCoveredDate(v.dates);
@@ -226,6 +255,13 @@ export function buildDashboardRows(data: DashboardData): {
       sessions: v.sessions,
       nightCount: v.nights,
       costs,
+      agreedAmount,
+      agreedCurrency: eng?.agreedCurrency ?? "USD",
+      agreedUnit: eng?.agreedUnit ?? null,
+      payments,
+      paidTotal,
+      unpaidBalance,
+      settled: agreedAmount != null && paidTotal >= agreedAmount,
       earliest: win.earliest ? toDateInput(win.earliest) : null,
       open: win.open,
       daysUntilOpen: win.daysUntilOpen,
