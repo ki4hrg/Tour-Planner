@@ -707,13 +707,27 @@ async function tripIdForBooking(bookingId: string): Promise<string | null> {
 export async function linkTripTodoistProject(
   tripId: string,
   projectId: string | null,
+  // Display name, denormalized onto the link (GH #50). The picker passes it
+  // from its loaded options; when absent the summary falls back to a generic
+  // label until the next load self-heals it.
+  projectName?: string | null,
 ): Promise<FormState> {
   const user = await assertRole("PLANNER");
   if (projectId) {
     await prisma.tripTodoistLink.upsert({
       where: { userId_tripId: { userId: user.id, tripId } },
-      create: { userId: user.id, tripId, todoistProjectId: projectId },
-      update: { todoistProjectId: projectId },
+      create: {
+        userId: user.id,
+        tripId,
+        todoistProjectId: projectId,
+        todoistProjectName: projectName ?? null,
+      },
+      update: {
+        todoistProjectId: projectId,
+        ...(projectName !== undefined
+          ? { todoistProjectName: projectName }
+          : {}),
+      },
     });
   } else {
     await prisma.tripTodoistLink.deleteMany({
@@ -741,8 +755,16 @@ export async function createTripTodoistProject(
     const project = await createProject(auth.token, trip.name);
     await prisma.tripTodoistLink.upsert({
       where: { userId_tripId: { userId: user.id, tripId } },
-      create: { userId: user.id, tripId, todoistProjectId: project.id },
-      update: { todoistProjectId: project.id },
+      create: {
+        userId: user.id,
+        tripId,
+        todoistProjectId: project.id,
+        todoistProjectName: project.name,
+      },
+      update: {
+        todoistProjectId: project.id,
+        todoistProjectName: project.name,
+      },
     });
   } catch {
     return { error: "Todoist could not be reached — try again." };

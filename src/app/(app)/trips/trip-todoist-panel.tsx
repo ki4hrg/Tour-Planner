@@ -35,9 +35,13 @@ function useAction() {
 export function TripTodoistPanel({
   tripId,
   linkedProjectId,
+  linkedProjectName,
 }: {
   tripId: string;
   linkedProjectId: string | null;
+  // Denormalized on the link row (GH #50); null on links made before the
+  // column existed, until the picker self-heals it below.
+  linkedProjectName?: string | null;
 }) {
   const { pending, run } = useAction();
   const [projects, setProjects] = useState<
@@ -50,13 +54,23 @@ export function TripTodoistPanel({
     if (loaded) return;
     setLoaded(true);
     listMyTodoistProjects().then((p) => {
-      if (p) setProjects(p);
-      else setUnreachable(true);
+      if (p) {
+        setProjects(p);
+        // Backfill the stored name on pre-#50 links once the real name is known.
+        const current = linkedProjectId
+          ? p.find((o) => o.id === linkedProjectId)
+          : null;
+        if (current && linkedProjectName !== current.name) {
+          void linkTripTodoistProject(tripId, current.id, current.name);
+        }
+      } else setUnreachable(true);
     });
   };
 
   const linkedName =
-    projects?.find((p) => p.id === linkedProjectId)?.name ?? null;
+    projects?.find((p) => p.id === linkedProjectId)?.name ??
+    linkedProjectName ??
+    null;
 
   return (
     <div className="space-y-2 text-sm">
@@ -72,13 +86,25 @@ export function TripTodoistPanel({
             if (open) loadProjects();
           }}
           onValueChange={(v) =>
-            run(() => linkTripTodoistProject(tripId, v === NONE ? null : v))
+            run(() =>
+              linkTripTodoistProject(
+                tripId,
+                v === NONE ? null : v,
+                v === NONE
+                  ? null
+                  : (projects?.find((p) => p.id === v)?.name ?? undefined),
+              ),
+            )
           }
           disabled={pending}
         >
           <SelectTrigger size="sm" className="w-52">
             <SelectValue
-              placeholder={linkedProjectId ? "Linked project" : "Link a project…"}
+              placeholder={
+                linkedProjectId
+                  ? (linkedName ?? "Linked project")
+                  : "Link a project…"
+              }
             />
           </SelectTrigger>
           <SelectContent>
@@ -96,7 +122,9 @@ export function TripTodoistPanel({
             )}
             {/* Keep the current link selectable before options load. */}
             {projects == null && linkedProjectId ? (
-              <SelectItem value={linkedProjectId}>Linked project</SelectItem>
+              <SelectItem value={linkedProjectId}>
+                {linkedName ?? "Linked project"}
+              </SelectItem>
             ) : null}
           </SelectContent>
         </Select>
