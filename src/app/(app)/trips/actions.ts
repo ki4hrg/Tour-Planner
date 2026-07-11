@@ -14,7 +14,7 @@ import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema } from "@/lib/validators/day";
 import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
-import { bookingSchema } from "@/lib/validators/booking";
+import { bookingSchema, paymentSchema } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
 import {
@@ -183,6 +183,18 @@ export async function updateTrip(
 // Snapshot an existing trip as a reusable template: deep-copy its itinerary
 // (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
+// One-click close-out from the wrap-up card. Status only — everything else on
+// the trip is left alone.
+export async function markTripCompleted(formData: FormData): Promise<void> {
+  await assertRole("PLANNER");
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.trip.update({ where: { id }, data: { status: "COMPLETED" } });
+  revalidateTrip(id);
+  revalidatePath("/");
+  revalidatePath("/trips");
+}
+
 export async function saveTripAsTemplate(formData: FormData): Promise<void> {
   const user = await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
@@ -566,6 +578,9 @@ export type BookingInputData = {
   bookedContactId?: string;
   confirmationRef?: string;
   notes?: string;
+  agreedAmount?: number | string;
+  agreedCurrency?: string;
+  agreedUnit?: string;
 };
 
 function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
@@ -576,6 +591,9 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
     bookedContactId: d.bookedContactId || null,
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
+    agreedAmount: d.agreedAmount ?? null,
+    agreedCurrency: d.agreedCurrency || "USD",
+    agreedUnit: d.agreedUnit ?? null,
   };
 }
 
@@ -680,6 +698,57 @@ async function tripIdForBooking(bookingId: string): Promise<string | null> {
   });
   if (!b) return null;
   return b.tripId ?? b.scheduleItem?.day.tripId ?? null;
+}
+
+// --- Payment log (against a booking's agreed price) ---
+
+export type PaymentInputData = {
+  amount: number | string;
+  currency: string;
+  paidOn: string; // "yyyy-mm-dd"
+  method?: string;
+  note?: string;
+};
+
+export async function addPayment(
+  bookingId: string,
+  input: PaymentInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = paymentSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  const paidOn = parseDateInput(parsed.data.paidOn);
+  if (!paidOn) return { error: "Invalid payment date." };
+
+  await prisma.payment.create({
+    data: {
+      bookingId,
+      amount: parsed.data.amount,
+      currency: parsed.data.currency,
+      paidOn,
+      method: parsed.data.method || null,
+      note: parsed.data.note || null,
+    },
+  });
+
+  const tripId = await tripIdForBooking(bookingId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Payment logged." };
+}
+
+export async function deletePayment(paymentId: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { bookingId: true },
+  });
+  if (!payment) return { error: "Payment not found." };
+
+  await prisma.payment.delete({ where: { id: paymentId } });
+  const tripId = await tripIdForBooking(payment.bookingId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Payment removed." };
 }
 
 export async function updateBooking(

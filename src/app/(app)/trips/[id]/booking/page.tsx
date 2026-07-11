@@ -65,6 +65,10 @@ export default async function BookingDashboardPage({
           bookedContact: {
             select: { id: true, name: true, phone: true, email: true },
           },
+          agreedAmount: true,
+          agreedCurrency: true,
+          agreedUnit: true,
+          payments: { orderBy: { paidOn: "asc" } },
         },
       },
       stays: {

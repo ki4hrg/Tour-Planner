@@ -1,4 +1,5 @@
-import type { Cost, CostUnit } from "@prisma/client";
+import type { Cost, CostUnit, Payment } from "@prisma/client";
+import { toDateInput } from "./dates";
 
 // Currencies the cost forms offer. System default is USD; trip types set their
 // own default (e.g. Wesley → GBP).
@@ -22,6 +23,22 @@ export function serializeCost(cost: Cost): SerializedCost {
     ...cost,
     amount: Number(cost.amount),
     confirmedAt: cost.confirmedAt ? cost.confirmedAt.toISOString() : null,
+  };
+}
+
+// Payment rows cross to Client Components too — same Decimal/Date flattening.
+export type SerializedPayment = Omit<Payment, "amount" | "paidOn" | "createdAt"> & {
+  amount: number;
+  paidOn: string; // "yyyy-mm-dd"
+  createdAt: string;
+};
+
+export function serializePayment(payment: Payment): SerializedPayment {
+  return {
+    ...payment,
+    amount: Number(payment.amount),
+    paidOn: toDateInput(payment.paidOn),
+    createdAt: payment.createdAt.toISOString(),
   };
 }
 

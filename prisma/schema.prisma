@@ -255,6 +255,12 @@ model Booking {
   bookedContactId String?
   confirmationRef String?
   notes           String?
+  // The negotiated price for THIS engagement (the location cost catalog is the
+  // asking price; this is what was actually agreed). Settled when payments cover it.
+  agreedAmount    Decimal?      @db.Decimal(10, 2)
+  agreedCurrency  String        @default("USD")
+  agreedUnit      CostUnit?
+  payments        Payment[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -263,6 +269,23 @@ model Booking {
   @@index([tripId])
   @@index([locationId])
   notesLog        Note[]        @relation("BookingNotes")
+}
+
+// A payment logged against a booking's agreed price. An engagement is settled
+// when its payments sum to at least the agreed amount (compared in the booking's
+// agreed currency; mixed-currency logs are summed naively and flagged in the UI).
+model Payment {
+  id        String   @id @default(cuid())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String
+  amount    Decimal  @db.Decimal(10, 2)
+  currency  String   @default("USD")
+  paidOn    DateTime @db.Date
+  method    String? // e.g. bank transfer, card, cheque, cash
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
 }
 
 enum NoteMethod {

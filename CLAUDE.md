@@ -33,7 +33,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-37 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+39 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -45,9 +45,11 @@ minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn).
 
-**bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings),
-`add-booking` (P, upserts the `(trip, location)` engagement; idempotent),
-`update-booking` (P).
+**bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
+incl. agreed price + paid total), `add-booking` (P, upserts the `(trip, location)`
+engagement; idempotent; takes `agreedAmount`/`agreedCurrency`/`agreedUnit`),
+`update-booking` (P), `list-payments` (V, the payment log + outstanding balance),
+`add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs + host
 site), `list-regions` (V, resolves `regionId`), `list-trip-types` (V, resolves
