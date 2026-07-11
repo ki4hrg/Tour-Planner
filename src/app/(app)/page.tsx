@@ -85,13 +85,15 @@ export default async function Home({
       },
     }),
     // Trips still in play, soonest first (Postgres sorts NULL start dates last).
+    // Over-fetch a little: ongoing trips are filtered out below (they render in
+    // "Happening now" instead — one trip, one card; GH #43) before slicing to 8.
     prisma.trip.findMany({
       where: {
         isTemplate: false,
         status: { in: ["PLANNING", "CONFIRMED", "IN_PROGRESS"] },
       },
       orderBy: { startDate: "asc" },
-      take: 8,
+      take: 12,
       select: {
         id: true,
         name: true,
@@ -169,6 +171,11 @@ export default async function Home({
   }));
 
   // Exact "is today within the trip span" filter, and pull out today's day.
+  // The same predicate excludes these trips from "Upcoming trips" below, so an
+  // ongoing trip appears in exactly one card.
+  const upcomingTrips = activeTrips
+    .filter((t) => !isOngoing(t.startDate, t.endDate))
+    .slice(0, 8);
   const ongoing = ongoingCandidates
     .filter((t) => isOngoing(t.startDate, t.endDate))
     .map((t) => ({
@@ -386,56 +393,48 @@ export default async function Home({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Active trips</CardTitle>
+          <CardTitle className="text-base">Upcoming trips</CardTitle>
           <Button asChild size="sm" variant="outline">
             <Link href="/trips">All trips</Link>
           </Button>
         </CardHeader>
         <CardContent className="text-sm">
-          {activeTrips.length === 0 ? (
+          {upcomingTrips.length === 0 ? (
             <p className="text-muted-foreground">
-              No active trips.{" "}
-              <Link href="/trips/new" className="underline">
-                Create one
-              </Link>
-              .
+              {ongoing.length > 0 ? (
+                "No upcoming trips beyond what's happening now."
+              ) : (
+                <>
+                  No upcoming trips.{" "}
+                  <Link href="/trips/new" className="underline">
+                    Create one
+                  </Link>
+                  .
+                </>
+              )}
             </p>
           ) : (
             <ul className="divide-y">
-              {activeTrips.map((t) => {
-                const now = isOngoing(t.startDate, t.endDate);
-                return (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
-                    <span className="min-w-0">
-                      <Link
-                        href={`/trips/${t.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {t.name}
-                      </Link>
-                      {now ? (
-                        <Badge className="ml-2 align-middle">Happening now</Badge>
-                      ) : null}
-                      <span className="block text-xs text-muted-foreground">
-                        {t.tripType.name} ·{" "}
-                        {t.startDate ? formatDate(t.startDate) : "no dates"} ·{" "}
-                        {TRIP_STATUS_LABELS[t.status]}
-                      </span>
+              {upcomingTrips.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <span className="min-w-0">
+                    <Link
+                      href={`/trips/${t.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {t.name}
+                    </Link>
+                    <span className="block text-xs text-muted-foreground">
+                      {t.tripType.name} ·{" "}
+                      {t.startDate ? formatDate(t.startDate) : "no dates"} ·{" "}
+                      {TRIP_STATUS_LABELS[t.status]}
                     </span>
-                    {now ? (
-                      <Link
-                        href={`/trips/${t.id}/today`}
-                        className="shrink-0 text-sm text-muted-foreground hover:underline"
-                      >
-                        Today →
-                      </Link>
-                    ) : null}
-                  </li>
-                );
-              })}
+                  </span>
+                </li>
+              ))}
             </ul>
           )}
         </CardContent>
