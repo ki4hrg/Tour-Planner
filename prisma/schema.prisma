@@ -89,6 +89,10 @@ model TripTodoistLink {
   trip             Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId           String
   todoistProjectId String
+  // Denormalized at link time so the trip page can show the project's name
+  // without a Todoist API call (GH #50). Null on pre-existing links until the
+  // picker self-heals it; display falls back to a generic label.
+  todoistProjectName String?
 
   @@unique([userId, tripId])
   @@index([tripId])

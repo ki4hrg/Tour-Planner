@@ -276,7 +276,7 @@ export default async function TripOverviewPage({
   const tripTodoistLink = todoistConnected
     ? await prisma.tripTodoistLink.findUnique({
         where: { userId_tripId: { userId: user.id, tripId: id } },
-        select: { todoistProjectId: true },
+        select: { todoistProjectId: true, todoistProjectName: true },
       })
     : null;
 
@@ -617,6 +617,7 @@ export default async function TripOverviewPage({
                 <TripTodoistPanel
                   tripId={trip.id}
                   linkedProjectId={tripTodoistLink?.todoistProjectId ?? null}
+                  linkedProjectName={tripTodoistLink?.todoistProjectName ?? null}
                 />
               </CardContent>
             </Card>

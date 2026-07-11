@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { regionOptions, type RegionNode } from "@/lib/regions";
+import { regionOptions, effectiveDialCode, type RegionNode } from "@/lib/regions";
 import { RegionForm } from "./region-form";
 import { updateRegion, deleteRegion } from "./actions";
 
@@ -37,10 +37,15 @@ export function RegionsManager({
   const sorted = [...regions].sort(
     (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
   );
+  // Show the dial code in effect, not just the region's own column, so the
+  // parent-chain inheritance is visible and trustworthy (GH #48).
+  const byId = new Map(regions.map((r) => [r.id, r]));
 
   return (
     <ul className="divide-y rounded-lg border bg-card">
-      {sorted.map((r) => (
+      {sorted.map((r) => {
+        const dial = r.dialCode ?? effectiveDialCode(r.id, byId);
+        return (
         <li key={r.id} className="p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -50,7 +55,9 @@ export function RegionsManager({
                 {r.childCount > 0
                   ? ` · ${r.childCount} sub-region${r.childCount === 1 ? "" : "s"}`
                   : ""}
-                {r.dialCode ? ` · +${r.dialCode}` : ""}
+                {dial
+                  ? ` · +${dial}${r.dialCode ? "" : " (inherited)"}`
+                  : ""}
               </span>
               {r.tripTypes.length ? (
                 <div className="mt-1 flex flex-wrap gap-1">
@@ -104,7 +111,8 @@ export function RegionsManager({
             </div>
           ) : null}
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
