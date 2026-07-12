@@ -444,7 +444,7 @@ function DayCard({
             ))}
           </ol>
         ) : (
-          <TimelineGroups items={day.items} showBookings linkVenues />
+          <TimelineGroups items={day.items} showBookings linkVenues showGaps />
         )}
       </div>
 

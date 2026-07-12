@@ -16,6 +16,7 @@ import {
   type SerializedBooking,
   type VenueRun,
 } from "@/lib/trips";
+import { computeScheduleGaps, formatDuration } from "@/lib/schedule-gaps";
 
 // Read-only itinerary rendering shared by the overview panel and the itinerary
 // page's viewer mode. Items are grouped into chronological venue runs so a
@@ -28,6 +29,7 @@ export function TimelineGroups({
   showVenueContacts = false,
   renderItemExtra,
   itemLinkBase,
+  showGaps = false,
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
@@ -45,8 +47,14 @@ export function TimelineGroups({
   // trip's day view). A plain string so Server Components can pass it; share
   // and print views stay non-interactive by simply not passing it.
   itemLinkBase?: string;
+  // Show muted interstitial lines for gaps (free time) between timed items.
+  // Enabled for planner surfaces (trip overview, itinerary editor, day view);
+  // disabled for public/print surfaces.
+  showGaps?: boolean;
 }) {
   const runs = groupItemsByVenue(items);
+  const gaps = showGaps ? computeScheduleGaps(items) : [];
+
   return (
     <div className="space-y-5">
       {runs.map((run, i) => (
@@ -69,7 +77,22 @@ export function TimelineGroups({
           </ul>
         </div>
       ))}
+      {gaps.length > 0
+        ? gaps.map((gap, i) => (
+            <GapLine key={`gap-${i}`} gap={gap} />
+          ))
+        : null}
       {lodging ? <OvernightLine lodging={lodging} /> : null}
+    </div>
+  );
+}
+
+// A muted gap line showing free time between consecutive scheduled items.
+function GapLine({ gap }: { gap: { durationMinutes: number } }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="font-light">·</span>
+      <span>{formatDuration(gap.durationMinutes)}</span>
     </div>
   );
 }
