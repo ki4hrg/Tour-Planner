@@ -6,6 +6,19 @@ import { toDateInput } from "./dates";
 export const CURRENCIES = ["USD", "GBP", "EUR", "CAD", "AUD"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
+/**
+ * The codes a trip-scoped currency picker should offer: the trip's own currency
+ * set (GH #11), falling back to the global list while a trip has none, and always
+ * including the field's current value so legacy data stays selectable.
+ */
+export function currencyOptions(
+  tripCurrencies: string[] | null | undefined,
+  current?: string | null,
+): string[] {
+  const base = tripCurrencies?.length ? tripCurrencies : [...CURRENCIES];
+  return current && !base.includes(current) ? [...base, current] : base;
+}
+
 export const COST_UNIT_LABELS: Record<CostUnit, string> = {
   PER_PERSON: "per person",
   PER_GROUP: "per group",

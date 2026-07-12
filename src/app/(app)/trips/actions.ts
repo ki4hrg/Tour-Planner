@@ -38,6 +38,7 @@ function parseTrip(formData: FormData) {
     capacity: formData.get("capacity") ?? "",
     participantCount: formData.get("participantCount") ?? "",
     status: formData.get("status"),
+    currencies: formData.getAll("currencies"),
     notes: formData.get("notes") || undefined,
     isTemplate: formData.get("isTemplate") === "on",
   });
@@ -52,6 +53,7 @@ function toTripData(d: TripInput) {
     capacity: d.capacity ?? null,
     participantCount: d.participantCount ?? null,
     status: d.status as TripStatus,
+    currencies: d.currencies,
     notes: d.notes || null,
   };
 }
@@ -210,6 +212,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       endDate: true,
       capacity: true,
       participantCount: true,
+      currencies: true,
       notes: true,
       days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
       bookings: { select: { locationId: true, label: true, notes: true } },
@@ -233,6 +236,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       endDate: null,
       capacity: source.capacity,
       participantCount: source.participantCount,
+      currencies: source.currencies,
       notes: source.notes,
       status: "PLANNING",
       isTemplate: true,

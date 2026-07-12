@@ -19,7 +19,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { formatMoney, isCostStale, COST_UNIT_LABELS, CURRENCIES } from "@/lib/money";
+import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -163,11 +163,13 @@ function VenueDetails({
   tripId,
   canEdit,
   contacts,
+  currencies,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
+  currencies: string[];
 }) {
   const { pending, run } = useAction();
 
@@ -180,6 +182,8 @@ function VenueDetails({
   );
   const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
   const [agreedUnit, setAgreedUnit] = useState<string>(row.agreedUnit ?? NONE);
+  // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
+  const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
 
   // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
@@ -267,7 +271,7 @@ function VenueDetails({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CURRENCIES.map((c) => (
+                  {currencyChoices.map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
@@ -320,7 +324,7 @@ function VenueDetails({
       {/* Payment log — spans the grid; needs the engagement to exist first. */}
       {row.bookingId && (row.payments.length > 0 || canEdit) ? (
         <div className="md:col-span-2">
-          <PaymentLog row={row} canEdit={canEdit} />
+          <PaymentLog row={row} canEdit={canEdit} currencies={currencies} />
         </div>
       ) : null}
     </div>
@@ -329,7 +333,16 @@ function VenueDetails({
 
 // The engagement's payment log: what's been paid against the agreed price,
 // plus an add-payment row for planners.
-function PaymentLog({ row, canEdit }: { row: VenueBookingRow; canEdit: boolean }) {
+function PaymentLog({
+  row,
+  canEdit,
+  currencies,
+}: {
+  row: VenueBookingRow;
+  canEdit: boolean;
+  currencies: string[];
+}) {
+  const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
   const { pending, run } = useAction();
 
   const [amount, setAmount] = useState("");
@@ -420,7 +433,7 @@ function PaymentLog({ row, canEdit }: { row: VenueBookingRow; canEdit: boolean }
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CURRENCIES.map((c) => (
+                {currencyChoices.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
                   </SelectItem>
@@ -469,11 +482,13 @@ export function VenueRow({
   tripId,
   canEdit,
   contacts,
+  currencies,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
+  currencies: string[];
 }) {
   const [open, setOpen] = useState(false);
   const coverage = coverageLine(row);
@@ -549,6 +564,7 @@ export function VenueRow({
               tripId={tripId}
               canEdit={canEdit}
               contacts={contacts}
+              currencies={currencies}
             />
           </TableCell>
         </TableRow>
@@ -564,11 +580,13 @@ export function VenueCard({
   tripId,
   canEdit,
   contacts,
+  currencies,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
+  currencies: string[];
 }) {
   const [open, setOpen] = useState(false);
   const coverage = coverageLine(row);
@@ -651,6 +669,7 @@ export function VenueCard({
             tripId={tripId}
             canEdit={canEdit}
             contacts={contacts}
+            currencies={currencies}
           />
         </div>
       ) : null}

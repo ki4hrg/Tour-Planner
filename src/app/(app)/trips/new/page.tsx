@@ -24,7 +24,7 @@ export default async function NewTripPage({
   const [tripTypes, templates] = await Promise.all([
     prisma.tripType.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, defaultCurrency: true },
     }),
     prisma.trip.findMany({
       where: { isTemplate: true },

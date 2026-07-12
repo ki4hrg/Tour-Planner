@@ -213,6 +213,10 @@ model Trip {
   capacity         Int? // max slots
   participantCount Int? // actual registered headcount (for cost totals)
   status           TripStatus     @default(PLANNING)
+  // The currencies this trip works in (ISO 4217 codes). Trip-scoped currency
+  // pickers offer these instead of free text (GH #11); seeded from the trip
+  // type's defaultCurrency.
+  currencies       String[]       @default([])
   notes            String?
   createdBy        User?          @relation("CreatedTrips", fields: [createdById], references: [id])
   createdById      String?

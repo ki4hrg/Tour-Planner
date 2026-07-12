@@ -95,7 +95,7 @@ export default async function TripOverviewPage({
 
   const allTripTypes = await prisma.tripType.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, defaultCurrency: true },
   });
 
   // Cost estimate: roll up the reference costs of the distinct locations this
@@ -482,6 +482,10 @@ export default async function TripOverviewPage({
                     ) : null}
                     <dt className="text-muted-foreground">Capacity</dt>
                     <dd className="col-span-2">{trip.capacity ?? "—"}</dd>
+                    <dt className="text-muted-foreground">Currencies</dt>
+                    <dd className="col-span-2">
+                      {trip.currencies.length ? trip.currencies.join(", ") : "—"}
+                    </dd>
                     {!trip.isTemplate ? (
                       <>
                         <dt className="text-muted-foreground">Participants</dt>
@@ -514,6 +518,7 @@ export default async function TripOverviewPage({
                     capacity: trip.capacity,
                     participantCount: trip.participantCount,
                     status: trip.status,
+                    currencies: trip.currencies,
                     notes: trip.notes,
                     isTemplate: trip.isTemplate,
                   }}
@@ -596,6 +601,7 @@ export default async function TripOverviewPage({
                 canEdit={canEdit}
                 isTemplate={trip.isTemplate}
                 dayCount={trip.days.length}
+                currencies={trip.currencies}
                 locations={lodgingLocations.map((l) => ({
                   id: l.id,
                   name: l.name,

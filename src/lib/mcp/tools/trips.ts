@@ -43,6 +43,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           name: t.name,
           status: t.status,
           tripType: t.tripType.name,
+          currencies: t.currencies,
           startDate: toDateInput(t.startDate),
           endDate: toDateInput(t.endDate),
           capacity: t.capacity,
@@ -108,6 +109,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           name: trip.name,
           status: trip.status,
           tripType: trip.tripType.name,
+          currencies: trip.currencies,
           startDate: toDateInput(trip.startDate),
           endDate: toDateInput(trip.endDate),
           capacity: trip.capacity,
@@ -141,11 +143,12 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Create Trip",
       description:
-        "Create a new trip. Requires a name and tripTypeId. Status defaults to PLANNING. Dates (YYYY-MM-DD), capacity, and participant count are optional. Use list-trip-types to find available type IDs.",
+        "Create a new trip. Requires a name and tripTypeId. Status defaults to PLANNING. Dates (YYYY-MM-DD), capacity, participant count, and currencies (3-letter codes; the trip-scoped currency vocabulary, defaults to the trip type's default currency) are optional. Use list-trip-types to find available type IDs.",
       inputSchema: {
         name: z.string(),
         tripTypeId: z.string(),
         status: z.string().optional(),
+        currencies: z.array(z.string().regex(/^[A-Za-z]{3}$/)).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),
@@ -163,6 +166,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
       name,
       tripTypeId,
       status,
+      currencies,
       startDate,
       endDate,
       capacity,
@@ -182,11 +186,23 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
       }
 
       try {
+        // Seed the currency vocabulary from the trip type's default when the
+        // caller doesn't supply one (mirrors the web form).
+        const tripCurrencies = currencies?.length
+          ? currencies.map((c) => c.toUpperCase())
+          : await prisma.tripType
+              .findUniqueOrThrow({
+                where: { id: tripTypeId },
+                select: { defaultCurrency: true },
+              })
+              .then((tt) => [tt.defaultCurrency]);
+
         const trip = await prisma.trip.create({
           data: {
             name,
             tripTypeId,
             status: (status as TripStatus) || "PLANNING",
+            currencies: tripCurrencies,
             startDate: parseDateInput(startDate),
             endDate: parseDateInput(endDate),
             capacity,
@@ -216,11 +232,12 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Trip",
       description:
-        "Update an existing trip's details. Only include fields you want to change. Valid statuses: PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED.",
+        "Update an existing trip's details. Only include fields you want to change. Valid statuses: PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED. Passing currencies REPLACES the trip's currency vocabulary (3-letter codes).",
       inputSchema: {
         tripId: z.string(),
         name: z.string().optional(),
         status: z.string().optional(),
+        currencies: z.array(z.string().regex(/^[A-Za-z]{3}$/)).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),
@@ -238,6 +255,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
       tripId,
       name,
       status,
+      currencies,
       startDate,
       endDate,
       capacity,
@@ -261,6 +279,8 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
 
         if (name !== undefined) data.name = name;
         if (status !== undefined) data.status = status;
+        if (currencies !== undefined)
+          data.currencies = currencies.map((c) => c.toUpperCase());
         if (startDate !== undefined) data.startDate = parseDateInput(startDate);
         if (endDate !== undefined) data.endDate = parseDateInput(endDate);
         if (capacity !== undefined) data.capacity = capacity;

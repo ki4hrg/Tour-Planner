@@ -29,6 +29,17 @@ export const tripSchema = z
     capacity: optionalCount,
     participantCount: optionalCount,
     status: z.enum(TRIP_STATUSES as [string, ...string[]]),
+    // The trip's currency vocabulary (checkbox group in the form). 3-letter ISO
+    // codes, normalized to uppercase.
+    currencies: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^[A-Za-z]{3}$/, "Use 3-letter currency codes.")
+          .transform((s) => s.toUpperCase()),
+      )
+      .min(1, "Pick at least one currency."),
     notes: z.string().trim().optional(),
     isTemplate: z.coerce.boolean().optional(),
   })

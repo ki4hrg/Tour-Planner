@@ -23,6 +23,7 @@ import {
   type SerializedBooking,
 } from "@/lib/trips";
 import { nightsBetween, stayTotal } from "@/lib/stays";
+import { currencyOptions } from "@/lib/money";
 import {
   addStay,
   updateStay,
@@ -56,6 +57,7 @@ export function LodgingManager({
   dayCount,
   locations: initialLocations,
   stays,
+  currencies,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -65,6 +67,8 @@ export function LodgingManager({
   dayCount: number;
   locations: Location[];
   stays: SerializedStay[];
+  // The trip's currency vocabulary (GH #11) — the stay form picks from these.
+  currencies: string[];
 }) {
   const locations = useMemo(
     () => initialLocations.sort((a, b) => a.name.localeCompare(b.name)),
@@ -89,6 +93,7 @@ export function LodgingManager({
               isTemplate={isTemplate}
               dayCount={dayCount}
               locations={locations}
+              currencies={currencies}
             />
           ))}
         </div>
@@ -106,6 +111,7 @@ export function LodgingManager({
               locations={locations}
               isTemplate={isTemplate}
               dayCount={dayCount}
+              currencies={currencies}
               submitLabel="Add stay"
               onSubmit={(data, done) =>
                 run(() => addStay(tripId, data), () => {
@@ -138,6 +144,7 @@ function StayRow({
   isTemplate,
   dayCount,
   locations,
+  currencies,
 }: {
   tripId: string;
   stay: SerializedStay;
@@ -145,6 +152,7 @@ function StayRow({
   isTemplate: boolean;
   dayCount: number;
   locations: Location[];
+  currencies: string[];
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
@@ -183,6 +191,7 @@ function StayRow({
             locations={locations}
             isTemplate={isTemplate}
             dayCount={dayCount}
+            currencies={currencies}
             submitLabel="Save stay"
             onSubmit={(data, done) =>
               run(() => updateStay(stay.id, data), () => {
@@ -295,6 +304,7 @@ function StayFields({
   initial,
   isTemplate,
   dayCount,
+  currencies,
   submitLabel,
   onSubmit,
   onCancel,
@@ -303,6 +313,7 @@ function StayFields({
   initial?: SerializedStay;
   isTemplate: boolean;
   dayCount: number;
+  currencies: string[];
   submitLabel: string;
   onSubmit: (data: StayInputData, done: () => void) => void;
   onCancel: () => void;
@@ -329,7 +340,12 @@ function StayFields({
       ? String(initial.costPerPersonPerNight)
       : "",
   );
-  const [currency, setCurrency] = useState(initial?.currency ?? "USD");
+  // Offer the trip's currency set (plus the stored value on legacy stays);
+  // default new stays to the trip's first currency.
+  const currencyChoices = currencyOptions(currencies, initial?.currency);
+  const [currency, setCurrency] = useState(
+    initial?.currency ?? currencyChoices[0],
+  );
   const [priority, setPriority] = useState<string>(
     initial?.priority != null ? String(initial.priority) : "0",
   );
@@ -364,7 +380,7 @@ function StayFields({
           setDepartureTime("");
           setHeadcount("");
           setCostPerPersonPerNight("");
-          setCurrency("USD");
+          setCurrency(currencyChoices[0]);
           setPriority("0");
           setNotes("");
         }
@@ -494,11 +510,18 @@ function StayFields({
 
         <div className="space-y-1.5">
           <Label className="text-xs">Currency</Label>
-          <Input
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            placeholder="USD"
-          />
+          <Select value={currency} onValueChange={setCurrency}>
+            <SelectTrigger size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {currencyChoices.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
