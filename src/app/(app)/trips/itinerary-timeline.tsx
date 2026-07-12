@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { MapPin, Moon } from "lucide-react";
 import { ContactChannels } from "@/components/contact-channels";
@@ -16,7 +17,11 @@ import {
   type SerializedBooking,
   type VenueRun,
 } from "@/lib/trips";
-import { computeScheduleGaps, formatDuration } from "@/lib/schedule-gaps";
+import {
+  computeScheduleGaps,
+  formatDuration,
+  type ScheduleGap,
+} from "@/lib/schedule-gaps";
 
 // Read-only itinerary rendering shared by the overview panel and the itinerary
 // page's viewer mode. Items are grouped into chronological venue runs so a
@@ -53,7 +58,16 @@ export function TimelineGroups({
   showGaps?: boolean;
 }) {
   const runs = groupItemsByVenue(items);
-  const gaps = showGaps ? computeScheduleGaps(items) : [];
+  // Each gap is anchored to the timed item it follows, so the "· X min free"
+  // line renders in place right under that item's row (not clumped at the end).
+  const gapsAfterItem = new Map<string, ScheduleGap[]>();
+  if (showGaps) {
+    for (const gap of computeScheduleGaps(items)) {
+      const list = gapsAfterItem.get(gap.afterItemId) ?? [];
+      list.push(gap);
+      gapsAfterItem.set(gap.afterItemId, list);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -66,34 +80,34 @@ export function TimelineGroups({
           />
           <ul className="space-y-1">
             {run.items.map((item) => (
-              <TimelineRow
-                key={item.id}
-                item={item}
-                showBookings={showBookings}
-                extra={renderItemExtra?.(item)}
-                href={itemLinkBase ? `${itemLinkBase}#item-${item.id}` : null}
-              />
+              <Fragment key={item.id}>
+                <TimelineRow
+                  item={item}
+                  showBookings={showBookings}
+                  extra={renderItemExtra?.(item)}
+                  href={itemLinkBase ? `${itemLinkBase}#item-${item.id}` : null}
+                />
+                {gapsAfterItem.get(item.id)?.map((gap, gi) => (
+                  <GapLine key={`gap-${gi}`} gap={gap} />
+                ))}
+              </Fragment>
             ))}
           </ul>
         </div>
       ))}
-      {gaps.length > 0
-        ? gaps.map((gap, i) => (
-            <GapLine key={`gap-${i}`} gap={gap} />
-          ))
-        : null}
       {lodging ? <OvernightLine lodging={lodging} /> : null}
     </div>
   );
 }
 
-// A muted gap line showing free time between consecutive scheduled items.
+// A muted gap line showing free time after the item row it follows. Rendered
+// inside the run's <ul>, so it's a list item.
 function GapLine({ gap }: { gap: { durationMinutes: number } }) {
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <li className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
       <span className="font-light">·</span>
       <span>{formatDuration(gap.durationMinutes)}</span>
-    </div>
+    </li>
   );
 }
 

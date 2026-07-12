@@ -22,7 +22,8 @@ export default async function ContactsPage({
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
   const { groupBy } = await searchParams;
-  const isGrouped = groupBy === "location";
+  // Grouped-by-location is the default view; ?groupBy=flat opts into A–Z.
+  const isGrouped = groupBy !== "flat";
 
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
@@ -73,19 +74,19 @@ export default async function ContactsPage({
           href={qs()}
           className={cn(
             "rounded-full border px-3 py-1 text-sm",
-            !isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
-        >
-          Flat
-        </Link>
-        <Link
-          href={qs("location")}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm",
             isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
           By location
+        </Link>
+        <Link
+          href={qs("flat")}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm",
+            !isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
+          )}
+        >
+          Flat
         </Link>
       </div>
 

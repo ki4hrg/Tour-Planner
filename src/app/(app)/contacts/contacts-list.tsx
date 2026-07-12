@@ -27,9 +27,23 @@ interface ContactsListProps {
   isGrouped: boolean;
 }
 
-function ContactRow({ contact }: { contact: Contact }) {
+function ContactRow({
+  contact,
+  inCard = false,
+}: {
+  contact: Contact;
+  // Grouped rows sit inside a bordered card and keep their padding on all
+  // sides; flat rows are bare divide-y entries that trim the outer edges.
+  inCard?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+    <div
+      className={
+        inCard
+          ? "flex items-center justify-between gap-3 px-4 py-3"
+          : "flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+      }
+    >
       <div className="min-w-0">
         <Link
           href={`/contacts/${contact.id}`}
@@ -87,33 +101,27 @@ export function ContactsList({ contacts, isGrouped }: ContactsListProps) {
     }
   });
 
-  // Sort groups by location name
+  // Sort groups by their own location's name (resolved from any member's link).
+  const locationName = (id: string, members: Contact[]) =>
+    members[0]?.locations.find((l) => l.id === id)?.name ?? "";
   const sortedLocations = Array.from(groupedByLocation.entries()).sort(
-    ([, a], [, b]) => {
-      const nameA = a[0]?.locations.find((l) => l.id === a[0].locations[0]?.id)
-        ?.name;
-      const nameB = b[0]?.locations.find((l) => l.id === b[0].locations[0]?.id)
-        ?.name;
-      return (nameA || "").localeCompare(nameB || "");
-    }
+    ([idA, a], [idB, b]) =>
+      locationName(idA, a).localeCompare(locationName(idB, b)),
   );
 
   return (
     <div className="space-y-6">
       {sortedLocations.map(([locationId, contactsInLocation]) => {
-        // Find the location name from the first contact's location list
-        const locationName = contactsInLocation[0]?.locations.find(
-          (l) => l.id === locationId
-        )?.name;
+        const groupName = locationName(locationId, contactsInLocation);
 
         return (
           <div key={locationId}>
-            <h3 className="mb-3 text-sm font-semibold text-foreground">
-              {locationName}
+            <h3 className="mb-2 text-sm font-semibold text-foreground">
+              {groupName}
             </h3>
             <div className="divide-y rounded-lg border">
               {contactsInLocation.map((contact) => (
-                <ContactRow key={contact.id} contact={contact} />
+                <ContactRow key={contact.id} contact={contact} inCard />
               ))}
             </div>
           </div>
@@ -122,12 +130,12 @@ export function ContactsList({ contacts, isGrouped }: ContactsListProps) {
 
       {contactsWithoutLocation.length > 0 && (
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">
             No location
           </h3>
           <div className="divide-y rounded-lg border">
             {contactsWithoutLocation.map((contact) => (
-              <ContactRow key={contact.id} contact={contact} />
+              <ContactRow key={contact.id} contact={contact} inCard />
             ))}
           </div>
         </div>

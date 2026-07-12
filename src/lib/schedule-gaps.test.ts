@@ -40,10 +40,10 @@ describe("computeScheduleGaps", () => {
     expect(computeScheduleGaps(items)).toEqual([]);
   });
 
-  it("detects a 45-minute gap between two items", () => {
+  it("detects a 45-minute gap between two items, anchored to the earlier one", () => {
     const items = [
-      mockItem({ order: 1, startTime: "09:00", endTime: "10:00" }),
-      mockItem({ order: 2, startTime: "10:45", endTime: "11:30" }),
+      mockItem({ id: "a", order: 1, startTime: "09:00", endTime: "10:00" }),
+      mockItem({ id: "b", order: 2, startTime: "10:45", endTime: "11:30" }),
     ];
     const gaps = computeScheduleGaps(items);
     expect(gaps).toHaveLength(1);
@@ -51,6 +51,7 @@ describe("computeScheduleGaps", () => {
       startTime: "10:00",
       endTime: "10:45",
       durationMinutes: 45,
+      afterItemId: "a",
     });
   });
 
@@ -125,14 +126,15 @@ describe("computeScheduleGaps", () => {
       startTime: "10:20",
       endTime: "10:50",
       durationMinutes: 30,
+      afterItemId: "item-1",
     });
   });
 
-  it("detects multiple gaps in a day", () => {
+  it("detects multiple gaps in a day, each anchored to its own item", () => {
     const items = [
-      mockItem({ order: 1, startTime: "09:00", endTime: "10:00" }),
-      mockItem({ order: 2, startTime: "11:00", endTime: "12:00" }),
-      mockItem({ order: 3, startTime: "13:00", endTime: "14:00" }),
+      mockItem({ id: "a", order: 1, startTime: "09:00", endTime: "10:00" }),
+      mockItem({ id: "b", order: 2, startTime: "11:00", endTime: "12:00" }),
+      mockItem({ id: "c", order: 3, startTime: "13:00", endTime: "14:00" }),
     ];
     const gaps = computeScheduleGaps(items);
     expect(gaps).toHaveLength(2);
@@ -140,11 +142,13 @@ describe("computeScheduleGaps", () => {
       startTime: "10:00",
       endTime: "11:00",
       durationMinutes: 60,
+      afterItemId: "a",
     });
     expect(gaps[1]).toEqual({
       startTime: "12:00",
       endTime: "13:00",
       durationMinutes: 60,
+      afterItemId: "b",
     });
   });
 
@@ -160,13 +164,14 @@ describe("computeScheduleGaps", () => {
       startTime: "10:00",
       endTime: "11:00",
       durationMinutes: 60,
+      afterItemId: "item-1",
     });
   });
 
   it("sorts items by start time before computing gaps", () => {
     const items = [
-      mockItem({ order: 2, startTime: "11:00", endTime: "12:00" }),
-      mockItem({ order: 1, startTime: "09:00", endTime: "10:00" }),
+      mockItem({ id: "late", order: 2, startTime: "11:00", endTime: "12:00" }),
+      mockItem({ id: "early", order: 1, startTime: "09:00", endTime: "10:00" }),
     ];
     const gaps = computeScheduleGaps(items);
     expect(gaps).toHaveLength(1);
@@ -174,6 +179,7 @@ describe("computeScheduleGaps", () => {
       startTime: "10:00",
       endTime: "11:00",
       durationMinutes: 60,
+      afterItemId: "early",
     });
   });
 

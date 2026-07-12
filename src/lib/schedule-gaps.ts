@@ -7,6 +7,9 @@ export interface ScheduleGap {
   startTime: string; // "HH:MM"
   endTime: string; // "HH:MM"
   durationMinutes: number;
+  // The id of the timed item the gap follows — the renderer anchors the gap
+  // line directly after this item's row so gaps read in place, not clumped.
+  afterItemId: string;
 }
 
 /**
@@ -117,6 +120,7 @@ export function computeScheduleGaps(items: SerializedScheduleItem[]): ScheduleGa
       startTime: current.endTime!,
       endTime: minutesToTime(nextStart),
       durationMinutes: gapDuration,
+      afterItemId: current.id,
     });
   }
 
