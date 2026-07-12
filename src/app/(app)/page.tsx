@@ -266,6 +266,7 @@ export default async function Home({
                       items={t.currentDay.items}
                       linkVenues
                       itemLinkBase={`/trips/${t.id}/days/${t.currentDay.id}`}
+                      showGaps
                     />
                   </div>
                 ) : (

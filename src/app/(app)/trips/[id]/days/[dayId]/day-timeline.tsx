@@ -50,6 +50,7 @@ export function DayTimeline({
       showBookings={canEdit}
       linkVenues
       showVenueContacts
+      showGaps
       renderItemExtra={
         canEdit
           ? (item) => <QuickEdit key={item.id} tripId={tripId} item={item} />
