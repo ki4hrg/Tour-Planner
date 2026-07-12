@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { regionOptions, type RegionNode } from "@/lib/regions";
+import { DIAL_CODES } from "@/lib/dial-codes";
 import type { FormState } from "@/lib/forms";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -48,6 +49,7 @@ export function RegionForm({
     {},
   );
   const [parentId, setParentId] = useState(initial?.parentId ?? NO_PARENT);
+  const [dialCode, setDialCode] = useState(initial?.dialCode ?? "");
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -63,6 +65,13 @@ export function RegionForm({
     (o) => o.id !== initial?.id,
   );
   const selectedTypes = new Set(initial?.tripTypeIds ?? []);
+
+  // An existing region may carry a dial code outside the curated list.
+  const codeOptions = DIAL_CODES.some((c) => c.code === dialCode)
+    ? DIAL_CODES
+    : dialCode
+      ? [...DIAL_CODES, { code: dialCode, label: `+${dialCode}` }]
+      : DIAL_CODES;
 
   return (
     <form action={formAction} className="space-y-3">
@@ -102,14 +111,20 @@ export function RegionForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="dialCode">Phone country code</Label>
-          <Input
-            id="dialCode"
-            name="dialCode"
-            defaultValue={initial?.dialCode ?? ""}
-            placeholder="e.g. 44"
-            inputMode="numeric"
-            className="w-28"
-          />
+          <input type="hidden" name="dialCode" value={dialCode} />
+          <Select value={dialCode} onValueChange={setDialCode}>
+            <SelectTrigger id="dialCode" className="w-full">
+              <SelectValue placeholder="— none —" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">— none —</SelectItem>
+              {codeOptions.map((c) => (
+                <SelectItem key={c.code} value={c.code}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <p className="text-xs text-muted-foreground">
             Set on top-level regions; sub-regions inherit. Drives the default
             dial code when adding contact phone numbers.
