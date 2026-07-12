@@ -185,12 +185,13 @@ export async function updateTrip(
 // (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 // One-click close-out from the wrap-up card. Status only — everything else on
-// the trip is left alone.
-export async function markTripCompleted(formData: FormData): Promise<void> {
+// the trip is left alone. (Complete is derived from dates; Archived is the
+// manual "done and dusted" override.)
+export async function archiveTrip(formData: FormData): Promise<void> {
   await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  await prisma.trip.update({ where: { id }, data: { status: "COMPLETED" } });
+  await prisma.trip.update({ where: { id }, data: { status: "ARCHIVED" } });
   revalidateTrip(id);
   revalidatePath("/");
   revalidatePath("/trips");
@@ -234,7 +235,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       capacity: source.capacity,
       participantCount: source.participantCount,
       notes: source.notes,
-      status: "PLANNING",
+      status: "ACTIVE",
       isTemplate: true,
       createdById: user.id,
       days: { create: instantiateDays(source.days, null) },

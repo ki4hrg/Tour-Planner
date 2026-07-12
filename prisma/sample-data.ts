@@ -121,7 +121,7 @@ async function main() {
     data: {
       name: TRIP_NAME,
       tripTypeId: tripType.id,
-      status: "CONFIRMED",
+      status: "ACTIVE",
       startDate: start,
       participantCount: 24,
     },

@@ -4,6 +4,7 @@ import {
   groupItemsByVenue,
   effectivePresenters,
   summarizeDayLodging,
+  deriveTripLifecycle,
   type SerializedScheduleItem,
 } from "./trips";
 
@@ -225,5 +226,53 @@ describe("summarizeDayLodging", () => {
   it("maps a night with no stay to null", () => {
     const days = [{ id: "day9", date: d("2026-07-09") }];
     expect(summarizeDayLodging(days, [])).toEqual({ day9: null });
+  });
+});
+
+describe("deriveTripLifecycle", () => {
+  const today = d("2026-07-12");
+  const active = (startDate: Date | null, endDate: Date | null) =>
+    ({ status: "ACTIVE", startDate, endDate }) as const;
+
+  it("is PLANNING before the start date", () => {
+    expect(deriveTripLifecycle(active(d("2026-07-13"), d("2026-07-20")), today))
+      .toBe("PLANNING");
+  });
+
+  it("is PLANNING when dates are unset", () => {
+    expect(deriveTripLifecycle(active(null, null), today)).toBe("PLANNING");
+  });
+
+  it("is IN_PROGRESS between start and end inclusive", () => {
+    expect(deriveTripLifecycle(active(d("2026-07-10"), d("2026-07-12")), today))
+      .toBe("IN_PROGRESS");
+    expect(deriveTripLifecycle(active(d("2026-07-12"), d("2026-07-15")), today))
+      .toBe("IN_PROGRESS");
+  });
+
+  it("treats a missing end date as single-day (mirrors isOngoing)", () => {
+    expect(deriveTripLifecycle(active(d("2026-07-12"), null), today)).toBe(
+      "IN_PROGRESS",
+    );
+    expect(deriveTripLifecycle(active(d("2026-07-11"), null), today)).toBe(
+      "COMPLETE",
+    );
+  });
+
+  it("is COMPLETE after the end date", () => {
+    expect(deriveTripLifecycle(active(d("2026-07-01"), d("2026-07-11")), today))
+      .toBe("COMPLETE");
+  });
+
+  it("manual overrides win regardless of dates", () => {
+    expect(
+      deriveTripLifecycle(
+        { status: "ARCHIVED", startDate: d("2026-07-12"), endDate: d("2026-07-15") },
+        today,
+      ),
+    ).toBe("ARCHIVED");
+    expect(
+      deriveTripLifecycle({ status: "CANCELLED", startDate: null, endDate: null }, today),
+    ).toBe("CANCELLED");
   });
 });
