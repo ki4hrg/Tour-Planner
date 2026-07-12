@@ -100,6 +100,24 @@ export function TimelineGroups({
   );
 }
 
+// Browsers don't break lines after "/", so a compound like "House/Museum" is
+// one unbreakable token that forces the whole thing onto the next line. Insert
+// <wbr> after each slash to allow a break there.
+function breakAfterSlashes(text: string): React.ReactNode {
+  const parts = text.split("/");
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 ? (
+        <>
+          /<wbr />
+        </>
+      ) : null}
+      {part}
+    </Fragment>
+  ));
+}
+
 // A muted gap line showing free time after the item row it follows. Rendered
 // inside the run's <ul>, so it's a list item.
 function GapLine({ gap }: { gap: { durationMinutes: number } }) {
@@ -151,10 +169,10 @@ function RunHeader({
                 href={`/locations/${v.id}`}
                 className="underline-offset-4 hover:underline"
               >
-                {v.name}
+                {breakAfterSlashes(v.name)}
               </Link>
             ) : (
-              v.name
+              breakAfterSlashes(v.name)
             )}
             {showVenueContacts && v.primaryContact?.phone ? (
               <ContactChannels
@@ -233,7 +251,7 @@ function TimelineRow({
                 : undefined
             }
           >
-            {primary}
+            {breakAfterSlashes(primary)}
           </Link>
         ) : (
           <span
@@ -244,7 +262,7 @@ function TimelineRow({
                 : undefined
             }
           >
-            {primary}
+            {breakAfterSlashes(primary)}
           </span>
         )}
         {hasSecondary ? (
