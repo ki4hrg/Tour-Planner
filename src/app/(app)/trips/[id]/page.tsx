@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
-  TRIP_STATUS_LABELS,
+  TRIP_LIFECYCLE_LABELS,
   BOOKING_STATUS_LABELS,
+  deriveTripLifecycle,
   serializeStay,
   serializeDay,
   serializeBooking,
@@ -34,7 +35,7 @@ import {
   updateTrip,
   deleteTrip,
   saveTripAsTemplate,
-  markTripCompleted,
+  archiveTrip,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -185,13 +186,14 @@ export default async function TripOverviewPage({
     select: { id: true, name: true, region: { select: { name: true } } },
   });
 
-  // Trip wrap-up: once the dates have passed but the status hasn't caught up,
-  // surface what's left to reconcile before marking the trip completed.
+  // Trip wrap-up: once the dates have passed but the trip hasn't been archived,
+  // surface what's left to reconcile before closing it out.
+  const lifecycle = deriveTripLifecycle(trip, todayUtc());
   const pastEnd =
     !trip.isTemplate &&
     trip.endDate != null &&
     trip.endDate.getTime() < todayMs &&
-    (trip.status === "IN_PROGRESS" || trip.status === "CONFIRMED");
+    trip.status === "ACTIVE";
 
   const engagedVenueIds = [
     ...new Set([
@@ -306,7 +308,7 @@ export default async function TripOverviewPage({
           {trip.isTemplate ? (
             <TemplateChip />
           ) : (
-            <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+            <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
           )}
         </h1>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -345,8 +347,8 @@ export default async function TripOverviewPage({
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">
-                  The trip ended {formatDate(trip.endDate)} but is still marked{" "}
-                  {TRIP_STATUS_LABELS[trip.status]}. Loose ends:
+                  The trip ended {formatDate(trip.endDate)} but hasn&apos;t been
+                  archived yet. Loose ends:
                 </p>
 
                 {wrapUp.followUps.length > 0 ? (
@@ -425,10 +427,10 @@ export default async function TripOverviewPage({
 
                 {canEdit ? (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <form action={markTripCompleted}>
+                    <form action={archiveTrip}>
                       <input type="hidden" name="id" value={trip.id} />
                       <Button type="submit" size="sm">
-                        Mark completed
+                        Archive trip
                       </Button>
                     </form>
                     <form action={saveTripAsTemplate}>
@@ -466,7 +468,7 @@ export default async function TripOverviewPage({
                       <>
                         <dt className="text-muted-foreground">Status</dt>
                         <dd className="col-span-2">
-                          {TRIP_STATUS_LABELS[trip.status]}
+                          {TRIP_LIFECYCLE_LABELS[lifecycle]}
                         </dd>
                         <dt className="text-muted-foreground">Dates</dt>
                         <dd className="col-span-2">

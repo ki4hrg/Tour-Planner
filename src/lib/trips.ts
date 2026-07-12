@@ -2,6 +2,7 @@ import type {
   BookingStatus,
   Booking,
   ItineraryDay,
+  Prisma,
   ScheduleItem,
   Stay,
   Trip,
@@ -10,15 +11,103 @@ import type {
 import { toDateInput } from "@/lib/dates";
 import { lodgingForDays } from "@/lib/stays";
 
+// The STORED status is a manual override only; the day-to-day lifecycle
+// (Planning → In progress → Complete) is derived from dates — see
+// deriveTripLifecycle below.
 export const TRIP_STATUS_LABELS: Record<TripStatus, string> = {
-  PLANNING: "Planning",
-  CONFIRMED: "Confirmed",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Completed",
+  ACTIVE: "Active",
   ARCHIVED: "Archived",
+  CANCELLED: "Cancelled",
 };
 
 export const TRIP_STATUSES = Object.keys(TRIP_STATUS_LABELS) as TripStatus[];
+
+// What a trip reads as today: derived phases for ACTIVE trips, or the manual
+// override verbatim.
+export type TripLifecycle =
+  | "PLANNING"
+  | "IN_PROGRESS"
+  | "COMPLETE"
+  | "ARCHIVED"
+  | "CANCELLED";
+
+export const TRIP_LIFECYCLE_LABELS: Record<TripLifecycle, string> = {
+  PLANNING: "Planning",
+  IN_PROGRESS: "In progress",
+  COMPLETE: "Complete",
+  ARCHIVED: "Archived",
+  CANCELLED: "Cancelled",
+};
+
+export const TRIP_LIFECYCLES = Object.keys(
+  TRIP_LIFECYCLE_LABELS,
+) as TripLifecycle[];
+
+/**
+ * Derive what phase a trip is in on `today` (a date-only UTC Date — pass
+ * `todayUtc()`; the caller supplies it so this stays a pure helper). Date-less
+ * trips are Planning forever; a trip with only a start date is treated as
+ * single-day (mirrors `isOngoing`).
+ */
+export function deriveTripLifecycle(
+  trip: { status: TripStatus; startDate: Date | null; endDate: Date | null },
+  today: Date,
+): TripLifecycle {
+  if (trip.status !== "ACTIVE") return trip.status;
+  if (!trip.startDate || trip.startDate.getTime() > today.getTime())
+    return "PLANNING";
+  const end = trip.endDate ?? trip.startDate;
+  return end.getTime() < today.getTime() ? "COMPLETE" : "IN_PROGRESS";
+}
+
+/**
+ * Prisma where-clause matching trips whose derived lifecycle (per
+ * `deriveTripLifecycle` with the same `today`) is `lifecycle`.
+ */
+export function tripLifecycleWhere(
+  lifecycle: TripLifecycle,
+  today: Date,
+): Prisma.TripWhereInput {
+  switch (lifecycle) {
+    case "ARCHIVED":
+    case "CANCELLED":
+      return { status: lifecycle };
+    case "PLANNING":
+      return {
+        status: "ACTIVE",
+        OR: [{ startDate: null }, { startDate: { gt: today } }],
+      };
+    case "IN_PROGRESS":
+      return {
+        status: "ACTIVE",
+        startDate: { lte: today },
+        OR: [{ endDate: { gte: today } }, { endDate: null, startDate: today }],
+      };
+    case "COMPLETE":
+      return {
+        status: "ACTIVE",
+        OR: [
+          { endDate: { lt: today } },
+          { endDate: null, startDate: { lt: today } },
+        ],
+      };
+  }
+}
+
+/**
+ * Where-clause for trips still in play (derived Planning or In progress) —
+ * the complement of COMPLETE among ACTIVE trips.
+ */
+export function tripStillInPlayWhere(today: Date): Prisma.TripWhereInput {
+  return {
+    status: "ACTIVE",
+    OR: [
+      { endDate: { gte: today } },
+      { endDate: null, startDate: { gte: today } },
+      { startDate: null },
+    ],
+  };
+}
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   NOT_BOOKED: "Not booked",

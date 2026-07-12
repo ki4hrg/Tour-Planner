@@ -1,10 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { TripStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
-import { toDateInput, parseDateInput } from "@/lib/dates";
+import { toDateInput, parseDateInput, todayUtc } from "@/lib/dates";
+import {
+  TRIP_LIFECYCLES,
+  TRIP_STATUSES,
+  type TripLifecycle,
+  deriveTripLifecycle,
+  tripLifecycleWhere,
+} from "@/lib/trips";
+import type { TripStatus } from "@prisma/client";
+
+// z.enum needs tuple types; the arrays are non-empty by construction.
+const lifecycleEnum = z.enum(
+  TRIP_LIFECYCLES as [TripLifecycle, ...TripLifecycle[]],
+);
+const statusOverrideEnum = z.enum(TRIP_STATUSES as [TripStatus, ...TripStatus[]]);
 
 export function registerTripTools(server: McpServer, user: SessionUser) {
   // ── list-trips (VIEWER+) ──────────────────────────────────────────────
@@ -13,9 +26,9 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "List Trips",
       description:
-        "List all trips, optionally filtered by status (PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED) or trip type. Returns trip name, dates, status, type, and participant count.",
+        "List all trips, optionally filtered by lifecycle status (PLANNING, IN_PROGRESS, COMPLETE — derived from the trip's dates — or the manual overrides ARCHIVED, CANCELLED) or trip type. Returns trip name, dates, derived status, type, and participant count.",
       inputSchema: {
-        status: z.string().optional(),
+        status: lifecycleEnum.optional(),
         tripTypeId: z.string().optional(),
         includeTemplates: z.boolean().optional(),
       },
@@ -23,11 +36,12 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     },
     async ({ status, tripTypeId, includeTemplates }) => {
       try {
-        const where: Record<string, unknown> = {};
-
-        if (status) where.status = status;
-        if (tripTypeId) where.tripTypeId = tripTypeId;
-        if (!includeTemplates) where.isTemplate = false;
+        const today = todayUtc();
+        const where = {
+          ...(status ? tripLifecycleWhere(status, today) : {}),
+          ...(tripTypeId ? { tripTypeId } : {}),
+          ...(includeTemplates ? {} : { isTemplate: false }),
+        };
 
         const trips = await prisma.trip.findMany({
           where,
@@ -41,7 +55,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         const result = trips.map((t) => ({
           id: t.id,
           name: t.name,
-          status: t.status,
+          status: deriveTripLifecycle(t, today),
           tripType: t.tripType.name,
           startDate: toDateInput(t.startDate),
           endDate: toDateInput(t.endDate),
@@ -106,7 +120,8 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         const result = {
           id: trip.id,
           name: trip.name,
-          status: trip.status,
+          status: deriveTripLifecycle(trip, todayUtc()),
+          statusOverride: trip.status,
           tripType: trip.tripType.name,
           startDate: toDateInput(trip.startDate),
           endDate: toDateInput(trip.endDate),
@@ -141,11 +156,11 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Create Trip",
       description:
-        "Create a new trip. Requires a name and tripTypeId. Status defaults to PLANNING. Dates (YYYY-MM-DD), capacity, and participant count are optional. Use list-trip-types to find available type IDs.",
+        "Create a new trip. Requires a name and tripTypeId. The Planning → In progress → Complete lifecycle is derived from the trip's dates; status is only a manual override (ACTIVE = normal, default; ARCHIVED; CANCELLED). Dates (YYYY-MM-DD), capacity, and participant count are optional. Use list-trip-types to find available type IDs.",
       inputSchema: {
         name: z.string(),
         tripTypeId: z.string(),
-        status: z.string().optional(),
+        status: statusOverrideEnum.optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),
@@ -186,7 +201,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           data: {
             name,
             tripTypeId,
-            status: (status as TripStatus) || "PLANNING",
+            status: status ?? "ACTIVE",
             startDate: parseDateInput(startDate),
             endDate: parseDateInput(endDate),
             capacity,
@@ -216,11 +231,11 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Trip",
       description:
-        "Update an existing trip's details. Only include fields you want to change. Valid statuses: PLANNING, CONFIRMED, IN_PROGRESS, COMPLETED, ARCHIVED.",
+        "Update an existing trip's details. Only include fields you want to change. Status is a manual override only (ACTIVE = lifecycle follows the dates; ARCHIVED; CANCELLED) — Planning/In progress/Complete cannot be set directly, they derive from startDate/endDate.",
       inputSchema: {
         tripId: z.string(),
         name: z.string().optional(),
-        status: z.string().optional(),
+        status: statusOverrideEnum.optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),

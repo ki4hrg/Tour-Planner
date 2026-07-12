@@ -16,12 +16,12 @@ enum Role {
   VIEWER
 }
 
+// Manual override only — the Planning → In progress → Complete lifecycle is
+// derived from the trip's dates (deriveTripLifecycle in src/lib/trips.ts).
 enum TripStatus {
-  PLANNING
-  CONFIRMED
-  IN_PROGRESS
-  COMPLETED
+  ACTIVE
   ARCHIVED
+  CANCELLED
 }
 
 enum BookingStatus {
@@ -212,7 +212,7 @@ model Trip {
   endDate          DateTime?      @db.Date
   capacity         Int? // max slots
   participantCount Int? // actual registered headcount (for cost totals)
-  status           TripStatus     @default(PLANNING)
+  status           TripStatus     @default(ACTIVE)
   notes            String?
   createdBy        User?          @relation("CreatedTrips", fields: [createdById], references: [id])
   createdById      String?

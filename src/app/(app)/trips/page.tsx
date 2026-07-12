@@ -11,8 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS, TRIP_STATUSES } from "@/lib/trips";
+import { formatDate, todayUtc } from "@/lib/dates";
+import {
+  TRIP_LIFECYCLE_LABELS,
+  TRIP_LIFECYCLES,
+  type TripLifecycle,
+  deriveTripLifecycle,
+  tripLifecycleWhere,
+} from "@/lib/trips";
 import { TemplateChip } from "./template-chip";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +32,18 @@ export default async function TripsPage({
   const canEdit = hasRole(user.role, "PLANNER");
   const { status, templates } = await searchParams;
   const showTemplates = templates === "1";
+  const today = todayUtc();
 
+  // The filter chips are derived-lifecycle filters (GH #56): Planning /
+  // In progress / Complete come from dates, Archived / Cancelled from the
+  // stored override.
+  const lifecycle =
+    status && TRIP_LIFECYCLES.includes(status as TripLifecycle)
+      ? (status as TripLifecycle)
+      : undefined;
   const where: Prisma.TripWhereInput = {
     isTemplate: showTemplates,
-    ...(status && TRIP_STATUSES.includes(status as (typeof TRIP_STATUSES)[number])
-      ? { status: status as (typeof TRIP_STATUSES)[number] }
-      : {}),
+    ...(lifecycle ? tripLifecycleWhere(lifecycle, today) : {}),
   };
 
   const trips = await prisma.trip.findMany({
@@ -101,16 +113,16 @@ export default async function TripsPage({
         >
           All
         </Link>
-        {TRIP_STATUSES.map((s) => (
+        {TRIP_LIFECYCLES.map((s) => (
           <Link
             key={s}
             href={qs({ status: s, templates: showTemplates ? "1" : undefined })}
             className={cn(
               "rounded-full border px-3 py-1 text-sm",
-              status === s ? "bg-muted font-medium" : "text-muted-foreground",
+              lifecycle === s ? "bg-muted font-medium" : "text-muted-foreground",
             )}
           >
-            {TRIP_STATUS_LABELS[s]}
+            {TRIP_LIFECYCLE_LABELS[s]}
           </Link>
         ))}
         <span className="ml-auto">
@@ -150,7 +162,7 @@ export default async function TripsPage({
                   <TemplateChip />
                 ) : (
                   <Badge variant="secondary" className="shrink-0">
-                    {TRIP_STATUS_LABELS[t.status]}
+                    {TRIP_LIFECYCLE_LABELS[deriveTripLifecycle(t, today)]}
                   </Badge>
                 )}
               </CardTitle>
