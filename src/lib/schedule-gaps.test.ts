@@ -152,10 +152,29 @@ describe("computeScheduleGaps", () => {
     });
   });
 
-  it("ignores items without end times when computing gaps", () => {
+  it("a start-only item closes the gap before it but opens none after it", () => {
+    // "10:00 Depart for Bristol" style item: the free time after breakfast ends
+    // at 10:00 (1 h, not until the next fully-timed item), and no gap is
+    // claimed between the open-ended departure and the next item.
     const items = [
-      mockItem({ order: 1, startTime: "09:00", endTime: "10:00" }),
-      mockItem({ order: 2, startTime: "10:30", endTime: null }),
+      mockItem({ id: "breakfast", order: 1, startTime: "08:00", endTime: "09:00" }),
+      mockItem({ id: "depart", order: 2, startTime: "10:00", endTime: null }),
+      mockItem({ id: "arrive", order: 3, startTime: "12:15", endTime: "12:45" }),
+    ];
+    const gaps = computeScheduleGaps(items);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toEqual({
+      startTime: "09:00",
+      endTime: "10:00",
+      durationMinutes: 60,
+      afterItemId: "breakfast",
+    });
+  });
+
+  it("ignores items with no times at all when computing gaps", () => {
+    const items = [
+      mockItem({ id: "a", order: 1, startTime: "09:00", endTime: "10:00" }),
+      mockItem({ order: 2, startTime: null, endTime: null }),
       mockItem({ order: 3, startTime: "11:00", endTime: "12:00" }),
     ];
     const gaps = computeScheduleGaps(items);
@@ -164,7 +183,7 @@ describe("computeScheduleGaps", () => {
       startTime: "10:00",
       endTime: "11:00",
       durationMinutes: 60,
-      afterItemId: "item-1",
+      afterItemId: "a",
     });
   });
 
