@@ -7,29 +7,50 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ContactChannels } from "@/components/contact-channels";
 import { ContactForm } from "./contact-form";
 import { createContact } from "./actions";
+import { ContactsList } from "./contacts-list";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function ContactsPage() {
+export default async function ContactsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ groupBy?: string }>;
+}) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
+  const { groupBy } = await searchParams;
+  const isGrouped = groupBy === "location";
 
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { locations: true } } },
+    include: {
+      locations: {
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      },
+      _count: { select: { locations: true } },
+    },
   });
+
+  const qs = (groupByVal?: string) => {
+    const sp = new URLSearchParams();
+    if (groupByVal) sp.set("groupBy", groupByVal);
+    const s = sp.toString();
+    return s ? `/contacts?${s}` : "/contacts";
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Contacts</h1>
-        <p className="text-sm text-muted-foreground">
-          A reusable directory. A contact can serve several locations.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Contacts</h1>
+          <p className="text-sm text-muted-foreground">
+            A reusable directory. A contact can serve several locations.
+          </p>
+        </div>
       </div>
 
       {canEdit ? (
@@ -47,42 +68,35 @@ export default async function ContactsPage() {
         </Card>
       ) : null}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={qs()}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm",
+            !isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
+          )}
+        >
+          Flat
+        </Link>
+        <Link
+          href={qs("location")}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm",
+            isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
+          )}
+        >
+          By location
+        </Link>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             Directory ({contacts.length})
           </CardTitle>
         </CardHeader>
-        <CardContent className="divide-y">
-          {contacts.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-            >
-              <div className="min-w-0">
-                <Link
-                  href={`/contacts/${c.id}`}
-                  className="font-medium hover:underline"
-                >
-                  {c.name}
-                </Link>
-                <div className="truncate text-sm text-muted-foreground">
-                  {[c.role, c.organization].filter(Boolean).join(" · ")}
-                  {c.email ? ` · ${c.email}` : ""}
-                  {c.phone ? ` · ${c.phone}` : ""}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <ContactChannels phone={c.phone} email={c.email} />
-                <Badge variant="outline">{c._count.locations} locations</Badge>
-              </div>
-            </div>
-          ))}
-          {contacts.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">
-              No contacts yet.
-            </p>
-          ) : null}
+        <CardContent>
+          <ContactsList contacts={contacts} isGrouped={isGrouped} />
         </CardContent>
       </Card>
     </div>
