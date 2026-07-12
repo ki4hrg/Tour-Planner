@@ -381,6 +381,20 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                   order: i,
                 })),
               });
+              // Null any item-targeted booking whose locationId is not in the new set
+              await tx.booking.updateMany({
+                where: {
+                  scheduleItemId: itemId,
+                  locationId: { notIn: locationIds },
+                },
+                data: { locationId: null },
+              });
+            } else {
+              // No locations: null all item-targeted bookings' locationId
+              await tx.booking.updateMany({
+                where: { scheduleItemId: itemId },
+                data: { locationId: null },
+              });
             }
           }
 
