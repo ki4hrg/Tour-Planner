@@ -122,6 +122,7 @@ async function main() {
       name: TRIP_NAME,
       tripTypeId: tripType.id,
       status: "ACTIVE",
+      currencies: ["GBP"],
       startDate: start,
       participantCount: 24,
     },

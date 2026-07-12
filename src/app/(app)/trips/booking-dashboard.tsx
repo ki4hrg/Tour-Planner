@@ -43,12 +43,15 @@ export function BookingDashboard({
   venueRows,
   itemRows,
   contacts,
+  currencies,
 }: {
   tripId: string;
   canEdit: boolean;
   venueRows: VenueBookingRow[];
   itemRows: ItemBookingRow[];
   contacts: ContactOption[];
+  // The trip's currency vocabulary (GH #11) — price/payment pickers offer these.
+  currencies: string[];
 }) {
   const [filters, setFilters] = useState<Filters>({
     windowOpen: true,
@@ -125,6 +128,7 @@ export function BookingDashboard({
                     tripId={tripId}
                     canEdit={canEdit}
                     contacts={contacts}
+                    currencies={currencies}
                   />
                 ))}
                 {shownItems.map((row) => (
@@ -142,6 +146,7 @@ export function BookingDashboard({
                 tripId={tripId}
                 canEdit={canEdit}
                 contacts={contacts}
+                currencies={currencies}
               />
             ))}
             {shownItems.map((row) => (

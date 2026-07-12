@@ -23,6 +23,7 @@ export default async function BookingDashboardPage({
     select: {
       id: true,
       name: true,
+      currencies: true,
       days: {
         orderBy: { dayIndex: "asc" },
         select: {
@@ -140,6 +141,7 @@ export default async function BookingDashboardPage({
             venueRows={venueRows}
             itemRows={itemRows}
             contacts={contacts}
+            currencies={trip.currencies}
           />
         </CardContent>
       </Card>

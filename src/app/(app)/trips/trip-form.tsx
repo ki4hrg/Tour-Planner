@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TRIP_STATUS_LABELS, TRIP_STATUSES } from "@/lib/trips";
+import { CURRENCIES } from "@/lib/money";
 import { useEditSection } from "@/components/editable-section";
 import type { FormState } from "@/lib/forms";
 
@@ -29,6 +30,7 @@ export type TripInitial = {
   capacity: number | null;
   participantCount: number | null;
   status: string;
+  currencies: string[];
   notes: string | null;
   isTemplate: boolean;
 };
@@ -45,7 +47,7 @@ export function TripForm({
 }: {
   action: Action;
   submitLabel: string;
-  tripTypes: { id: string; name: string }[];
+  tripTypes: { id: string; name: string; defaultCurrency: string }[];
   initial?: TripInitial;
   // When provided (create flow), offer to instantiate from a template of the
   // selected trip type. Omitted on edit — you don't re-instantiate an existing trip.
@@ -65,6 +67,16 @@ export function TripForm({
   const [isTemplate, setIsTemplate] = useState(
     initial?.isTemplate ?? defaultIsTemplate ?? false,
   );
+  // The trip's currency vocabulary — everything trip-scoped (stays, agreed
+  // prices, payments) picks from this set instead of free text.
+  const [currencies, setCurrencies] = useState<string[]>(
+    initial?.currencies ?? [],
+  );
+  // Offer the curated list plus any stored code outside it (legacy data).
+  const currencyChoices = [
+    ...CURRENCIES,
+    ...currencies.filter((c) => !(CURRENCIES as readonly string[]).includes(c)),
+  ];
 
   // Templates are type-scoped: only show those matching the selected type.
   const typeTemplates = useMemo(
@@ -100,6 +112,11 @@ export function TripForm({
               setTripTypeId(v);
               // Template choices are type-scoped — reset on type change.
               setTemplateId(BLANK);
+              // On create, seed the currency set from the type's default.
+              if (!initial?.id) {
+                const def = tripTypes.find((t) => t.id === v)?.defaultCurrency;
+                if (def) setCurrencies([def]);
+              }
             }}
           >
             <SelectTrigger id="tripTypeId">
@@ -215,6 +232,35 @@ export function TripForm({
             />
           </div>
         ) : null}
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>Currencies</Label>
+          {/* Hidden inputs carry the values; the checkboxes just drive state. */}
+          {currencies.map((c) => (
+            <input key={c} type="hidden" name="currencies" value={c} />
+          ))}
+          <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
+            {currencyChoices.map((c) => (
+              <label key={c} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={currencies.includes(c)}
+                  onCheckedChange={(v) =>
+                    setCurrencies((prev) =>
+                      v === true
+                        ? [...prev, c]
+                        : prev.filter((x) => x !== c),
+                    )
+                  }
+                />
+                {c}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Currency pickers on this trip (lodging, agreed prices, payments)
+            offer these.
+          </p>
+        </div>
 
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">Notes</Label>
