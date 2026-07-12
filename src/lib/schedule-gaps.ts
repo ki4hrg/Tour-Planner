@@ -70,17 +70,21 @@ function isGapCoveredBySystemItem(
 /**
  * Compute gaps (free time) between consecutive timed items in a day.
  * Gaps are only returned if:
- * - Both bounding items have times
+ * - The earlier item has an end time and the later item a start time
  * - The gap is at least 10 minutes
  * - The gap is not covered by a "Free time" or "Break" system category item
+ *
+ * A start-only item (e.g. "10:00 Depart") still CLOSES the gap before it — its
+ * start is a hard boundary — but opens no gap after it: its duration is
+ * unknown, so the time until the next item can't be called free.
  */
 export function computeScheduleGaps(items: SerializedScheduleItem[]): ScheduleGap[] {
   const gaps: ScheduleGap[] = [];
   const MIN_GAP_MINUTES = 10;
 
-  // Filter to items with both start and end times, then sort by start time
+  // Every item with a start time participates as a boundary, sorted by start
   const timedItems = items
-    .filter((item) => item.startTime && item.endTime)
+    .filter((item) => item.startTime)
     .sort((a, b) => {
       const aStart = timeToMinutes(a.startTime!);
       const bStart = timeToMinutes(b.startTime!);
@@ -92,7 +96,12 @@ export function computeScheduleGaps(items: SerializedScheduleItem[]): ScheduleGa
     const current = timedItems[i];
     const next = timedItems[i + 1];
 
-    const currentEnd = timeToMinutes(current.endTime!);
+    // No end time → open-ended; nothing after it is known to be free
+    if (!current.endTime) {
+      continue;
+    }
+
+    const currentEnd = timeToMinutes(current.endTime);
     const nextStart = timeToMinutes(next.startTime!);
 
     if (currentEnd === null || nextStart === null) {
@@ -117,7 +126,7 @@ export function computeScheduleGaps(items: SerializedScheduleItem[]): ScheduleGa
     }
 
     gaps.push({
-      startTime: current.endTime!,
+      startTime: current.endTime,
       endTime: minutesToTime(nextStart),
       durationMinutes: gapDuration,
       afterItemId: current.id,
