@@ -5,9 +5,10 @@ import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/dates";
+import { formatDate, todayUtc } from "@/lib/dates";
 import {
-  TRIP_STATUS_LABELS,
+  TRIP_LIFECYCLE_LABELS,
+  deriveTripLifecycle,
   serializeDay,
   summarizeDayLodging,
 } from "@/lib/trips";
@@ -72,6 +73,7 @@ export default async function TripDayPage({
     },
   });
   if (!trip) notFound();
+  const lifecycle = deriveTripLifecycle(trip, todayUtc());
 
   const index = trip.days.findIndex((d) => d.id === dayId);
   if (index === -1) notFound();
@@ -97,7 +99,7 @@ export default async function TripDayPage({
         >
           ← {trip.name}
         </Link>
-        <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+        <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
       </div>
 
       <header className="space-y-1">

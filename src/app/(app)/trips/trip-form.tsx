@@ -152,18 +152,19 @@ export function TripForm({
           </div>
         ) : null}
 
-        {/* Status is a dated-trip lifecycle concern — templates have none (they're
-            always PLANNING). Submit it hidden so the required field still validates. */}
+        {/* Status is a manual override only (Planning → In progress → Complete is
+            derived from the dates). Templates have none — submit it hidden so the
+            required field still validates. */}
         {isTemplate ? (
           <input
             type="hidden"
             name="status"
-            value={initial?.status ?? "PLANNING"}
+            value={initial?.status ?? "ACTIVE"}
           />
         ) : (
           <div className="space-y-1.5">
             <Label htmlFor="status">Status</Label>
-            <Select name="status" defaultValue={initial?.status ?? "PLANNING"}>
+            <Select name="status" defaultValue={initial?.status ?? "ACTIVE"}>
               <SelectTrigger id="status">
                 <SelectValue />
               </SelectTrigger>
@@ -175,6 +176,10 @@ export function TripForm({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Active trips move Planning → In progress → Complete by their
+              dates; archive or cancel to override.
+            </p>
           </div>
         )}
 

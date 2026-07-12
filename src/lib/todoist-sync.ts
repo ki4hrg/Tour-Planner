@@ -126,7 +126,7 @@ export async function resolveLocationProject(
       where: {
         isTemplate: false,
         tripTypeId: { in: typeIds },
-        status: { in: ["PLANNING", "CONFIRMED", "IN_PROGRESS"] },
+        status: "ACTIVE",
         OR: [{ endDate: { gte: todayUtc() } }, { endDate: null }],
       },
       orderBy: { startDate: "asc" },

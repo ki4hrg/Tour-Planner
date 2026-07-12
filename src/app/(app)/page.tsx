@@ -15,7 +15,12 @@ import { bookingWindow } from "@/lib/booking";
 import { noteTarget } from "@/lib/notes";
 import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
 import { cn } from "@/lib/utils";
-import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
+import {
+  TRIP_LIFECYCLE_LABELS,
+  deriveTripLifecycle,
+  serializeDay,
+  tripStillInPlayWhere,
+} from "@/lib/trips";
 import { TimelineGroups } from "./trips/itinerary-timeline";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +71,7 @@ export default async function Home({
     prisma.trip.findMany({
       where: {
         isTemplate: false,
+        status: "ACTIVE",
         startDate: { lte: today },
         OR: [{ endDate: { gte: today } }, { endDate: null, startDate: today }],
       },
@@ -88,10 +94,7 @@ export default async function Home({
     // Over-fetch a little: ongoing trips are filtered out below (they render in
     // "Happening now" instead — one trip, one card; GH #43) before slicing to 8.
     prisma.trip.findMany({
-      where: {
-        isTemplate: false,
-        status: { in: ["PLANNING", "CONFIRMED", "IN_PROGRESS"] },
-      },
+      where: { isTemplate: false, ...tripStillInPlayWhere(today) },
       orderBy: { startDate: "asc" },
       take: 12,
       select: {
@@ -112,7 +115,9 @@ export default async function Home({
         status: { in: ["NOT_BOOKED", "REQUESTED", "TENTATIVELY_CONFIRMED"] },
         tripId: { not: null },
         location: { is: { bookingOpensLeadDays: { not: null } } },
-        trip: { is: { isTemplate: false, startDate: { not: null } } },
+        trip: {
+          is: { isTemplate: false, status: "ACTIVE", startDate: { not: null } },
+        },
       },
       select: {
         id: true,
@@ -266,6 +271,7 @@ export default async function Home({
                       items={t.currentDay.items}
                       linkVenues
                       itemLinkBase={`/trips/${t.id}/days/${t.currentDay.id}`}
+                      showGaps
                     />
                   </div>
                 ) : (
@@ -434,7 +440,7 @@ export default async function Home({
                     <span className="block text-xs text-muted-foreground">
                       {t.tripType.name} ·{" "}
                       {t.startDate ? formatDate(t.startDate) : "no dates"} ·{" "}
-                      {TRIP_STATUS_LABELS[t.status]}
+                      {TRIP_LIFECYCLE_LABELS[deriveTripLifecycle(t, today)]}
                     </span>
                   </span>
                 </li>

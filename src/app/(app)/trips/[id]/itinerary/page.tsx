@@ -3,8 +3,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/dates";
-import { TRIP_STATUS_LABELS, serializeDay } from "@/lib/trips";
+import { formatDate, todayUtc } from "@/lib/dates";
+import {
+  TRIP_LIFECYCLE_LABELS,
+  deriveTripLifecycle,
+  serializeDay,
+} from "@/lib/trips";
 import { ItineraryEditor } from "../../itinerary-editor";
 import { TemplateChip } from "../../template-chip";
 
@@ -55,6 +59,7 @@ export default async function ItineraryPage({
     },
   });
   if (!trip) notFound();
+  const lifecycle = deriveTripLifecycle(trip, todayUtc());
 
   const categories = await prisma.scheduleItemCategory.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -97,7 +102,7 @@ export default async function ItineraryPage({
             {trip.isTemplate ? (
               <TemplateChip />
             ) : (
-              <Badge variant="secondary">{TRIP_STATUS_LABELS[trip.status]}</Badge>
+              <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
             )}
           </h1>
           <p className="text-sm text-muted-foreground">

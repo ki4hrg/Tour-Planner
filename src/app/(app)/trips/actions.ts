@@ -187,12 +187,13 @@ export async function updateTrip(
 // (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 // One-click close-out from the wrap-up card. Status only — everything else on
-// the trip is left alone.
-export async function markTripCompleted(formData: FormData): Promise<void> {
+// the trip is left alone. (Complete is derived from dates; Archived is the
+// manual "done and dusted" override.)
+export async function archiveTrip(formData: FormData): Promise<void> {
   await assertRole("PLANNER");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  await prisma.trip.update({ where: { id }, data: { status: "COMPLETED" } });
+  await prisma.trip.update({ where: { id }, data: { status: "ARCHIVED" } });
   revalidateTrip(id);
   revalidatePath("/");
   revalidatePath("/trips");
@@ -238,7 +239,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       participantCount: source.participantCount,
       currencies: source.currencies,
       notes: source.notes,
-      status: "PLANNING",
+      status: "ACTIVE",
       isTemplate: true,
       createdById: user.id,
       days: { create: instantiateDays(source.days, null) },
@@ -503,8 +504,8 @@ export async function updateScheduleItem(
   const idErr = await identityError(parsed.data);
   if (idErr) return { error: idErr };
 
-  // Replace the location links wholesale (simple + transactional). Bookings are
-  // untouched — they reference Location directly, not the join row.
+  // Replace the location links wholesale (simple + transactional). Reconcile
+  // stale item-targeted bookings: null out locationId if the site is unlinked.
   const item = await prisma.$transaction(async (tx) => {
     const updated = await tx.scheduleItem.update({
       where: { id: itemId },
@@ -523,6 +524,20 @@ export async function updateScheduleItem(
           locationId,
           order: i,
         })),
+      });
+      // Null any item-targeted booking whose locationId is not in the new set
+      await tx.booking.updateMany({
+        where: {
+          scheduleItemId: itemId,
+          locationId: { notIn: parsed.data.locationIds },
+        },
+        data: { locationId: null },
+      });
+    } else {
+      // No locations: null all item-targeted bookings' locationId
+      await tx.booking.updateMany({
+        where: { scheduleItemId: itemId },
+        data: { locationId: null },
       });
     }
     return updated;
