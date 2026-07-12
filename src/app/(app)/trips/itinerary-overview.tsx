@@ -151,33 +151,38 @@ function DayRow({
   return (
     <li className="py-1">
       <Collapsible open={open} onOpenChange={onToggle}>
-        <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md py-1.5 text-left hover:bg-muted/50">
+        {/* <sm the location roll-up drops to its own line under the title —
+            sharing one flex row squeezes the title into one-word-per-line
+            wrapping that collides with the location text. */}
+        <CollapsibleTrigger className="flex w-full items-start gap-2 rounded-md py-1.5 text-left hover:bg-muted/50">
           <ChevronRight
             className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
+              "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
               open && "rotate-90",
             )}
           />
-          <span className="min-w-0 flex-1">
-            <span className="font-medium">Day {day.dayIndex}</span>
-            {day.title ? ` — ${day.title}` : ""}
-            {day.date ? (
-              <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
-            ) : null}
-          </span>
-          {allSites.length > 0 ? (
-            <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-              <span className="truncate">{head.join(" · ")}</span>
-              {overflow.length > 0 ? (
-                <span
-                  title={allSites.join(", ")}
-                  className="shrink-0 cursor-help underline decoration-dotted underline-offset-2"
-                >
-                  +{overflow.length}
-                </span>
+          <span className="min-w-0 flex-1 sm:flex sm:items-baseline sm:justify-between sm:gap-3">
+            <span className="block">
+              <span className="font-medium">Day {day.dayIndex}</span>
+              {day.title ? ` — ${day.title}` : ""}
+              {day.date ? (
+                <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
               ) : null}
             </span>
-          ) : null}
+            {allSites.length > 0 ? (
+              <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <span className="truncate">{head.join(" · ")}</span>
+                {overflow.length > 0 ? (
+                  <span
+                    title={allSites.join(", ")}
+                    className="shrink-0 cursor-help underline decoration-dotted underline-offset-2"
+                  >
+                    +{overflow.length}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </span>
         </CollapsibleTrigger>
         <CollapsibleContent>
           {count === 0 ? (
