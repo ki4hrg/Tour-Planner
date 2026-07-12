@@ -499,8 +499,8 @@ export async function updateScheduleItem(
   const idErr = await identityError(parsed.data);
   if (idErr) return { error: idErr };
 
-  // Replace the location links wholesale (simple + transactional). Bookings are
-  // untouched — they reference Location directly, not the join row.
+  // Replace the location links wholesale (simple + transactional). Reconcile
+  // stale item-targeted bookings: null out locationId if the site is unlinked.
   const item = await prisma.$transaction(async (tx) => {
     const updated = await tx.scheduleItem.update({
       where: { id: itemId },
@@ -519,6 +519,20 @@ export async function updateScheduleItem(
           locationId,
           order: i,
         })),
+      });
+      // Null any item-targeted booking whose locationId is not in the new set
+      await tx.booking.updateMany({
+        where: {
+          scheduleItemId: itemId,
+          locationId: { notIn: parsed.data.locationIds },
+        },
+        data: { locationId: null },
+      });
+    } else {
+      // No locations: null all item-targeted bookings' locationId
+      await tx.booking.updateMany({
+        where: { scheduleItemId: itemId },
+        data: { locationId: null },
       });
     }
     return updated;
