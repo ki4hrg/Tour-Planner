@@ -424,7 +424,7 @@ function DayCard({
         {day.items.length === 0 ? (
           <p className="py-1 text-sm text-muted-foreground">No items yet.</p>
         ) : canEdit ? (
-          <ol className="relative ml-1.5 space-y-1 border-l-2 border-border">
+          <ol className="relative ml-2 space-y-1.5 border-l-2 border-border/60">
             {day.items.map((item, si) => (
               <ItemRow
                 key={item.id}
