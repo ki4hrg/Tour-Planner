@@ -29,6 +29,7 @@ import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
+import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 import { TemplateChip } from "../template-chip";
 import { TripTodoistPanel } from "../trip-todoist-panel";
 import {
@@ -297,6 +298,16 @@ export default async function TripOverviewPage({
         select: { id: true, name: true },
       })
     : [];
+  // Subscribable calendar feeds for this trip (dated trips only — templates have
+  // no calendar to anchor to).
+  const calendarFeeds =
+    canEdit && !trip.isTemplate
+      ? await prisma.calendarFeed.findMany({
+          where: { scope: "TRIP", tripId: id },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, token: true, label: true, enabled: true },
+        })
+      : [];
 
   return (
     <div className="space-y-6">
@@ -648,6 +659,22 @@ export default async function TripOverviewPage({
                     enabled: l.enabled,
                     expiresAt: l.expiresAt ? toDateInput(l.expiresAt) : null,
                   }))}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canEdit && !trip.isTemplate ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Calendar feed</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CalendarFeedManager
+                  scope="TRIP"
+                  tripId={trip.id}
+                  canEdit={canEdit}
+                  feeds={calendarFeeds}
                 />
               </CardContent>
             </Card>

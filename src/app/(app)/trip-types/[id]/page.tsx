@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { EditableSection } from "@/components/editable-section";
 import { TripTypeForm } from "../trip-type-form";
 import { updateTripType, deleteTripType } from "../actions";
+import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,13 @@ export default async function TripTypeDetailPage({
     where: { tripTypeId: id, isTemplate: true },
     orderBy: { name: "asc" },
     select: { id: true, name: true, _count: { select: { days: true } } },
+  });
+
+  // A single subscribable feed covering every trip of this type.
+  const calendarFeeds = await prisma.calendarFeed.findMany({
+    where: { scope: "TRIP_TYPE", tripTypeId: id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, token: true, label: true, enabled: true },
   });
 
   return (
@@ -128,6 +136,20 @@ export default async function TripTypeDetailPage({
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Calendar feed</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CalendarFeedManager
+            scope="TRIP_TYPE"
+            tripTypeId={tripType.id}
+            canEdit
+            feeds={calendarFeeds}
+          />
         </CardContent>
       </Card>
 

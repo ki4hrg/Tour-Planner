@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/authz";
+import { requireUser, hasRole } from "@/lib/authz";
 import {
   Card,
   CardContent,
@@ -13,11 +13,21 @@ import {
   TodoistManager,
   type ProjectOption,
 } from "./todoist-settings";
+import { CalendarFeedManager } from "../calendar-feeds/calendar-feed-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser();
+  const canManageFeeds = hasRole(user.role, "PLANNER");
+
+  // A single subscribable feed spanning every (non-template) trip. These are
+  // shared staff feeds, not per-user.
+  const allTripsFeeds = await prisma.calendarFeed.findMany({
+    where: { scope: "ALL" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, token: true, label: true, enabled: true },
+  });
 
   const auth = await getTodoistAuth(user.id);
 
@@ -57,6 +67,23 @@ export default async function SettingsPage() {
           Personal integrations — these apply to your account only.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Calendar feed — all trips</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4 text-sm text-muted-foreground">
+            One subscribable calendar covering every trip. Add it to iOS, Google,
+            or Outlook and it stays in sync as plans change.
+          </p>
+          <CalendarFeedManager
+            scope="ALL"
+            canEdit={canManageFeeds}
+            feeds={allTripsFeeds}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
