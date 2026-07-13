@@ -1,0 +1,211 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import type { CalendarFeedScope } from "@prisma/client";
+import { toast } from "sonner";
+import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  createCalendarFeed,
+  setCalendarFeedEnabled,
+  deleteCalendarFeed,
+} from "./actions";
+
+export type SerializedCalendarFeed = {
+  id: string;
+  token: string;
+  label: string | null;
+  enabled: boolean;
+};
+
+// Run a FormState-returning action, surfacing the result as a toast.
+function useAction() {
+  const [pending, start] = useTransition();
+  const run = (
+    fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>,
+    onOk?: () => void,
+  ) =>
+    start(async () => {
+      const res = await fn();
+      if (res.error) toast.error(res.error);
+      else {
+        if (res.message) toast.success(res.message);
+        onOk?.();
+      }
+    });
+  return { pending, run };
+}
+
+function feedPath(token: string): string {
+  return `/api/feed/${token}.ics`;
+}
+
+// https URL for pasting into Google Calendar ("From URL"); webcal:// for one-tap
+// subscribe on iOS/macOS (and Google honours it too).
+function httpsUrl(token: string): string {
+  if (typeof window === "undefined") return feedPath(token);
+  return `${window.location.origin}${feedPath(token)}`;
+}
+function webcalUrl(token: string): string {
+  if (typeof window === "undefined") return feedPath(token);
+  return `webcal://${window.location.host}${feedPath(token)}`;
+}
+
+export function CalendarFeedManager({
+  scope,
+  tripId,
+  tripTypeId,
+  feeds,
+  canEdit,
+}: {
+  scope: CalendarFeedScope;
+  tripId?: string;
+  tripTypeId?: string;
+  feeds: SerializedCalendarFeed[];
+  canEdit: boolean;
+}) {
+  return (
+    <div className="space-y-4 text-sm">
+      {feeds.length === 0 ? (
+        <p className="text-muted-foreground">
+          No calendar feeds yet.
+          {canEdit
+            ? " Create one to subscribe from iOS, Google, or Outlook — it stays in sync as the plan changes."
+            : ""}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {feeds.map((feed) => (
+            <FeedRow key={feed.id} feed={feed} canEdit={canEdit} />
+          ))}
+        </ul>
+      )}
+      {canEdit ? (
+        <CreateForm scope={scope} tripId={tripId} tripTypeId={tripTypeId} />
+      ) : null}
+    </div>
+  );
+}
+
+function FeedRow({
+  feed,
+  canEdit,
+}: {
+  feed: SerializedCalendarFeed;
+  canEdit: boolean;
+}) {
+  const { pending, run } = useAction();
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(httpsUrl(feed.token));
+    setCopied(true);
+    toast.success("Feed URL copied.");
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <li className="rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {!feed.enabled ? <Badge variant="destructive">Disabled</Badge> : null}
+        {feed.label ? (
+          <span className="text-muted-foreground">{feed.label}</span>
+        ) : (
+          <span className="text-muted-foreground">Calendar feed</span>
+        )}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          readOnly
+          value={httpsUrl(feed.token)}
+          className="h-8 font-mono text-xs"
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={copy}
+          aria-label="Copy feed URL"
+        >
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+        </Button>
+        {feed.enabled ? (
+          <Button asChild size="sm" variant="outline">
+            <a href={webcalUrl(feed.token)}>
+              <CalendarPlus className="size-4" /> Subscribe
+            </a>
+          </Button>
+        ) : null}
+      </div>
+      {canEdit ? (
+        <div className="mt-2 flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => run(() => setCalendarFeedEnabled(feed.id, !feed.enabled))}
+          >
+            {feed.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-destructive"
+            disabled={pending}
+            onClick={() => run(() => deleteCalendarFeed(feed.id))}
+          >
+            <Trash2 className="size-4" /> Delete
+          </Button>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function CreateForm({
+  scope,
+  tripId,
+  tripTypeId,
+}: {
+  scope: CalendarFeedScope;
+  tripId?: string;
+  tripTypeId?: string;
+}) {
+  const { pending, run } = useAction();
+  const [label, setLabel] = useState("");
+
+  const submit = () =>
+    run(
+      () => createCalendarFeed({ scope, tripId, tripTypeId, label: label || undefined }),
+      () => setLabel(""),
+    );
+
+  return (
+    <div className="space-y-3 rounded-md border border-dashed p-3">
+      <p className="font-medium">New calendar feed</p>
+      <div className="space-y-1">
+        <Label htmlFor="feed-label">Label (optional)</Label>
+        <Input
+          id="feed-label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Leaders' calendar"
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Staff-detail feed: itinerary items, times, locations, and day notes
+        (incl. logistical). Anyone with the URL can read it — treat it like a
+        share link.
+      </p>
+      <Button type="button" size="sm" disabled={pending} onClick={submit}>
+        Create feed
+      </Button>
+    </div>
+  );
+}

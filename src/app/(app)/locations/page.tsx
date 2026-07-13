@@ -126,7 +126,7 @@ export default async function LocationsPage({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {locations.map((l) => (
           <Card key={l.id} className={l.archivedAt ? "opacity-70" : undefined}>
             <CardHeader>

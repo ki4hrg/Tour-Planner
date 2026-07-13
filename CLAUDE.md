@@ -179,7 +179,20 @@ npm test                          # vitest
   (`src/lib/share.ts`).
 - **Routing**: authenticated pages live under `src/app/(app)/` (shell = `AppNav` +
   `requireUser` layout). Public routes: `/login`, `/setup`, `/share/[token]`,
-  `/api/{auth,mcp,oauth,well-known}`. The `src/proxy.ts` matcher excludes those + assets.
+  `/api/{auth,mcp,oauth,well-known}`, `/api/feed/[token].ics`. The `src/proxy.ts`
+  matcher excludes those + assets (add the route's path segment to the negative
+  lookahead when introducing a new public endpoint).
+- **Calendar feeds (`CalendarFeed`)**: subscribable iCalendar (.ics) feeds served at
+  `/api/feed/<token>.ics` (`webcal://` for one-tap subscribe). Token is an unguessable
+  cuid capability like a `ShareLink`; `scope` ∈ `TRIP | TRIP_TYPE | ALL` (DB CHECK
+  `calendar_feed_scope` ties scope to exactly one of `tripId`/`tripTypeId`/neither).
+  These are **STAFF-detail** feeds (full itinerary incl. logistical notes); template
+  trips are excluded (no dates to anchor). Times are emitted as **floating** local
+  (no `Z`/`TZID`) since the app stores tz-free `"HH:MM"` — see `src/lib/ics.ts` (pure
+  RFC 5545 generator) + `src/lib/calendar-feed.ts` (day/item/stay → events), both
+  unit-tested. Mint/copy UI: `CalendarFeedManager`, mounted on the trip page,
+  trip-type page, and `/settings` (the ALL feed). Participant-safe calendar feeds
+  (redacted, tied to ShareLinks) are tracked as a follow-up, NOT built here.
 - **Data model**: `prisma/schema.prisma` is the source of truth. Key shapes: `Trip` →
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
   `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).

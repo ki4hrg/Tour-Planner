@@ -29,6 +29,7 @@ import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
+import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 import { TemplateChip } from "../template-chip";
 import { TripTodoistPanel } from "../trip-todoist-panel";
 import {
@@ -297,11 +298,19 @@ export default async function TripOverviewPage({
         select: { id: true, name: true },
       })
     : [];
+  // Subscribable calendar feeds for this trip (dated trips only — templates have
+  // no calendar to anchor to).
+  const calendarFeeds =
+    canEdit && !trip.isTemplate
+      ? await prisma.calendarFeed.findMany({
+          where: { scope: "TRIP", tripId: id },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, token: true, label: true, enabled: true },
+        })
+      : [];
 
   return (
-    // This is the most information-dense screen, so let it grow past the shared
-    // max-w-5xl into the surrounding whitespace once there's room (xl/2xl).
-    <div className="space-y-6 xl:-mx-16 2xl:-mx-32">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
           {trip.name}
@@ -650,6 +659,22 @@ export default async function TripOverviewPage({
                     enabled: l.enabled,
                     expiresAt: l.expiresAt ? toDateInput(l.expiresAt) : null,
                   }))}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canEdit && !trip.isTemplate ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Calendar feed</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CalendarFeedManager
+                  scope="TRIP"
+                  tripId={trip.id}
+                  canEdit={canEdit}
+                  feeds={calendarFeeds}
                 />
               </CardContent>
             </Card>

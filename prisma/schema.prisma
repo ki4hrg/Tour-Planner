@@ -44,6 +44,16 @@ enum ShareAudience {
   HOST_SITE
 }
 
+// What a subscribable calendar feed (.ics) covers. Exactly one of tripId /
+// tripTypeId is set for TRIP / TRIP_TYPE; both null for ALL (DB CHECK
+// calendar_feed_scope). These are STAFF-detail feeds (full itinerary incl.
+// logistical notes); participant-safe calendar feeds are tracked separately.
+enum CalendarFeedScope {
+  TRIP
+  TRIP_TYPE
+  ALL
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -56,6 +66,7 @@ model User {
   todoistConnection    TodoistConnection?
   tripTodoistLinks     TripTodoistLink[]
   tripTypeTodoistLinks TripTypeTodoistLink[]
+  calendarFeeds        CalendarFeed[]        @relation("CreatedCalendarFeeds")
 }
 
 enum TodoistAuthType {
@@ -120,6 +131,7 @@ model TripType {
   locations       Location[] // implicit m2m (tags)
   regions         Region[]   @relation("RegionTripTypes") // regions this type plans in
   trips           Trip[]
+  calendarFeeds   CalendarFeed[]
   todoistLinks    TripTypeTodoistLink[]
 }
 
@@ -167,6 +179,7 @@ model Location {
   stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
   shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   siteNotes            Note[]             @relation("LocationNotes") // contact log for this venue
+  primaryForDays       ItineraryDay[]     @relation("DayPrimaryLocation") // days that default new items here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -222,6 +235,7 @@ model Trip {
   createdById      String?
   days             ItineraryDay[]
   shareLinks       ShareLink[]
+  calendarFeeds    CalendarFeed[]
   stays            Stay[]
   bookings         Booking[] // venue-engagement bookings scoped to this trip
   notesLog         Note[]         @relation("TripNotes")
@@ -239,9 +253,14 @@ model ItineraryDay {
   title            String?
   logisticalNotes  String? // staff-only on participant/host-site shares
   participantNotes String? // participant-facing free text (devotional theme, scripture, walk notes)
+  // Default venue for the day: new schedule items pre-fill their location picker
+  // with this. Optional; SetNull so archiving/deleting a location never drops days.
+  primaryLocation   Location?     @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
+  primaryLocationId String?
   scheduleItems    ScheduleItem[]
 
   @@index([tripId])
+  @@index([primaryLocationId])
 }
 
 // A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).
@@ -411,6 +430,28 @@ model ShareLink {
 
   @@index([tripId])
   @@index([locationId])
+}
+
+// A subscribable iCalendar feed. The token is an unguessable capability (like a
+// ShareLink) served at /api/feed/<token>.ics; calendar apps poll it to stay in
+// sync. Scope picks which trips it covers (see CalendarFeedScope). Cascade on the
+// scoped trip / trip type so deleting them cleans up their feeds.
+model CalendarFeed {
+  id          String            @id @default(cuid())
+  token       String            @unique @default(cuid()) // unguessable URL segment
+  scope       CalendarFeedScope
+  trip        Trip?             @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId      String? // set ⇔ scope = TRIP
+  tripType    TripType?         @relation(fields: [tripTypeId], references: [id], onDelete: Cascade)
+  tripTypeId  String? // set ⇔ scope = TRIP_TYPE
+  label       String?
+  enabled     Boolean           @default(true)
+  createdBy   User?             @relation("CreatedCalendarFeeds", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdAt   DateTime          @default(now())
+
+  @@index([tripId])
+  @@index([tripTypeId])
 }
 
 // 1:1 extension of a Location. Presence ⇒ the location can host/lodge the group

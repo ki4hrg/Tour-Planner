@@ -24,6 +24,7 @@ import {
   templatizeStays,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { getTodoistAuth } from "@/lib/todoist-sync";
 import { createProject } from "@/lib/todoist";
 
@@ -343,7 +344,12 @@ export async function addDay(tripId: string): Promise<FormState> {
 
 export async function updateDay(
   dayId: string,
-  input: { title?: string; logisticalNotes?: string; participantNotes?: string },
+  input: {
+    title?: string;
+    logisticalNotes?: string;
+    participantNotes?: string;
+    primaryLocationId?: string;
+  },
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = daySchema.safeParse(input);
@@ -355,6 +361,7 @@ export async function updateDay(
       title: parsed.data.title || null,
       logisticalNotes: parsed.data.logisticalNotes || null,
       participantNotes: parsed.data.participantNotes || null,
+      primaryLocationId: parsed.data.primaryLocationId || null,
     },
   });
 
@@ -579,9 +586,20 @@ export async function reorderScheduleItems(
   orderedItemIds: string[],
 ): Promise<FormState> {
   await assertRole("PLANNER");
+  // Reorder carries the times with it: a moved item keeps its own duration while the
+  // day's anchor + free-time gaps are preserved, so the visible sequence and the clock
+  // never disagree. See cascadeReorderedTimes for the exact model.
+  const items = await prisma.scheduleItem.findMany({
+    where: { dayId },
+    select: { id: true, startTime: true, endTime: true },
+  });
+  const reordered = cascadeReorderedTimes(items, orderedItemIds);
   await prisma.$transaction(
-    orderedItemIds.map((id, i) =>
-      prisma.scheduleItem.update({ where: { id }, data: { order: i + 1 } }),
+    reordered.map((it) =>
+      prisma.scheduleItem.update({
+        where: { id: it.id },
+        data: { order: it.order, startTime: it.startTime, endTime: it.endTime },
+      }),
     ),
   );
   const tripId = await tripIdForDay(dayId);
