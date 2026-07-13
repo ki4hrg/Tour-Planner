@@ -25,6 +25,7 @@ import {
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
 import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
+import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
 import { createProject } from "@/lib/todoist";
 
@@ -504,6 +505,11 @@ export async function addScheduleItem(
 export async function updateScheduleItem(
   itemId: string,
   input: ScheduleItemInputData,
+  // When `cascade` is set, ripple a start/end change through the rest of the day:
+  // every later timed item shifts by the delta this item's trailing edge moved,
+  // preserving downstream gaps (see cascadeFromEdit). Opt-in so a planner can leave
+  // a fixed downstream anchor (a booked tour) in place.
+  options?: { cascade?: boolean },
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
@@ -511,9 +517,26 @@ export async function updateScheduleItem(
   const idErr = await identityError(parsed.data);
   if (idErr) return { error: idErr };
 
+  // Pre-edit times + day are needed to compute the ripple delta before we overwrite.
+  const existing = await prisma.scheduleItem.findUnique({
+    where: { id: itemId },
+    select: { dayId: true },
+  });
+  if (!existing) return { error: "Item not found." };
+
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
   const item = await prisma.$transaction(async (tx) => {
+    // Snapshot the day (with the edited item's OLD times) before mutating, so the
+    // ripple measures against pre-edit spacing.
+    const cascade = options?.cascade ?? false;
+    const siblings = cascade
+      ? await tx.scheduleItem.findMany({
+          where: { dayId: existing.dayId },
+          select: { id: true, order: true, startTime: true, endTime: true },
+        })
+      : [];
+
     const updated = await tx.scheduleItem.update({
       where: { id: itemId },
       data: {
@@ -523,6 +546,22 @@ export async function updateScheduleItem(
       },
       select: { day: { select: { tripId: true } } },
     });
+
+    if (cascade) {
+      const shifts = cascadeFromEdit(
+        siblings,
+        itemId,
+        parsed.data.startTime ?? null,
+        parsed.data.endTime ?? null,
+      );
+      for (const s of shifts) {
+        await tx.scheduleItem.update({
+          where: { id: s.id },
+          data: { startTime: s.startTime, endTime: s.endTime },
+        });
+      }
+    }
+
     await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
     if (parsed.data.locationIds.length > 0) {
       await tx.scheduleItemSite.createMany({
@@ -605,6 +644,53 @@ export async function reorderScheduleItems(
   const tripId = await tripIdForDay(dayId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true };
+}
+
+// Day reflow — "we're running behind": slide a run of timed items by a fixed
+// number of minutes (negative = earlier). `fromItemId` scopes it to that item and
+// everything ordered after it; omit it to shift the whole day. Untimed items and
+// items before the anchor are left alone.
+export async function shiftDaySchedule(
+  dayId: string,
+  deltaMinutes: number,
+  fromItemId?: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
+    return { error: "Enter a non-zero number of minutes." };
+  }
+
+  const items = await prisma.scheduleItem.findMany({
+    where: { dayId },
+    select: { id: true, order: true, startTime: true, endTime: true },
+  });
+  const fromOrder = fromItemId
+    ? (items.find((it) => it.id === fromItemId)?.order ?? 1)
+    : 1;
+
+  const shifts = shiftDayItems(items, deltaMinutes, fromOrder);
+  if (shifts.length === 0) {
+    return { error: "No timed items to shift." };
+  }
+
+  await prisma.$transaction(
+    shifts.map((s) =>
+      prisma.scheduleItem.update({
+        where: { id: s.id },
+        data: { startTime: s.startTime, endTime: s.endTime },
+      }),
+    ),
+  );
+
+  const tripId = await tripIdForDay(dayId);
+  if (tripId) revalidateTrip(tripId);
+
+  const n = shifts.length;
+  const dir = deltaMinutes > 0 ? "later" : "earlier";
+  return {
+    ok: true,
+    message: `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.`,
+  };
 }
 
 // --- Booking CRUD (attached to a schedule item) ---

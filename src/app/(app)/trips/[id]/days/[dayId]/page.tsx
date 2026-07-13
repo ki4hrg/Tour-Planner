@@ -128,6 +128,7 @@ export default async function TripDayPage({
         ) : (
           <DayTimeline
             tripId={trip.id}
+            dayId={day.id}
             items={serialized.items}
             lodging={lodging}
             canEdit={canEdit}
