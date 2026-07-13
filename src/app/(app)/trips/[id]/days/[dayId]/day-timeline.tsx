@@ -71,9 +71,11 @@ export function DayTimeline({
   );
 }
 
-// "Running behind?" — slide the whole day, or everything from a chosen item
-// onward, by a fixed number of minutes. The on-the-ground reflow that a single
-// item edit can't do. Items keep their own lengths and their spacing.
+// Slide the whole day, or everything from a chosen item onward, by a fixed number
+// of minutes — items keep their own lengths and spacing. This is a *slide*, not a
+// *compress*: it moves later items rigidly, so it won't hold a fixed end time (a
+// booked worship slot, dinner). Absorbing a delay against fixed anchors is the
+// compress case — tracked in docs/itinerary-time-editing.md, not built yet.
 function DayShiftControl({
   dayId,
   items,
@@ -107,14 +109,20 @@ function DayShiftControl({
         onClick={() => setOpen(true)}
         className="text-xs text-muted-foreground underline-offset-2 hover:underline"
       >
-        Running behind? Shift the day →
+        Slide times →
       </button>
     );
   }
 
   return (
     <div className="space-y-2.5 rounded-md border border-dashed p-3">
-      <p className="text-sm font-medium">Shift timing</p>
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">Slide timing</p>
+        <p className="text-xs text-muted-foreground">
+          Moves the selected run by a fixed amount, keeping each item&rsquo;s
+          length. Later items move too — it won&rsquo;t hold a fixed end time.
+        </p>
+      </div>
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
           <Label className="text-xs" htmlFor={`shift-min-${dayId}`}>
