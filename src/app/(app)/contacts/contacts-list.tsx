@@ -110,7 +110,7 @@ export function ContactsList({ contacts, isGrouped }: ContactsListProps) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
       {sortedLocations.map(([locationId, contactsInLocation]) => {
         const groupName = locationName(locationId, contactsInLocation);
 

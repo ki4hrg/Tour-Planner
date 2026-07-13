@@ -299,9 +299,7 @@ export default async function TripOverviewPage({
     : [];
 
   return (
-    // This is the most information-dense screen, so let it grow past the shared
-    // max-w-5xl into the surrounding whitespace once there's room (xl/2xl).
-    <div className="space-y-6 xl:-mx-16 2xl:-mx-32">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
           {trip.name}

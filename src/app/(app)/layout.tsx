@@ -15,7 +15,7 @@ export default async function AppLayout({
     <div className="flex min-h-full flex-1 flex-col">
       <OfflineBanner />
       <AppNav user={user} />
-      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 print:max-w-none print:p-0">
+      <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 print:max-w-none print:p-0">
         {children}
       </div>
     </div>
