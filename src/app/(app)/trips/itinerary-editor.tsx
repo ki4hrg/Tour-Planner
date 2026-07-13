@@ -294,6 +294,9 @@ function DayCard({
   const [participantNotes, setParticipantNotes] = useState(
     day.participantNotes ?? "",
   );
+  const [primaryLocationId, setPrimaryLocationId] = useState<string>(
+    day.primaryLocationId ?? NONE,
+  );
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
     const next = [...day.items];
@@ -391,6 +394,27 @@ function DayCard({
               placeholder="e.g. Theme: The Road to Emmaus · Luke 24:13–35"
             />
           </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Primary location{" "}
+              <span className="text-muted-foreground">
+                (pre-fills new items&rsquo; location)
+              </span>
+            </Label>
+            <Select value={primaryLocationId} onValueChange={setPrimaryLocationId}>
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {locations.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             size="sm"
             disabled={pending}
@@ -401,6 +425,8 @@ function DayCard({
                     title,
                     logisticalNotes: notes,
                     participantNotes,
+                    primaryLocationId:
+                      primaryLocationId === NONE ? "" : primaryLocationId,
                   }),
                 () => setEditingDay(false),
               )
@@ -458,6 +484,7 @@ function DayCard({
                 locations={locations}
                 contacts={contacts}
                 presentations={presentations}
+                defaultLocationId={day.primaryLocationId}
                 submitLabel="Add item"
                 onCreateLocation={onCreateLocation}
                 onCreateContact={onCreateContact}
@@ -682,6 +709,7 @@ function ItemFields({
   contacts,
   presentations,
   initial,
+  defaultLocationId,
   submitLabel,
   onSubmit,
   onCancel,
@@ -694,6 +722,8 @@ function ItemFields({
   contacts: Contact[];
   presentations: Presentation[];
   initial?: SerializedScheduleItem;
+  // Day's primary location — pre-fills the picker for a NEW item (ignored on edit).
+  defaultLocationId?: string | null;
   submitLabel: string;
   onSubmit: (data: ScheduleItemInputData, done: () => void) => void;
   onCancel: () => void;
@@ -720,7 +750,11 @@ function ItemFields({
   );
   const [addPresenter, setAddPresenter] = useState<string>(NONE);
   const [locationIds, setLocationIds] = useState<string[]>(
-    initial?.sites.map((s) => s.locationId) ?? [],
+    initial
+      ? initial.sites.map((s) => s.locationId)
+      : defaultLocationId
+        ? [defaultLocationId]
+        : [],
   );
 
   const [showAll, setShowAll] = useState(false);
@@ -832,7 +866,8 @@ function ItemFields({
           setNotes("");
           setPresentationId(NONE);
           setPresenterIds([]);
-          setLocationIds([]);
+          // Re-seed the day's primary so a run of items at one venue stays pre-filled.
+          setLocationIds(defaultLocationId ? [defaultLocationId] : []);
         }
       },
     );

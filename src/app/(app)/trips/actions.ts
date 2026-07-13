@@ -344,7 +344,12 @@ export async function addDay(tripId: string): Promise<FormState> {
 
 export async function updateDay(
   dayId: string,
-  input: { title?: string; logisticalNotes?: string; participantNotes?: string },
+  input: {
+    title?: string;
+    logisticalNotes?: string;
+    participantNotes?: string;
+    primaryLocationId?: string;
+  },
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = daySchema.safeParse(input);
@@ -356,6 +361,7 @@ export async function updateDay(
       title: parsed.data.title || null,
       logisticalNotes: parsed.data.logisticalNotes || null,
       participantNotes: parsed.data.participantNotes || null,
+      primaryLocationId: parsed.data.primaryLocationId || null,
     },
   });
 

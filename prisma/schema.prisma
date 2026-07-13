@@ -167,6 +167,7 @@ model Location {
   stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
   shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   siteNotes            Note[]             @relation("LocationNotes") // contact log for this venue
+  primaryForDays       ItineraryDay[]     @relation("DayPrimaryLocation") // days that default new items here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -239,9 +240,14 @@ model ItineraryDay {
   title            String?
   logisticalNotes  String? // staff-only on participant/host-site shares
   participantNotes String? // participant-facing free text (devotional theme, scripture, walk notes)
+  // Default venue for the day: new schedule items pre-fill their location picker
+  // with this. Optional; SetNull so archiving/deleting a location never drops days.
+  primaryLocation   Location?     @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
+  primaryLocationId String?
   scheduleItems    ScheduleItem[]
 
   @@index([tripId])
+  @@index([primaryLocationId])
 }
 
 // A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).
