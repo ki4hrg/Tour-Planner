@@ -16,7 +16,7 @@ export interface ScheduleGap {
  * Parse a "HH:MM" time string into total minutes since midnight.
  * Returns null if the string is malformed.
  */
-function timeToMinutes(time: string): number | null {
+export function timeToMinutes(time: string): number | null {
   const match = time.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
   const hours = parseInt(match[1], 10);
@@ -28,7 +28,7 @@ function timeToMinutes(time: string): number | null {
 /**
  * Convert total minutes since midnight into a "HH:MM" time string.
  */
-function minutesToTime(totalMinutes: number): string {
+export function minutesToTime(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
