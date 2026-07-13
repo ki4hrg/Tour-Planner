@@ -16,6 +16,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
+import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUSES,
@@ -589,8 +590,8 @@ function ItemRow({
                 onCreateLocation={onCreateLocation}
                 onCreateContact={onCreateContact}
                 onCreatePresentation={onCreatePresentation}
-                onSubmit={(data, done) =>
-                  run(() => updateScheduleItem(item.id, data), () => {
+                onSubmit={(data, done, opts) =>
+                  run(() => updateScheduleItem(item.id, data, opts), () => {
                     done();
                     setEditing(false);
                   })
@@ -725,7 +726,11 @@ function ItemFields({
   // Day's primary location — pre-fills the picker for a NEW item (ignored on edit).
   defaultLocationId?: string | null;
   submitLabel: string;
-  onSubmit: (data: ScheduleItemInputData, done: () => void) => void;
+  onSubmit: (
+    data: ScheduleItemInputData,
+    done: () => void,
+    opts?: { cascade?: boolean },
+  ) => void;
   onCancel: () => void;
   onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
@@ -741,6 +746,9 @@ function ItemFields({
   const [isBlock, setIsBlock] = useState(initial?.isBlock ?? false);
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
+  // Ripple a time change through the rest of the day (edit only). Default on so
+  // on-the-fly nudges keep the day's spacing; turn off to leave later items alone.
+  const [cascade, setCascade] = useState(true);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [presentationId, setPresentationId] = useState<string>(
     initial?.presentationId ?? NONE,
@@ -842,6 +850,32 @@ function ItemFields({
     }
   };
 
+  // End can't precede start. `min` guides native pickers; this backstops manual
+  // entry and disables Save so the bad state never reaches the server refine.
+  const timesInvalid =
+    !!startTime &&
+    !!endTime &&
+    timeToMinutes(startTime) !== null &&
+    timeToMinutes(endTime) !== null &&
+    (timeToMinutes(endTime) as number) < (timeToMinutes(startTime) as number);
+
+  // Moving the start past the end drags the end along, preserving the item's
+  // prior duration — so nudging a start later never inverts the slot.
+  const onStartChange = (v: string) => {
+    const vMin = v ? timeToMinutes(v) : null;
+    const endMin = endTime ? timeToMinutes(endTime) : null;
+    if (vMin !== null && endMin !== null && vMin > endMin) {
+      const prevStart = startTime ? timeToMinutes(startTime) : null;
+      const prevDuration =
+        prevStart !== null && endMin >= prevStart ? endMin - prevStart : 0;
+      setEndTime(minutesToTime(Math.min(24 * 60 - 1, vMin + prevDuration)));
+    }
+    setStartTime(v);
+  };
+
+  // Only editing a persisted, timed item can ripple the rest of the day.
+  const canCascade = !!initial && !!startTime && !selfDescribing;
+
   const submit = () => {
     onSubmit(
       {
@@ -870,6 +904,7 @@ function ItemFields({
           setLocationIds(defaultLocationId ? [defaultLocationId] : []);
         }
       },
+      { cascade: canCascade && cascade },
     );
   };
 
@@ -920,7 +955,7 @@ function ItemFields({
           <Input
             type="time"
             value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
+            onChange={(e) => onStartChange(e.target.value)}
           />
         </div>
         <div className="space-y-1.5">
@@ -928,10 +963,35 @@ function ItemFields({
           <Input
             type="time"
             value={endTime}
+            min={startTime || undefined}
+            aria-invalid={timesInvalid}
             onChange={(e) => setEndTime(e.target.value)}
           />
         </div>
       </div>
+
+      {timesInvalid ? (
+        <p className="text-xs text-destructive">
+          End time can&rsquo;t be before start time.
+        </p>
+      ) : null}
+
+      {canCascade ? (
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            className="mt-0.5"
+            checked={cascade}
+            onCheckedChange={(v) => setCascade(v === true)}
+          />
+          <span>
+            Shift later items to match
+            <span className="block text-xs text-muted-foreground">
+              Moves everything after this by the same amount, keeping the day&rsquo;s
+              spacing. Uncheck to leave later items where they are.
+            </span>
+          </span>
+        </label>
+      ) : null}
 
       {selfDescribing && selectedCategory ? (
         <p className="text-xs text-muted-foreground">
@@ -1189,7 +1249,12 @@ function ItemFields({
       )}
 
       <div className="flex gap-2">
-        <Button type="button" size="sm" onClick={submit}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={timesInvalid}
+          onClick={submit}
+        >
           {submitLabel}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
