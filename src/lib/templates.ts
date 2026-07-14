@@ -67,11 +67,23 @@ export type InstantiatedDay = {
 };
 
 // A venue-engagement booking lives at the trip level (tripId + locationId), so it
-// is copied alongside the days rather than nested under an item.
+// is copied alongside the days rather than nested under an item. Its payment
+// schedule (GH #51) is date-relative (days before trip start), so installments
+// carry over verbatim — the venue's standing terms, unlike the negotiated price.
+export type TemplateScheduleInstallment = {
+  label: string | null;
+  // Prisma.Decimal flows through untouched (never coerced across this boundary).
+  percent: Prisma.Decimal | number | null;
+  fixedAmount: Prisma.Decimal | number | null;
+  dueOffsetDays: number;
+  sortOrder: number;
+};
+
 export type TemplateVenueBooking = {
   locationId: string | null;
   label: string | null;
   notes: string | null;
+  paymentSchedule?: TemplateScheduleInstallment[];
 };
 
 export type InstantiatedVenueBooking = {
@@ -79,13 +91,16 @@ export type InstantiatedVenueBooking = {
   label: string | null;
   notes: string | null;
   status: BookingStatus;
+  paymentSchedule?: { create: TemplateScheduleInstallment[] };
 };
 
 /**
  * Deep-copy a trip/template's venue-engagement bookings into trip-level create-data.
- * Status is reset to NOT_BOOKED and the instance actuals (contact, confirmationRef)
- * are dropped — same reset policy as item bookings. Rows without a location are
- * skipped (engagements require one).
+ * Status is reset to NOT_BOOKED and the instance actuals (contact, confirmationRef,
+ * agreed price) are dropped — same reset policy as item bookings. The payment
+ * schedule is kept (fixed installment amounts included; the planner adjusts those
+ * if the next negotiation differs). Rows without a location are skipped
+ * (engagements require one).
  */
 export function instantiateVenueBookings(
   bookings: TemplateVenueBooking[],
@@ -99,6 +114,19 @@ export function instantiateVenueBookings(
       label: b.label,
       notes: b.notes,
       status: "NOT_BOOKED" as BookingStatus,
+      ...(b.paymentSchedule?.length
+        ? {
+            paymentSchedule: {
+              create: b.paymentSchedule.map((i) => ({
+                label: i.label,
+                percent: i.percent,
+                fixedAmount: i.fixedAmount,
+                dueOffsetDays: i.dueOffsetDays,
+                sortOrder: i.sortOrder,
+              })),
+            },
+          }
+        : {}),
     }));
 }
 

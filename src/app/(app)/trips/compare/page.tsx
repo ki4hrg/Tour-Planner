@@ -56,6 +56,10 @@ const TRIP_SELECT = {
       notes: true,
       bookedContactId: true,
       bookedContact: { select: { id: true, name: true } },
+      agreedAmount: true,
+      agreedCurrency: true,
+      payments: true,
+      paymentSchedule: true,
     },
   },
   stays: { select: { locationId: true, checkIn: true, checkOut: true } },
@@ -122,6 +126,7 @@ export default async function CompareYearsPage({
       engagements: t.bookings,
       stays: t.stays,
       locations,
+      tripStartDate: t.startDate,
     });
     for (const row of venueRows) {
       let line = venueMap.get(row.locationId);

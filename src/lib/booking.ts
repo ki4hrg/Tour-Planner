@@ -89,7 +89,8 @@ export function isBookingSecured(status: BookingStatus): boolean {
  * Whether a booking row needs the planner's attention — surfaced on the dashboard.
  * Pure (caller passes the already-computed window state), keeping render free of
  * Date.now(). "Needs info" = the window is open and the booking isn't secured yet,
- * OR it's secured but missing a reference, OR the venue is missing price/time.
+ * OR it's secured but missing a reference, OR the venue is missing price/time,
+ * OR a scheduled installment is past due (GH #51).
  */
 export function bookingNeedsInfo(args: {
   status: BookingStatus;
@@ -97,10 +98,12 @@ export function bookingNeedsInfo(args: {
   hasRef: boolean;
   isMissingCost: boolean;
   isMissingTime: boolean;
+  paymentOverdue: boolean;
 }): boolean {
-  const { status, windowOpen, hasRef, isMissingCost, isMissingTime } = args;
+  const { status, windowOpen, hasRef, isMissingCost, isMissingTime, paymentOverdue } =
+    args;
   if (windowOpen && status !== "NOT_NEEDED" && !isBookingSecured(status))
     return true;
   if (isBookingSecured(status) && !hasRef) return true;
-  return isMissingCost || isMissingTime;
+  return isMissingCost || isMissingTime || paymentOverdue;
 }

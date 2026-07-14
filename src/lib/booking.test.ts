@@ -74,6 +74,7 @@ describe("bookingNeedsInfo", () => {
     hasRef: true,
     isMissingCost: false,
     isMissingTime: false,
+    paymentOverdue: false,
   };
 
   it("flags an open window that is not yet secured", () => {
@@ -115,6 +116,12 @@ describe("bookingNeedsInfo", () => {
   it("flags missing price or time regardless of status", () => {
     expect(bookingNeedsInfo({ ...base, isMissingCost: true })).toBe(true);
     expect(bookingNeedsInfo({ ...base, isMissingTime: true })).toBe(true);
+  });
+  it("flags an overdue scheduled installment regardless of status", () => {
+    expect(bookingNeedsInfo({ ...base, paymentOverdue: true })).toBe(true);
+    expect(
+      bookingNeedsInfo({ ...base, status: "CONFIRMED", paymentOverdue: true }),
+    ).toBe(true);
   });
   it("is quiet when everything is in order", () => {
     expect(bookingNeedsInfo({ ...base, status: "CONFIRMED" })).toBe(false);
