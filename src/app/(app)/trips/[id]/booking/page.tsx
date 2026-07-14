@@ -38,6 +38,14 @@ export default async function BookingDashboardPage({
               endTime: true,
               category: { select: { name: true } },
               presentation: { select: { title: true } },
+              // Label derivation for a travel item's site-less booking row.
+              travel: {
+                select: {
+                  method: true,
+                  toLabel: true,
+                  toLocation: { select: { name: true } },
+                },
+              },
               sites: { select: { locationId: true } },
               bookings: {
                 orderBy: { createdAt: "asc" },

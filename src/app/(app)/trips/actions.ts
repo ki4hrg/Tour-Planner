@@ -7,7 +7,6 @@ import type {
   TripStatus,
   BookingStatus,
   ShareAudience,
-  TravelMethod,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
@@ -25,6 +24,7 @@ import {
   templatizeStays,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { travelLegCreateData } from "@/lib/travel";
 import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
@@ -459,12 +459,15 @@ export type ScheduleItemInputData = {
 // A schedule item must be identifiable: it needs a title or at least one
 // location — unless its category is a self-describing built-in (Free time /
 // Break), which legitimately carries only times + notes, or it's a travel
-// span (its identity is the route). Returns an error message when the item
-// is under-specified, else null.
+// span (its identity is the route). `hasExistingLeg` covers updates that
+// leave an item's persisted leg untouched (travel undefined). Returns an
+// error message when the item is under-specified, else null.
 async function identityError(
   d: ReturnType<typeof scheduleItemSchema.parse>,
+  hasExistingLeg = false,
 ): Promise<string | null> {
-  if (d.title || d.locationIds.length > 0 || d.travel) return null;
+  if (d.title || d.locationIds.length > 0 || d.travel || hasExistingLeg)
+    return null;
   const selfDescribing = d.categoryId
     ? (
         await prisma.scheduleItemCategory.findUnique({
@@ -490,34 +493,16 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
   };
 }
 
-// Nested create-data for a travel leg + its stops (GH #80).
-function toTravelCreate(
-  t: NonNullable<ReturnType<typeof scheduleItemSchema.parse>["travel"]>,
-) {
-  return {
-    method: t.method as TravelMethod,
-    fromLocationId: t.fromLocationId || null,
-    fromLabel: t.fromLabel || null,
-    toLocationId: t.toLocationId || null,
-    toLabel: t.toLabel || null,
-    stops: {
-      create: t.stops.map((s, i) => ({
-        locationId: s.locationId || null,
-        label: s.label || null,
-        dwellMinutes: s.dwellMinutes ?? null,
-        order: i,
-      })),
-    },
-  };
-}
-
 // A travel item's "where" is its leg (origin/destination), never ScheduleItemSite
 // rows — that keeps it out of venue-run grouping and venue engagements. Force
-// the site list empty whenever a leg is being set.
+// the site list empty whenever a leg is being set — or (on update) kept: an
+// existing leg the input leaves untouched wins over stray locationIds.
 function effectiveLocationIds(
   d: ReturnType<typeof scheduleItemSchema.parse>,
+  hasExistingLeg = false,
 ): string[] {
-  return d.travel ? [] : d.locationIds;
+  const isTravel = d.travel !== undefined ? !!d.travel : hasExistingLeg;
+  return isTravel ? [] : d.locationIds;
 }
 
 export async function addScheduleItem(
@@ -555,7 +540,7 @@ export async function addScheduleItem(
           })),
         },
         ...(parsed.data.travel
-          ? { travel: { create: toTravelCreate(parsed.data.travel) } }
+          ? { travel: { create: travelLegCreateData(parsed.data.travel) } }
           : {}),
       },
     });
@@ -578,15 +563,20 @@ export async function updateScheduleItem(
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
-  const idErr = await identityError(parsed.data);
-  if (idErr) return { error: idErr };
 
-  // Pre-edit times + day are needed to compute the ripple delta before we overwrite.
+  // Pre-edit times + day are needed to compute the ripple delta before we
+  // overwrite; the leg presence feeds the identity check and the travel-wins
+  // site handling when the input leaves the leg untouched.
   const existing = await prisma.scheduleItem.findUnique({
     where: { id: itemId },
-    select: { dayId: true },
+    select: { dayId: true, travel: { select: { id: true } } },
   });
   if (!existing) return { error: "Item not found." };
+
+  const hasExistingLeg =
+    parsed.data.travel === undefined && existing.travel != null;
+  const idErr = await identityError(parsed.data, hasExistingLeg);
+  if (idErr) return { error: idErr };
 
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
@@ -634,13 +624,13 @@ export async function updateScheduleItem(
         await tx.travelLeg.create({
           data: {
             scheduleItemId: itemId,
-            ...toTravelCreate(parsed.data.travel),
+            ...travelLegCreateData(parsed.data.travel),
           },
         });
       }
     }
 
-    const locationIds = effectiveLocationIds(parsed.data);
+    const locationIds = effectiveLocationIds(parsed.data, hasExistingLeg);
     await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
     if (locationIds.length > 0) {
       await tx.scheduleItemSite.createMany({

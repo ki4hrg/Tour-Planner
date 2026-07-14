@@ -1,11 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { TravelMethod } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { travelLegCreateData } from "@/lib/travel";
+import { TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 
 // A travel span (GH #80) on add/update-schedule-item. Setting it makes the item
 // a travel leg: origin → destination by a method, item start/end = depart/arrive.
@@ -25,26 +26,6 @@ const travelInputSchema = z.object({
     )
     .optional(),
 });
-
-type TravelInput = z.infer<typeof travelInputSchema>;
-
-function travelCreateData(t: TravelInput) {
-  return {
-    method: t.method as TravelMethod,
-    fromLocationId: t.fromLocationId || null,
-    fromLabel: t.fromLabel || null,
-    toLocationId: t.toLocationId || null,
-    toLabel: t.toLabel || null,
-    stops: {
-      create: (t.stops ?? []).map((s, i) => ({
-        locationId: s.locationId || null,
-        label: s.label || null,
-        dwellMinutes: s.dwellMinutes ?? null,
-        order: i,
-      })),
-    },
-  };
-}
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
   // ── list-schedule-categories (VIEWER+) ────────────────────────────────
@@ -132,16 +113,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                     location: { select: { id: true, name: true } },
                   },
                 },
-                travel: {
-                  include: {
-                    fromLocation: { select: { id: true, name: true } },
-                    toLocation: { select: { id: true, name: true } },
-                    stops: {
-                      orderBy: { order: "asc" },
-                      include: { location: { select: { id: true, name: true } } },
-                    },
-                  },
-                },
+                travel: TRAVEL_LEG_INCLUDE,
                 bookings: {
                   select: {
                     id: true,
@@ -345,7 +317,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                       })),
                     }
                   : undefined,
-              travel: travel ? { create: travelCreateData(travel) } : undefined,
+              travel: travel
+                ? { create: travelLegCreateData(travel) }
+                : undefined,
             },
           });
         });
@@ -418,6 +392,45 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           };
         }
 
+        const existing = await prisma.scheduleItem.findUnique({
+          where: { id: itemId },
+          select: {
+            title: true,
+            travel: { select: { id: true } },
+            _count: { select: { sites: true } },
+          },
+        });
+        if (!existing) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Item not found." }],
+            isError: true,
+          };
+        }
+
+        // The item must stay identifiable: removing the leg (travel: null)
+        // needs a title or locations to remain.
+        const finalTitle = title !== undefined ? title || null : existing.title;
+        const finalHasSites =
+          locationIds !== undefined
+            ? locationIds.length > 0
+            : existing._count.sites > 0;
+        if (travel === null && !finalTitle && !finalHasSites) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Removing the travel leg would leave the item with no title, locations, or route — set a title or locationIds in the same call.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // An existing leg the input leaves untouched wins over stray
+        // locationIds — a travel item's "where" is its leg (mirrors the web
+        // action's effectiveLocationIds).
+        const isTravel = travel !== undefined ? !!travel : !!existing.travel;
+
         const updateData: Record<string, unknown> = {};
         if (title !== undefined) updateData.title = title || null;
         if (categoryId !== undefined)
@@ -439,7 +452,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             await tx.travelLeg.deleteMany({ where: { scheduleItemId: itemId } });
             if (travel) {
               await tx.travelLeg.create({
-                data: { scheduleItemId: itemId, ...travelCreateData(travel) },
+                data: { scheduleItemId: itemId, ...travelLegCreateData(travel) },
               });
               await tx.scheduleItemSite.deleteMany({
                 where: { scheduleItemId: itemId },
@@ -447,7 +460,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             }
           }
 
-          if (locationIds !== undefined && !travel) {
+          if (locationIds !== undefined && !isTravel) {
             await tx.scheduleItemSite.deleteMany({
               where: { scheduleItemId: itemId },
             });
