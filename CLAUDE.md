@@ -203,6 +203,19 @@ npm test                          # vitest
   (DB CHECK `stay_anchor_mode`). Templatizing/instantiating a trip converts between
   them (`templatizeStays`/`instantiateStays` in `src/lib/templates.ts`), mirroring
   how `ItineraryDay.date` derives from `startDate + dayIndex`.
+- **Travel legs (GH #80)**: a `ScheduleItem` with a 1:1 `TravelLeg` extension IS a
+  travel span — origin → destination (`fromLocation`/`toLocation` or free-text
+  labels), a `TravelMethod`, ordered `TravelStop`s — with the item's
+  `startTime`/`endTime` as depart/arrive. Travel items carry **no**
+  `ScheduleItemSite` rows (so they don't join venue runs or feed venue
+  engagements; a coach reservation is the ordinary site-less item booking), and
+  a fully-timed span gives `computeScheduleGaps` sound boundaries at venue
+  transitions — do NOT create paired start-only "Depart"/"Arrive" items. Label
+  derives as "Coach to X" (`scheduleItemPrimaryLabel`); route helpers
+  (`travelRoute`/`travelDetailLine`) + serialization live in `src/lib/trips.ts`
+  (`TRAVEL_LEG_INCLUDE` is the Prisma include every item query spreads). The
+  editor has a dedicated `TravelFields` form ("+ Add travel"); legs copy
+  verbatim through templatize/instantiate.
 - **Bookings = venue engagements**: a `Booking` targets **exactly one of** a `(trip,
   location)` engagement OR a `ScheduleItem` (DB CHECK `num_nonnulls(scheduleItemId,
   tripId) = 1`, plus `tripId ⇒ locationId`). The engagement is the normal case: ONE

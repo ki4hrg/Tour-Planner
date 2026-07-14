@@ -7,6 +7,7 @@ import type {
   TripStatus,
   BookingStatus,
   ShareAudience,
+  TravelMethod,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
@@ -80,6 +81,23 @@ const TEMPLATE_DAYS_SELECT = {
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
       bookings: { select: { locationId: true, label: true, notes: true } },
+      travel: {
+        select: {
+          method: true,
+          fromLocationId: true,
+          fromLabel: true,
+          toLocationId: true,
+          toLabel: true,
+          stops: {
+            select: {
+              locationId: true,
+              label: true,
+              dwellMinutes: true,
+              order: true,
+            },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.ItineraryDaySelect;
@@ -414,6 +432,15 @@ export async function reorderDays(
 
 // --- ScheduleItem CRUD + reorder ---
 
+export type TravelLegInputData = {
+  method: string;
+  fromLocationId?: string;
+  fromLabel?: string;
+  toLocationId?: string;
+  toLabel?: string;
+  stops: { locationId?: string; label?: string; dwellMinutes?: number | string }[];
+};
+
 export type ScheduleItemInputData = {
   categoryId?: string;
   title?: string;
@@ -424,16 +451,20 @@ export type ScheduleItemInputData = {
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
+  // A travel span (GH #80). On update: null removes the leg, undefined leaves
+  // an existing leg untouched.
+  travel?: TravelLegInputData | null;
 };
 
 // A schedule item must be identifiable: it needs a title or at least one
 // location — unless its category is a self-describing built-in (Free time /
-// Break), which legitimately carries only times + notes. Returns an error
-// message when the item is under-specified, else null.
+// Break), which legitimately carries only times + notes, or it's a travel
+// span (its identity is the route). Returns an error message when the item
+// is under-specified, else null.
 async function identityError(
   d: ReturnType<typeof scheduleItemSchema.parse>,
 ): Promise<string | null> {
-  if (d.title || d.locationIds.length > 0) return null;
+  if (d.title || d.locationIds.length > 0 || d.travel) return null;
   const selfDescribing = d.categoryId
     ? (
         await prisma.scheduleItemCategory.findUnique({
@@ -457,6 +488,36 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     isBlock: d.isBlock ?? false,
     presentationId: d.presentationId || null,
   };
+}
+
+// Nested create-data for a travel leg + its stops (GH #80).
+function toTravelCreate(
+  t: NonNullable<ReturnType<typeof scheduleItemSchema.parse>["travel"]>,
+) {
+  return {
+    method: t.method as TravelMethod,
+    fromLocationId: t.fromLocationId || null,
+    fromLabel: t.fromLabel || null,
+    toLocationId: t.toLocationId || null,
+    toLabel: t.toLabel || null,
+    stops: {
+      create: t.stops.map((s, i) => ({
+        locationId: s.locationId || null,
+        label: s.label || null,
+        dwellMinutes: s.dwellMinutes ?? null,
+        order: i,
+      })),
+    },
+  };
+}
+
+// A travel item's "where" is its leg (origin/destination), never ScheduleItemSite
+// rows — that keeps it out of venue-run grouping and venue engagements. Force
+// the site list empty whenever a leg is being set.
+function effectiveLocationIds(
+  d: ReturnType<typeof scheduleItemSchema.parse>,
+): string[] {
+  return d.travel ? [] : d.locationIds;
 }
 
 export async function addScheduleItem(
@@ -488,11 +549,14 @@ export async function addScheduleItem(
         ...toItemScalars(parsed.data),
         presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
         sites: {
-          create: parsed.data.locationIds.map((locationId, i) => ({
+          create: effectiveLocationIds(parsed.data).map((locationId, i) => ({
             locationId,
             order: i,
           })),
         },
+        ...(parsed.data.travel
+          ? { travel: { create: toTravelCreate(parsed.data.travel) } }
+          : {}),
       },
     });
   });
@@ -562,10 +626,25 @@ export async function updateScheduleItem(
       }
     }
 
+    // Travel leg (GH #80): an object replaces the leg wholesale, null removes
+    // it, undefined leaves an existing leg untouched.
+    if (parsed.data.travel !== undefined) {
+      await tx.travelLeg.deleteMany({ where: { scheduleItemId: itemId } });
+      if (parsed.data.travel) {
+        await tx.travelLeg.create({
+          data: {
+            scheduleItemId: itemId,
+            ...toTravelCreate(parsed.data.travel),
+          },
+        });
+      }
+    }
+
+    const locationIds = effectiveLocationIds(parsed.data);
     await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
-    if (parsed.data.locationIds.length > 0) {
+    if (locationIds.length > 0) {
       await tx.scheduleItemSite.createMany({
-        data: parsed.data.locationIds.map((locationId, i) => ({
+        data: locationIds.map((locationId, i) => ({
           scheduleItemId: itemId,
           locationId,
           order: i,
@@ -575,7 +654,7 @@ export async function updateScheduleItem(
       await tx.booking.updateMany({
         where: {
           scheduleItemId: itemId,
-          locationId: { notIn: parsed.data.locationIds },
+          locationId: { notIn: locationIds },
         },
         data: { locationId: null },
       });

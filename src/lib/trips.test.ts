@@ -5,7 +5,10 @@ import {
   effectivePresenters,
   summarizeDayLodging,
   deriveTripLifecycle,
+  travelRoute,
+  travelDetailLine,
   type SerializedScheduleItem,
+  type SerializedTravelLeg,
 } from "./trips";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -115,7 +118,102 @@ describe("scheduleItemPrimaryLabel", () => {
   });
 });
 
+// Minimal travel-leg factory for the label/route helpers (GH #80).
+function leg(over: Partial<SerializedTravelLeg> = {}): SerializedTravelLeg {
+  return {
+    id: "t1",
+    method: "COACH",
+    fromLocation: null,
+    fromLabel: null,
+    toLocation: null,
+    toLabel: null,
+    stops: [],
+    ...over,
+  };
+}
+
+describe("travel labels (GH #80)", () => {
+  it("labels a travel item by method + destination", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: null,
+      presentation: null,
+      category: { name: "Travel" },
+      travel: leg({ toLocation: { id: "b", name: "Bristol" } }),
+    });
+    expect(r.primary).toBe("Coach to Bristol");
+    expect(r.labelFromCategory).toBe(false);
+  });
+
+  it("prefers the free-text destination when no location is catalogued", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: null,
+      presentation: null,
+      category: null,
+      travel: leg({ method: "TRAIN", toLabel: "London Paddington" }),
+    });
+    expect(r.primary).toBe("Train to London Paddington");
+  });
+
+  it("falls back to the bare method label without a destination", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: null,
+      presentation: null,
+      category: null,
+      travel: leg({ method: "WALK" }),
+    });
+    expect(r.primary).toBe("Walk");
+  });
+
+  it("still lets an explicit title override the travel label", () => {
+    const r = scheduleItemPrimaryLabel({
+      title: "Scenic transfer",
+      presentation: null,
+      category: null,
+      travel: leg({ toLabel: "Bristol" }),
+    });
+    expect(r.primary).toBe("Scenic transfer");
+  });
+
+  it("travelRoute renders origin → destination, or the known endpoint", () => {
+    expect(
+      travelRoute(
+        leg({
+          fromLocation: { id: "a", name: "Old Sarum" },
+          toLocation: { id: "b", name: "Bristol" },
+        }),
+      ),
+    ).toBe("Old Sarum → Bristol");
+    expect(travelRoute(leg({ fromLabel: "Salisbury" }))).toBe("Salisbury");
+    expect(travelRoute(leg())).toBeNull();
+  });
+
+  it("travelDetailLine appends stops with dwell times", () => {
+    const detail = travelDetailLine(
+      leg({
+        fromLocation: { id: "a", name: "Old Sarum" },
+        toLocation: { id: "b", name: "Bristol" },
+        stops: [
+          { id: "s1", location: null, label: "M5 services", dwellMinutes: 15, order: 0 },
+          { id: "s2", location: { id: "st", name: "Stonehenge" }, label: null, dwellMinutes: null, order: 1 },
+        ],
+      }),
+    );
+    expect(detail).toBe("Old Sarum → Bristol · via M5 services (15 min), Stonehenge");
+    expect(travelDetailLine(leg())).toBeNull();
+  });
+});
+
 describe("groupItemsByVenue", () => {
+  it("gives a travel item its own location-less run (the seam between venues)", () => {
+    const runs = groupItemsByVenue([
+      item({ venues: ["Old Sarum"] }),
+      item({ travel: leg({ toLocation: { id: "b", name: "Bristol" } }) }),
+      item({ venues: ["New Room"] }),
+    ]);
+    expect(runs.map((r) => r.kind)).toEqual(["single", "none", "single"]);
+    expect(runs[1].items).toHaveLength(1);
+  });
+
   it("merges consecutive items at the same single venue into one run", () => {
     const runs = groupItemsByVenue([
       item({ venues: ["Sarum"] }),

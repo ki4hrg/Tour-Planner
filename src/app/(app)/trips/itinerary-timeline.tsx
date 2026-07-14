@@ -2,7 +2,18 @@
 
 import { Fragment } from "react";
 import Link from "next/link";
-import { MapPin, Moon } from "lucide-react";
+import {
+  Bus,
+  CarTaxiFront,
+  Footprints,
+  MapPin,
+  Moon,
+  MoveRight,
+  Plane,
+  Ship,
+  TrainFront,
+} from "lucide-react";
+import type { TravelMethod } from "@prisma/client";
 import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import { mapHref } from "@/lib/maps";
@@ -12,6 +23,7 @@ import {
   effectivePresenters,
   groupItemsByVenue,
   scheduleItemPrimaryLabel,
+  travelDetailLine,
   type DayLodgingSummary,
   type SerializedScheduleItem,
   type SerializedBooking,
@@ -199,6 +211,31 @@ function RunHeader({
   );
 }
 
+const TRAVEL_METHOD_ICONS: Record<
+  TravelMethod,
+  React.ComponentType<{ className?: string }>
+> = {
+  COACH: Bus,
+  TRAIN: TrainFront,
+  FERRY: Ship,
+  FLIGHT: Plane,
+  WALK: Footprints,
+  TAXI: CarTaxiFront,
+  OTHER: MoveRight,
+};
+
+// The travel icon shared by the grouped timeline and the editor's flat rows.
+export function TravelMethodIcon({
+  method,
+  className,
+}: {
+  method: TravelMethod;
+  className?: string;
+}) {
+  const Icon = TRAVEL_METHOD_ICONS[method];
+  return <Icon className={className} />;
+}
+
 // One item row: a fixed time / chip / content grid so every title shares a left
 // edge regardless of chip width. The category chip is dropped when the label IS
 // the category name (the label is tinted in the category colour instead).
@@ -217,6 +254,57 @@ function TimelineRow({
   const speakers = effectivePresenters(item);
   const { primary, presentationIsPrimary, labelFromCategory } =
     scheduleItemPrimaryLabel(item);
+
+  // A travel span renders as the seam between venue runs: method icon in the
+  // chip column, "Coach to Bristol" heading, route + stops underneath.
+  if (item.travel) {
+    const detail = travelDetailLine(item.travel);
+    return (
+      <li
+        id={`item-${item.id}`}
+        className="grid scroll-mt-20 grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[5.25rem_7rem_1fr]"
+      >
+        <time className="font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
+          {time}
+        </time>
+        <span className="hidden text-muted-foreground sm:block">
+          <TravelMethodIcon method={item.travel.method} className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <span className="mr-1.5 inline-block align-middle text-muted-foreground sm:hidden">
+            <TravelMethodIcon method={item.travel.method} className="size-3.5" />
+          </span>
+          {href ? (
+            <Link
+              href={href}
+              className="font-medium italic text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {breakAfterSlashes(primary)}
+            </Link>
+          ) : (
+            <span className="font-medium italic text-muted-foreground">
+              {breakAfterSlashes(primary)}
+            </span>
+          )}
+          {detail || item.notes ? (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              {detail ? <span>{detail}</span> : null}
+              {item.notes ? <span>· {item.notes}</span> : null}
+            </div>
+          ) : null}
+          {showBookings && item.bookings.length > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {item.bookings.map((b) => (
+                <BookingPill key={b.id} booking={b} item={item} />
+              ))}
+            </div>
+          ) : null}
+          {extra}
+        </div>
+      </li>
+    );
+  }
+
   const showChip = !!item.category && !labelFromCategory;
   const showPresentation = item.presentation && !presentationIsPrimary;
   const hasSecondary =

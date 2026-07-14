@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
-import { serializeDay, summarizeDayLodging } from "@/lib/trips";
+import { serializeDay, summarizeDayLodging, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 import { TimelineGroups } from "../../itinerary-timeline";
 import { PrintActions } from "./print-actions";
 
@@ -37,6 +37,7 @@ export default async function TripPrintPage({
                 },
               },
               presenters: { select: { id: true, name: true } },
+              travel: TRAVEL_LEG_INCLUDE,
               sites: {
                 orderBy: { order: "asc" },
                 include: { location: { select: { id: true, name: true } } },

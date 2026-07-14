@@ -17,7 +17,11 @@
  */
 
 import { addDays, parseDateInput, toDateInput } from "./dates";
-import { scheduleItemPrimaryLabel, effectivePresenters } from "./trips";
+import {
+  scheduleItemPrimaryLabel,
+  effectivePresenters,
+  travelRoute,
+} from "./trips";
 import type { SerializedDay } from "./trips";
 import { toIcsDate, toIcsFloatingDateTime, type IcsEvent } from "./ics";
 
@@ -104,11 +108,19 @@ export function buildTripEvents(
       const { primary } = scheduleItemPrimaryLabel(item);
       const venues = item.sites.map((s) => s.location.name);
       const speakers = effectivePresenters(item).map((p) => p.name);
+      // A travel span (GH #80) carries its route as the event location and any
+      // en-route stops in the description.
+      const route = item.travel ? travelRoute(item.travel) : null;
+      const travelStops = item.travel?.stops
+        .map((s) => s.location?.name ?? s.label)
+        .filter(Boolean)
+        .join(", ");
       const description = joinLines([
+        travelStops ? `Via: ${travelStops}` : null,
         item.notes,
         speakers.length ? `Speaker: ${speakers.join(", ")}` : null,
       ]);
-      const location = venues.length ? venues.join(", ") : undefined;
+      const location = route ?? (venues.length ? venues.join(", ") : undefined);
 
       if (item.startTime) {
         // Floating timed event. End only when it's strictly after the start

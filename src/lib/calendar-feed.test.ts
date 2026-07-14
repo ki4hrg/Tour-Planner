@@ -107,6 +107,48 @@ describe("buildTripEvents", () => {
     ]);
   });
 
+  it("maps a travel span to a timed event with its route as the location (GH #80)", () => {
+    const events = buildTripEvents(
+      trip({
+        startDate: null,
+        endDate: null,
+        days: [
+          day({
+            items: [
+              item({
+                startTime: "10:00",
+                endTime: "12:00",
+                travel: {
+                  id: "tl1",
+                  method: "COACH",
+                  fromLocation: { id: "a", name: "Old Sarum" },
+                  fromLabel: null,
+                  toLocation: null,
+                  toLabel: "Bristol",
+                  stops: [
+                    { id: "st1", location: null, label: "M5 services", dwellMinutes: 15, order: 0 },
+                  ],
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
+      STAFF,
+    );
+    expect(events).toEqual([
+      {
+        uid: "item-i1@tour-planner",
+        summary: "Coach to Bristol",
+        location: "Old Sarum → Bristol",
+        description: "Via: M5 services",
+        start: "20260706T100000",
+        end: "20260706T120000",
+        allDay: false,
+      },
+    ]);
+  });
+
   it("treats an item with a start but no end as a point in time", () => {
     const events = buildTripEvents(
       trip({

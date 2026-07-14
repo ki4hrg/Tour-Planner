@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, todayUtc } from "@/lib/dates";
-import { serializeDay, summarizeDayLodging } from "@/lib/trips";
+import { serializeDay, summarizeDayLodging, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 import {
   audienceView,
   isShareLinkActive,
@@ -29,6 +29,7 @@ const SCHEDULE_ITEM_INCLUDE = {
       },
     },
     presenters: { select: { id: true, name: true } },
+    travel: TRAVEL_LEG_INCLUDE,
     sites: {
       orderBy: { order: "asc" },
       include: { location: { select: { id: true, name: true } } },

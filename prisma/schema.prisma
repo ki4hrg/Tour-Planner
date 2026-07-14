@@ -180,6 +180,9 @@ model Location {
   shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   siteNotes            Note[]             @relation("LocationNotes") // contact log for this venue
   primaryForDays       ItineraryDay[]     @relation("DayPrimaryLocation") // days that default new items here
+  travelsFrom          TravelLeg[]        @relation("TravelFrom") // travel legs departing here
+  travelsTo            TravelLeg[]        @relation("TravelTo") // travel legs arriving here
+  travelStops          TravelStop[]       @relation("TravelStopLocation") // en-route stops here
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -296,10 +299,65 @@ model ScheduleItem {
   presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters
   sites          ScheduleItemSite[]
   bookings       Booking[]
+  travel         TravelLeg? // set ⇒ this item IS a travel span (GH #80)
 
   @@index([dayId])
   @@index([categoryId])
   @@index([presentationId])
+}
+
+enum TravelMethod {
+  COACH
+  TRAIN
+  FERRY
+  FLIGHT
+  WALK
+  TAXI
+  OTHER
+}
+
+// A structured travel span extending one ScheduleItem (GH #80): origin →
+// destination by a method, with optional en-route stops. The item's
+// startTime/endTime ARE the depart/arrive times — a real span, replacing the
+// old paired start-only "Depart"/"Arrive" items that broke gap math. A travel
+// item carries NO ScheduleItemSite rows (origin/destination live here), so it
+// reads as the seam between venue runs rather than a member of either; a coach
+// reservation attaches as the ordinary site-less item booking.
+model TravelLeg {
+  id             String       @id @default(cuid())
+  scheduleItem   ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  scheduleItemId String       @unique
+  method         TravelMethod @default(COACH)
+  // Endpoints: a catalogued location OR free text (both optional — "Coach to
+  // Bristol" may only know its destination). SetNull so deleting a location
+  // never drops the leg.
+  fromLocation   Location?    @relation("TravelFrom", fields: [fromLocationId], references: [id], onDelete: SetNull)
+  fromLocationId String?
+  fromLabel      String?
+  toLocation     Location?    @relation("TravelTo", fields: [toLocationId], references: [id], onDelete: SetNull)
+  toLocationId   String?
+  toLabel        String?
+  stops          TravelStop[]
+
+  @@index([fromLocationId])
+  @@index([toLocationId])
+}
+
+// An ordered en-route stop on a travel leg (comfort stop, photo stop) — a
+// catalogued location or free text, with an optional dwell time. Lives inside
+// the leg so it no longer pollutes venue-run grouping as its own item.
+model TravelStop {
+  id           String    @id @default(cuid())
+  travelLeg    TravelLeg @relation(fields: [travelLegId], references: [id], onDelete: Cascade)
+  travelLegId  String
+  location     Location? @relation("TravelStopLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  locationId   String?
+  label        String?
+  dwellMinutes Int?
+  order        Int       @default(0)
+
+  @@index([travelLegId])
+  @@index([locationId])
 }
 
 // Join: which locations a schedule item visits. One row = ordinary stop; many = a block.
