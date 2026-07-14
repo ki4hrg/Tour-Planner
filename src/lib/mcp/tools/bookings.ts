@@ -5,7 +5,9 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { todayUtc } from "@/lib/dates";
-import { resolveSchedule } from "@/lib/payment-schedule";
+import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
+import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { zodErrorMessage } from "@/lib/forms";
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
   // ── list-bookings (VIEWER+) ──────────────────────────────────────────
@@ -412,14 +414,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           booking.scheduleItem?.day.trip.startDate ??
           null;
         const schedule = resolveSchedule(
-          booking.paymentSchedule.map((i) => ({
-            id: i.id,
-            label: i.label,
-            percent: i.percent == null ? null : Number(i.percent),
-            fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
-            dueOffsetDays: i.dueOffsetDays,
-            sortOrder: i.sortOrder,
-          })),
+          booking.paymentSchedule.map(serializeInstallment),
           { agreedAmount, paidTotal, tripStartDate, today: todayUtc() },
         );
 
@@ -500,15 +495,15 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           };
         }
 
-        const invalid = installments.find(
-          (i) => (i.percent == null) === (i.fixedAmount == null),
-        );
-        if (invalid) {
+        // Same validator the web action uses — one home for the
+        // exactly-one-of-percent/fixedAmount rule.
+        const parsed = paymentScheduleSchema.safeParse({ installments });
+        if (!parsed.success) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "Error: Each installment needs exactly one of percent or fixedAmount.",
+                text: `Error: ${zodErrorMessage(parsed.error)}`,
               },
             ],
             isError: true,
@@ -529,7 +524,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         await prisma.$transaction([
           prisma.paymentScheduleItem.deleteMany({ where: { bookingId } }),
           prisma.paymentScheduleItem.createMany({
-            data: installments.map((i, idx) => ({
+            data: parsed.data.installments.map((i, idx) => ({
               bookingId,
               label: i.label || null,
               percent: i.percent ?? null,

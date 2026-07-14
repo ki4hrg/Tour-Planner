@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { addDays, formatDate, isOngoing, toDateInput, todayUtc } from "@/lib/dates";
 import { bookingWindow } from "@/lib/booking";
 import { formatMoney } from "@/lib/money";
-import { resolveSchedule } from "@/lib/payment-schedule";
+import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
 import { noteTarget } from "@/lib/notes";
 import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
 import { cn } from "@/lib/utils";
@@ -251,14 +251,7 @@ export default async function Home({
       const agreedAmount = b.agreedAmount == null ? null : Number(b.agreedAmount);
       const paidTotal = b.payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const resolved = resolveSchedule(
-        b.paymentSchedule.map((i) => ({
-          id: i.id,
-          label: i.label,
-          percent: i.percent == null ? null : Number(i.percent),
-          fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
-          dueOffsetDays: i.dueOffsetDays,
-          sortOrder: i.sortOrder,
-        })),
+        b.paymentSchedule.map(serializeInstallment),
         { agreedAmount, paidTotal, tripStartDate: b.trip!.startDate, today },
       );
       return resolved

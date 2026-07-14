@@ -10,6 +10,7 @@ import { bookingWindow, bookingNeedsInfo, earliestCoveredDate } from "./booking"
 import {
   resolveSchedule,
   scheduleAttention,
+  serializeInstallment,
   type ResolvedInstallment,
 } from "./payment-schedule";
 import {
@@ -241,14 +242,7 @@ export function buildDashboardRows(data: DashboardData): {
     const unpaidBalance =
       agreedAmount == null ? null : Math.max(0, agreedAmount - paidTotal);
     const schedule = resolveSchedule(
-      (eng?.paymentSchedule ?? []).map((i) => ({
-        id: i.id,
-        label: i.label,
-        percent: i.percent == null ? null : Number(i.percent),
-        fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
-        dueOffsetDays: i.dueOffsetDays,
-        sortOrder: i.sortOrder,
-      })),
+      (eng?.paymentSchedule ?? []).map(serializeInstallment),
       {
         agreedAmount,
         paidTotal,
