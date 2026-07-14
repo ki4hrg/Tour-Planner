@@ -24,6 +24,7 @@ export default async function BookingDashboardPage({
       id: true,
       name: true,
       currencies: true,
+      startDate: true,
       days: {
         orderBy: { dayIndex: "asc" },
         select: {
@@ -78,6 +79,7 @@ export default async function BookingDashboardPage({
           agreedCurrency: true,
           agreedUnit: true,
           payments: { orderBy: { paidOn: "asc" } },
+          paymentSchedule: true,
         },
       },
       stays: {
@@ -121,6 +123,7 @@ export default async function BookingDashboardPage({
     engagements: trip.bookings,
     stays: trip.stays,
     locations,
+    tripStartDate: trip.startDate,
   });
 
   return (

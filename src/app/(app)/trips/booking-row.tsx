@@ -23,12 +23,14 @@ import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/l
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
+import type { ResolvedInstallment } from "@/lib/payment-schedule";
 import {
   setVenueBookingStatus,
   setBookingStatus,
   upsertVenueBooking,
   addPayment,
   deletePayment,
+  setPaymentSchedule,
 } from "./actions";
 import { StatusControl } from "./status-control";
 
@@ -98,9 +100,13 @@ function PriceCell({ row }: { row: VenueBookingRow }) {
   }
   if (row.costs.length === 0)
     return (
-      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-        No price
-      </span>
+      <div className="space-y-0.5">
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+          No price
+        </span>
+        {/* Fixed-amount installments can be overdue without an agreed price. */}
+        <PaymentState row={row} />
+      </div>
     );
   return (
     <div className="space-y-0.5">
@@ -120,17 +126,32 @@ function PriceCell({ row }: { row: VenueBookingRow }) {
           ) : null}
         </div>
       ))}
+      <PaymentState row={row} />
     </div>
   );
 }
 
-// Settled / unpaid chip under an agreed price.
+// Settled / unpaid chip under an agreed price, sharpened by the payment
+// schedule when one exists: overdue beats everything, then the next due date.
 function PaymentState({ row }: { row: VenueBookingRow }) {
+  if (row.overdueAmount > 0)
+    return (
+      <span className="text-xs font-medium text-red-600 dark:text-red-400">
+        {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
+      </span>
+    );
   if (row.agreedAmount == null) return null;
   if (row.settled)
     return (
       <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
         Paid in full
+      </span>
+    );
+  if (row.nextDue?.amountDue != null && row.nextDue.dueDate)
+    return (
+      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+        {formatMoney(row.nextDue.amountDue - row.nextDue.covered, row.agreedCurrency)}{" "}
+        due {formatDate(row.nextDue.dueDate)}
       </span>
     );
   if (row.paidTotal > 0)
@@ -321,12 +342,236 @@ function VenueDetails({
         </div>
       ) : null}
 
-      {/* Payment log — spans the grid; needs the engagement to exist first. */}
+      {/* Payment schedule + log — span the grid; need the engagement to exist. */}
+      {row.bookingId && (row.schedule.length > 0 || canEdit) ? (
+        <div className="md:col-span-2">
+          <PaymentSchedule row={row} canEdit={canEdit} />
+        </div>
+      ) : null}
       {row.bookingId && (row.payments.length > 0 || canEdit) ? (
         <div className="md:col-span-2">
           <PaymentLog row={row} canEdit={canEdit} currencies={currencies} />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+const INSTALLMENT_STATE_STYLES: Record<ResolvedInstallment["state"], string> = {
+  paid: "text-emerald-700 dark:text-emerald-300",
+  overdue: "font-medium text-red-600 dark:text-red-400",
+  upcoming: "text-muted-foreground",
+  unscheduled: "text-amber-700 dark:text-amber-300",
+};
+
+const INSTALLMENT_STATE_LABELS: Record<ResolvedInstallment["state"], string> = {
+  paid: "paid",
+  overdue: "overdue",
+  upcoming: "due",
+  unscheduled: "needs agreed price / trip dates",
+};
+
+// One editable installment row's local form state.
+type InstallmentDraft = {
+  key: number;
+  label: string;
+  mode: "percent" | "fixed";
+  value: string;
+  offsetDays: string;
+};
+
+function draftsFromRow(schedule: ResolvedInstallment[]): InstallmentDraft[] {
+  return schedule.map((i, idx) => ({
+    key: idx,
+    label: i.label ?? "",
+    mode: i.percent != null ? "percent" : "fixed",
+    value: String(i.percent ?? i.fixedAmount ?? ""),
+    offsetDays: String(i.dueOffsetDays),
+  }));
+}
+
+// The engagement's payment schedule: installments due relative to trip start
+// ("20% deposit 180 days out"). Read view shows resolved amounts/dates/state;
+// planners edit the whole set and save it in one replace (GH #51).
+function PaymentSchedule({
+  row,
+  canEdit,
+}: {
+  row: VenueBookingRow;
+  canEdit: boolean;
+}) {
+  const { pending, run } = useAction();
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<InstallmentDraft[]>([]);
+
+  const startEditing = () => {
+    setDrafts(
+      row.schedule.length
+        ? draftsFromRow(row.schedule)
+        : [{ key: 0, label: "Deposit", mode: "percent", value: "", offsetDays: "180" }],
+    );
+    setEditing(true);
+  };
+
+  const patch = (key: number, part: Partial<InstallmentDraft>) =>
+    setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, ...part } : d)));
+
+  const save = () =>
+    run(
+      () =>
+        setPaymentSchedule(row.bookingId!, {
+          installments: drafts.map((d) => ({
+            label: d.label.trim() || undefined,
+            percent: d.mode === "percent" ? d.value : undefined,
+            fixedAmount: d.mode === "fixed" ? d.value : undefined,
+            dueOffsetDays: d.offsetDays,
+          })),
+        }),
+      () => setEditing(false),
+    );
+
+  return (
+    <div className="space-y-2 border-t pt-2">
+      <p className="flex items-baseline gap-2 text-xs font-medium text-muted-foreground">
+        Payment schedule
+        {canEdit && !editing ? (
+          <button
+            type="button"
+            onClick={startEditing}
+            className="font-normal underline-offset-2 hover:underline"
+          >
+            {row.schedule.length ? "Edit" : "Add"}
+          </button>
+        ) : null}
+      </p>
+
+      {!editing ? (
+        row.schedule.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No schedule — payments are free-form against the agreed price.
+          </p>
+        ) : (
+          <ul className="space-y-0.5 text-sm">
+            {row.schedule.map((i, idx) => (
+              <li key={i.id} className="flex flex-wrap items-baseline gap-x-2">
+                <span>{i.label || `Installment ${idx + 1}`}</span>
+                <span className="text-xs text-muted-foreground">
+                  {i.percent != null
+                    ? `${i.percent}%${i.amountDue != null ? ` · ${formatMoney(i.amountDue, row.agreedCurrency)}` : ""}`
+                    : formatMoney(i.fixedAmount ?? 0, row.agreedCurrency)}
+                </span>
+                <span className={cn("text-xs", INSTALLMENT_STATE_STYLES[i.state])}>
+                  {i.state === "unscheduled"
+                    ? INSTALLMENT_STATE_LABELS.unscheduled
+                    : `${INSTALLMENT_STATE_LABELS[i.state]}${i.dueDate ? ` ${formatDate(i.dueDate)}` : ""}`}
+                  {i.state !== "paid" && i.covered > 0
+                    ? ` · ${formatMoney(i.covered, row.agreedCurrency)} covered`
+                    : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <div className="space-y-2">
+          {drafts.map((d, idx) => (
+            <div key={d.key} className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Label</Label>
+                <Input
+                  value={d.label}
+                  onChange={(e) => patch(d.key, { label: e.target.value })}
+                  placeholder={`Installment ${idx + 1}`}
+                  className="w-32"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Amount</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={d.value}
+                  onChange={(e) => patch(d.key, { value: e.target.value })}
+                  className="w-24"
+                />
+              </div>
+              <Select
+                value={d.mode}
+                onValueChange={(mode) =>
+                  patch(d.key, { mode: mode as InstallmentDraft["mode"] })
+                }
+              >
+                <SelectTrigger size="sm" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percent">% of agreed</SelectItem>
+                  <SelectItem value="fixed">fixed amount</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="space-y-1">
+                <Label className="text-xs">Days before start</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  inputMode="numeric"
+                  value={d.offsetDays}
+                  onChange={(e) => patch(d.key, { offsetDays: e.target.value })}
+                  className="w-28"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  setDrafts((prev) => prev.filter((x) => x.key !== d.key))
+                }
+                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                setDrafts((prev) => [
+                  ...prev,
+                  {
+                    key: (prev[prev.length - 1]?.key ?? -1) + 1,
+                    label: "",
+                    mode: "percent",
+                    value: "",
+                    offsetDays: "30",
+                  },
+                ])
+              }
+            >
+              Add installment
+            </Button>
+            <Button
+              size="sm"
+              disabled={pending || drafts.some((d) => !d.value || d.offsetDays === "")}
+              onClick={save}
+            >
+              Save schedule
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

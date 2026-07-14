@@ -14,7 +14,11 @@ import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema } from "@/lib/validators/day";
 import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
-import { bookingSchema, paymentSchema } from "@/lib/validators/booking";
+import {
+  bookingSchema,
+  paymentSchema,
+  paymentScheduleSchema,
+} from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
 import {
@@ -102,6 +106,25 @@ const TEMPLATE_DAYS_SELECT = {
   },
 } satisfies Prisma.ItineraryDaySelect;
 
+// Field selection for deep-copying a trip's venue-engagement bookings (template
+// ⇄ trip). The payment schedule (GH #51) is date-relative, so it carries over;
+// instance actuals (status, contact, ref, agreed price) are reset by
+// instantiateVenueBookings.
+const TEMPLATE_VENUE_BOOKING_SELECT = {
+  locationId: true,
+  label: true,
+  notes: true,
+  paymentSchedule: {
+    select: {
+      label: true,
+      percent: true,
+      fixedAmount: true,
+      dueOffsetDays: true,
+      sortOrder: true,
+    },
+  },
+} satisfies Prisma.BookingSelect;
+
 // Field selection for deep-copying a trip's lodging (template ⇄ trip). Feeds
 // templatizeStays / instantiateStays, which convert the anchor (dates ⇄ day
 // indices). The venue-engagement booking is copied via the bookings path, so
@@ -149,7 +172,7 @@ export async function createTrip(
       where: { id: templateId },
       select: {
         days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
-        bookings: { select: { locationId: true, label: true, notes: true } },
+        bookings: { select: TEMPLATE_VENUE_BOOKING_SELECT },
         stays: { select: TEMPLATE_STAYS_SELECT },
       },
     });
@@ -236,7 +259,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       currencies: true,
       notes: true,
       days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
-      bookings: { select: { locationId: true, label: true, notes: true } },
+      bookings: { select: TEMPLATE_VENUE_BOOKING_SELECT },
       stays: { select: TEMPLATE_STAYS_SELECT },
     },
   });
@@ -1000,6 +1023,49 @@ export async function addPayment(
   const tripId = await tripIdForBooking(bookingId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Payment logged." };
+}
+
+// --- Payment schedule (installments due relative to trip start; GH #51) ---
+
+export type PaymentScheduleInputData = {
+  installments: {
+    label?: string;
+    percent?: number | string;
+    fixedAmount?: number | string;
+    dueOffsetDays: number | string;
+  }[];
+};
+
+// Replace the booking's whole schedule in one go (mirrors the REPLACE semantics
+// of contact locationIds / presentation defaultPresenterIds): the editor and the
+// MCP tool both submit the full installment list, so deletes need no own action.
+export async function setPaymentSchedule(
+  bookingId: string,
+  input: PaymentScheduleInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = paymentScheduleSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  const tripId = await tripIdForBooking(bookingId);
+  if (!tripId) return { error: "Booking not found." };
+
+  await prisma.$transaction([
+    prisma.paymentScheduleItem.deleteMany({ where: { bookingId } }),
+    prisma.paymentScheduleItem.createMany({
+      data: parsed.data.installments.map((i, idx) => ({
+        bookingId,
+        label: i.label || null,
+        percent: i.percent ?? null,
+        fixedAmount: i.fixedAmount ?? null,
+        dueOffsetDays: i.dueOffsetDays,
+        sortOrder: idx,
+      })),
+    }),
+  ]);
+
+  revalidateTrip(tripId);
+  return { ok: true, message: "Payment schedule saved." };
 }
 
 export async function deletePayment(paymentId: string): Promise<FormState> {

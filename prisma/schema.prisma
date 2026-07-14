@@ -400,6 +400,7 @@ model Booking {
   agreedCurrency  String        @default("USD")
   agreedUnit      CostUnit?
   payments        Payment[]
+  paymentSchedule PaymentScheduleItem[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -423,6 +424,26 @@ model Payment {
   method    String? // e.g. bank transfer, card, cheque, cash
   note      String?
   createdAt DateTime @default(now())
+
+  @@index([bookingId])
+}
+
+// An installment in a booking's payment schedule — "20% deposit due 180 days
+// before the trip starts, balance by 30 days out". Amount is EITHER a percentage
+// of the booking's agreed price OR a fixed amount in its agreed currency (DB
+// CHECK payment_schedule_amount: exactly one). `dueOffsetDays` counts days
+// BEFORE trip.startDate (0 = day of, negative = after); the concrete due date is
+// derived on dated trips, so schedules templatize/instantiate cleanly.
+model PaymentScheduleItem {
+  id            String   @id @default(cuid())
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     String
+  label         String? // e.g. "Deposit", "Balance"
+  percent       Decimal? @db.Decimal(5, 2) // of the booking's agreedAmount
+  fixedAmount   Decimal? @db.Decimal(10, 2) // in the booking's agreedCurrency
+  dueOffsetDays Int
+  sortOrder     Int      @default(0) // stable display order for equal offsets
+  createdAt     DateTime @default(now())
 
   @@index([bookingId])
 }

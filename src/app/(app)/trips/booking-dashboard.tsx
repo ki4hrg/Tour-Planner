@@ -19,12 +19,14 @@ type Filters = {
   windowOpen: boolean;
   missingPrice: boolean;
   unconfirmed: boolean;
+  paymentOverdue: boolean;
 };
 
 const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
   { key: "windowOpen", label: "Window open" },
   { key: "missingPrice", label: "Missing price" },
   { key: "unconfirmed", label: "Unconfirmed" },
+  { key: "paymentOverdue", label: "Payment overdue" },
 ];
 
 function venueMatches(row: VenueBookingRow, f: Filters): boolean {
@@ -33,7 +35,8 @@ function venueMatches(row: VenueBookingRow, f: Filters): boolean {
   return (
     (f.windowOpen && row.open && !isBookingSecured(row.status)) ||
     (f.missingPrice && row.isMissingCost) ||
-    (f.unconfirmed && !isBookingSecured(row.status))
+    (f.unconfirmed && !isBookingSecured(row.status)) ||
+    (f.paymentOverdue && row.overdueAmount > 0)
   );
 }
 
@@ -57,8 +60,9 @@ export function BookingDashboard({
     windowOpen: true,
     missingPrice: true,
     unconfirmed: true,
+    paymentOverdue: true,
   });
-  const anyFilter = filters.windowOpen || filters.missingPrice || filters.unconfirmed;
+  const anyFilter = Object.values(filters).some(Boolean);
 
   // No filter checked = show everything; otherwise show rows matching any filter.
   const shownVenues = anyFilter

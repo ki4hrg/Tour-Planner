@@ -230,6 +230,17 @@ npm test                          # vitest
   (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
   the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
   in `src/app/(app)/trips/actions.ts`.
+- **Payment schedules (GH #51)**: a booking may carry `PaymentScheduleItem`
+  installments — EITHER a `percent` of the agreed price OR a `fixedAmount` (DB CHECK
+  `payment_schedule_amount`), due `dueOffsetDays` **before** `trip.startDate`
+  (negative = after). Resolution (amounts, due dates, oldest-due-first allocation of
+  the payment log, paid/overdue/upcoming state) is pure in
+  `src/lib/payment-schedule.ts` (`resolveSchedule`/`scheduleAttention`, unit-tested);
+  editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
+  MCP tool). Surfaces: booking-row schedule editor + status chips, the dashboard's
+  "Payment overdue" attention filter, and the home "Payments due" card. Schedules
+  are date-relative, so they templatize/instantiate verbatim (unlike the agreed
+  price, which resets); an installment on a date-less template is "unscheduled".
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
   **exactly one of** Location / Booking / Trip / Stay (DB CHECK
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
