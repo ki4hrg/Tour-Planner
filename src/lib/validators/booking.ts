@@ -44,3 +44,35 @@ export const paymentSchema = z.object({
 });
 
 export type PaymentInput = z.infer<typeof paymentSchema>;
+
+// One installment of a payment schedule (GH #51). Exactly one of percent /
+// fixedAmount, due `dueOffsetDays` before trip start (negative = after).
+const installmentSchema = z
+  .object({
+    label: z.string().trim().optional(),
+    percent: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : Number(v)),
+      z
+        .number()
+        .positive("Percentage must be positive.")
+        .max(100, "Percentage can't exceed 100.")
+        .optional(),
+    ),
+    fixedAmount: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : Number(v)),
+      z.number().positive("Amount must be positive.").optional(),
+    ),
+    dueOffsetDays: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : Number(v)),
+      z.number().int("Days must be a whole number."),
+    ),
+  })
+  .refine((i) => (i.percent == null) !== (i.fixedAmount == null), {
+    message: "Each installment needs a percentage or a fixed amount (not both).",
+  });
+
+export const paymentScheduleSchema = z.object({
+  installments: z.array(installmentSchema).max(20, "Too many installments."),
+});
+
+export type PaymentScheduleInput = z.infer<typeof paymentScheduleSchema>;

@@ -4,6 +4,8 @@ import type { BookingStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
+import { todayUtc } from "@/lib/dates";
+import { resolveSchedule } from "@/lib/payment-schedule";
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
   // ── list-bookings (VIEWER+) ──────────────────────────────────────────
@@ -348,7 +350,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Payments",
       description:
-        "List the payments logged against a booking (get bookingId from list-bookings), with the booking's agreed price and the outstanding balance. A booking is settled when payments cover the agreed amount.",
+        "List the payments logged against a booking (get bookingId from list-bookings), with the booking's agreed price, the outstanding balance, and its payment schedule: installments (percentage of the agreed price or a fixed amount) due a number of days before trip start, each resolved to an amount, due date, and paid/overdue/upcoming state. A booking is settled when payments cover the agreed amount. Set the schedule with set-payment-schedule.",
       inputSchema: {
         bookingId: z.string(),
       },
@@ -375,6 +377,15 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             agreedCurrency: true,
             agreedUnit: true,
             payments: { orderBy: { paidOn: "asc" } },
+            paymentSchedule: true,
+            // Trip start anchors the schedule's due dates, whichever way the
+            // booking hangs off the trip.
+            trip: { select: { startDate: true } },
+            scheduleItem: {
+              select: {
+                day: { select: { trip: { select: { startDate: true } } } },
+              },
+            },
           },
         });
         if (!booking) {
@@ -396,6 +407,22 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         }));
         const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
 
+        const tripStartDate =
+          booking.trip?.startDate ??
+          booking.scheduleItem?.day.trip.startDate ??
+          null;
+        const schedule = resolveSchedule(
+          booking.paymentSchedule.map((i) => ({
+            id: i.id,
+            label: i.label,
+            percent: i.percent == null ? null : Number(i.percent),
+            fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
+            dueOffsetDays: i.dueOffsetDays,
+            sortOrder: i.sortOrder,
+          })),
+          { agreedAmount, paidTotal, tripStartDate, today: todayUtc() },
+        );
+
         return {
           content: [
             {
@@ -412,7 +439,113 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
                       : Math.max(0, agreedAmount - paidTotal),
                   settled: agreedAmount != null && paidTotal >= agreedAmount,
                   payments,
+                  paymentSchedule: schedule,
                 },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── set-payment-schedule (PLANNER+) ──────────────────────────────────
+  server.registerTool(
+    "set-payment-schedule",
+    {
+      title: "Set Payment Schedule",
+      description:
+        "REPLACE a booking's payment schedule (get bookingId from list-bookings) with the given installments — pass an empty list to clear it. Each installment has EITHER percent (of the booking's agreed price) OR fixedAmount (in its agreed currency), plus dueOffsetDays = days before trip start it falls due (0 = day of, negative = after), and an optional label like 'Deposit'. Example: 20% due 180 days out, 30% at 90, balance at 30. See list-payments for the resolved due dates and paid/overdue state.",
+      inputSchema: {
+        bookingId: z.string(),
+        installments: z.array(
+          z.object({
+            label: z.string().optional(),
+            percent: z.number().positive().max(100).optional(),
+            fixedAmount: z.number().positive().optional(),
+            dueOffsetDays: z.number().int(),
+          }),
+        ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ bookingId, installments }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. PLANNER role or higher required.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const invalid = installments.find(
+          (i) => (i.percent == null) === (i.fixedAmount == null),
+        );
+        if (invalid) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Each installment needs exactly one of percent or fixedAmount.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const booking = await prisma.booking.findUnique({
+          where: { id: bookingId },
+          select: { id: true },
+        });
+        if (!booking) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Booking not found." }],
+            isError: true,
+          };
+        }
+
+        await prisma.$transaction([
+          prisma.paymentScheduleItem.deleteMany({ where: { bookingId } }),
+          prisma.paymentScheduleItem.createMany({
+            data: installments.map((i, idx) => ({
+              bookingId,
+              label: i.label || null,
+              percent: i.percent ?? null,
+              fixedAmount: i.fixedAmount ?? null,
+              dueOffsetDays: i.dueOffsetDays,
+              sortOrder: idx,
+            })),
+          }),
+        ]);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { success: true, installments: installments.length },
                 null,
                 2,
               ),

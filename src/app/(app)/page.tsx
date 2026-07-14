@@ -10,8 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
+import { addDays, formatDate, isOngoing, toDateInput, todayUtc } from "@/lib/dates";
 import { bookingWindow } from "@/lib/booking";
+import { formatMoney } from "@/lib/money";
+import { resolveSchedule } from "@/lib/payment-schedule";
 import { noteTarget } from "@/lib/notes";
 import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
 import { cn } from "@/lib/utils";
@@ -64,7 +66,13 @@ export default async function Home({
   // (~60s) inside; best-effort — a Todoist outage must not break the dashboard.
   await reconcileTodoistFollowUps(user.id).catch(() => 0);
 
-  const [ongoingCandidates, activeTrips, engagementBookings, followUpNotes] = await Promise.all([
+  const [
+    ongoingCandidates,
+    activeTrips,
+    engagementBookings,
+    scheduledBookings,
+    followUpNotes,
+  ] = await Promise.all([
     // Trips underway right now, with just today's day + its schedule loaded so we
     // can surface "what's happening today" front and center. The date bounds keep
     // this cheap; isOngoing() below is the exact filter.
@@ -124,6 +132,28 @@ export default async function Home({
         label: true,
         location: { select: { name: true, bookingOpensLeadDays: true } },
         trip: { select: { id: true, name: true, startDate: true } },
+      },
+    }),
+    // Bookings carrying a payment schedule (GH #51) on dated, active trips —
+    // resolved below into overdue / soon-due installments. An ACTIVE past trip
+    // still surfaces here: an unpaid installment stays owed after the trip runs.
+    prisma.booking.findMany({
+      where: {
+        paymentSchedule: { some: {} },
+        tripId: { not: null },
+        trip: {
+          is: { isTemplate: false, status: "ACTIVE", startDate: { not: null } },
+        },
+      },
+      select: {
+        id: true,
+        label: true,
+        agreedAmount: true,
+        agreedCurrency: true,
+        location: { select: { name: true } },
+        trip: { select: { id: true, name: true, startDate: true } },
+        payments: { select: { amount: true } },
+        paymentSchedule: true,
       },
     }),
     // Open follow-ups (everyone's by default; ?followups=mine narrows). Due-dated
@@ -211,6 +241,48 @@ export default async function Home({
     })
     .filter((a) => a.open)
     .sort((a, b) => (a.earliest?.getTime() ?? 0) - (b.earliest?.getTime() ?? 0))
+    .slice(0, 8);
+
+  // Overdue installments plus anything coming due in the next 60 days,
+  // overdue first, then soonest.
+  const dueHorizon = toDateInput(addDays(today, 60));
+  const paymentsDue = scheduledBookings
+    .flatMap((b) => {
+      const agreedAmount = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      const paidTotal = b.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const resolved = resolveSchedule(
+        b.paymentSchedule.map((i) => ({
+          id: i.id,
+          label: i.label,
+          percent: i.percent == null ? null : Number(i.percent),
+          fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
+          dueOffsetDays: i.dueOffsetDays,
+          sortOrder: i.sortOrder,
+        })),
+        { agreedAmount, paidTotal, tripStartDate: b.trip!.startDate, today },
+      );
+      return resolved
+        .filter(
+          (i) =>
+            i.state === "overdue" ||
+            (i.state === "upcoming" && i.dueDate != null && i.dueDate <= dueHorizon),
+        )
+        .map((i) => ({
+          id: i.id,
+          venueName: b.label ?? b.location?.name ?? "Booking",
+          tripId: b.trip!.id,
+          tripName: b.trip!.name,
+          installmentLabel: i.label,
+          amount: i.outstanding ?? 0,
+          currency: b.agreedCurrency,
+          dueDate: i.dueDate!,
+          overdue: i.state === "overdue",
+        }));
+    })
+    .sort(
+      (a, b) =>
+        Number(b.overdue) - Number(a.overdue) || a.dueDate.localeCompare(b.dueDate),
+    )
     .slice(0, 8);
 
   return (
@@ -394,6 +466,65 @@ export default async function Home({
                   >
                     Book →
                   </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">
+            Payments due
+            {paymentsDue.length ? (
+              <Badge variant="secondary" className="ml-2 align-middle">
+                {paymentsDue.length}
+              </Badge>
+            ) : null}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {paymentsDue.length === 0 ? (
+            <p className="text-muted-foreground">
+              Nothing owed soon — no overdue or upcoming installments.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {paymentsDue.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <span className="min-w-0">
+                    <span className="font-medium">{p.venueName}</span>
+                    <span className="text-muted-foreground"> — {p.tripName}</span>
+                    {p.installmentLabel ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {p.installmentLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span
+                      className={cn(
+                        "text-xs",
+                        p.overdue
+                          ? "font-medium text-red-600 dark:text-red-400"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {formatMoney(p.amount, p.currency)} ·{" "}
+                      {p.overdue ? "Overdue · " : "Due "}
+                      {formatDate(p.dueDate)}
+                    </span>
+                    <Link
+                      href={`/trips/${p.tripId}/booking`}
+                      className="text-sm text-muted-foreground hover:underline"
+                    >
+                      Pay →
+                    </Link>
+                  </span>
                 </li>
               ))}
             </ul>

@@ -1,6 +1,17 @@
-import type { BookingStatus, Cost, CostUnit, Payment } from "@prisma/client";
-import { toDateInput } from "./dates";
+import type {
+  BookingStatus,
+  Cost,
+  CostUnit,
+  Payment,
+  PaymentScheduleItem,
+} from "@prisma/client";
+import { toDateInput, todayUtc } from "./dates";
 import { bookingWindow, bookingNeedsInfo, earliestCoveredDate } from "./booking";
+import {
+  resolveSchedule,
+  scheduleAttention,
+  type ResolvedInstallment,
+} from "./payment-schedule";
 import {
   serializeCost,
   serializePayment,
@@ -51,6 +62,10 @@ export type VenueBookingRow = {
   paidTotal: number;
   unpaidBalance: number | null;
   settled: boolean;
+  // Payment schedule (GH #51), resolved against the agreed price + payment log.
+  schedule: ResolvedInstallment[];
+  overdueAmount: number; // outstanding across past-due installments (0 = none)
+  nextDue: ResolvedInstallment | null;
   earliest: string | null;
   open: boolean;
   daysUntilOpen: number | null;
@@ -110,6 +125,7 @@ type EngagementInput = {
   agreedCurrency?: string;
   agreedUnit?: CostUnit | null;
   payments?: Payment[];
+  paymentSchedule?: PaymentScheduleItem[];
 };
 
 // checkIn/checkOut are null on a date-less template stay (day-relative anchors);
@@ -129,15 +145,18 @@ export type DashboardData = {
   engagements: EngagementInput[];
   stays: StayInput[];
   locations: LocationInput[];
+  // Anchors payment-schedule due dates (dueOffsetDays counts back from this);
+  // null (template / undated trip) leaves installments "unscheduled".
+  tripStartDate?: Date | null;
 };
 
 type VenueAccum = { sessions: CoveredSession[]; dates: Date[]; nights: number };
 
 /**
  * Build the dashboard's venue-engagement rows and site-less item-booking rows from
- * raw trip data. Pure over its inputs except for `bookingWindow`, which reads "now"
- * (isolated in lib, never in render). Reused by the single-trip dashboard and the
- * multi-year grid.
+ * raw trip data. Pure over its inputs except for `bookingWindow` and the payment-
+ * schedule due/overdue states, which read "now" (isolated in lib, never in render).
+ * Reused by the single-trip dashboard and the multi-year grid.
  */
 export function buildDashboardRows(data: DashboardData): {
   venueRows: VenueBookingRow[];
@@ -207,6 +226,7 @@ export function buildDashboardRows(data: DashboardData): {
   }
 
   const venueRows: VenueBookingRow[] = [];
+  const today = todayUtc();
   for (const [locationId, v] of venues) {
     const loc = locById.get(locationId);
     const eng = engByLoc.get(locationId) ?? null;
@@ -220,6 +240,23 @@ export function buildDashboardRows(data: DashboardData): {
     const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
     const unpaidBalance =
       agreedAmount == null ? null : Math.max(0, agreedAmount - paidTotal);
+    const schedule = resolveSchedule(
+      (eng?.paymentSchedule ?? []).map((i) => ({
+        id: i.id,
+        label: i.label,
+        percent: i.percent == null ? null : Number(i.percent),
+        fixedAmount: i.fixedAmount == null ? null : Number(i.fixedAmount),
+        dueOffsetDays: i.dueOffsetDays,
+        sortOrder: i.sortOrder,
+      })),
+      {
+        agreedAmount,
+        paidTotal,
+        tripStartDate: data.tripStartDate ?? null,
+        today,
+      },
+    );
+    const { overdueAmount, nextDue } = scheduleAttention(schedule);
     const isMissingCost =
       agreedAmount == null &&
       ((loc?.costs.length ?? 0) === 0 ||
@@ -262,6 +299,9 @@ export function buildDashboardRows(data: DashboardData): {
       paidTotal,
       unpaidBalance,
       settled: agreedAmount != null && paidTotal >= agreedAmount,
+      schedule,
+      overdueAmount: inPlay ? overdueAmount : 0,
+      nextDue,
       earliest: win.earliest ? toDateInput(win.earliest) : null,
       open: win.open,
       daysUntilOpen: win.daysUntilOpen,
@@ -275,6 +315,7 @@ export function buildDashboardRows(data: DashboardData): {
           hasRef: Boolean(eng?.confirmationRef),
           isMissingCost,
           isMissingTime,
+          paymentOverdue: overdueAmount > 0,
         }),
     });
   }
