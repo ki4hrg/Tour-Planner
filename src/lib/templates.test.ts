@@ -136,6 +136,52 @@ describe("instantiateDays", () => {
     expect("confirmationRef" in booking).toBe(false);
   });
 
+  it("copies a travel leg verbatim, stops renumbered 0..n (GH #80)", () => {
+    const days = instantiateDays(
+      [
+        {
+          dayIndex: 1,
+          title: null,
+          logisticalNotes: null,
+          scheduleItems: [
+            item(1, {
+              title: null,
+              travel: {
+                method: "COACH",
+                fromLocationId: "locA",
+                fromLabel: null,
+                toLocationId: null,
+                toLabel: "Bristol",
+                stops: [
+                  { locationId: null, label: "M5 services", dwellMinutes: 15, order: 5 },
+                  { locationId: "locS", label: null, dwellMinutes: null, order: 2 },
+                ],
+              },
+            }),
+          ],
+        },
+      ],
+      null,
+    );
+    const created = days[0].scheduleItems.create[0];
+    expect(created.travel?.create).toMatchObject({
+      method: "COACH",
+      fromLocationId: "locA",
+      toLabel: "Bristol",
+    });
+    // Stops sort by source order, then renumber.
+    expect(created.travel?.create.stops.create).toEqual([
+      { locationId: "locS", label: null, dwellMinutes: null, order: 0 },
+      { locationId: null, label: "M5 services", dwellMinutes: 15, order: 1 },
+    ]);
+    // Items without a leg omit the key entirely.
+    const plain = instantiateDays(
+      [{ dayIndex: 1, title: null, logisticalNotes: null, scheduleItems: [item(1)] }],
+      null,
+    );
+    expect(plain[0].scheduleItems.create[0].travel).toBeUndefined();
+  });
+
   it("does not mutate the input", () => {
     const before = JSON.stringify(sample);
     instantiateDays(sample, null);

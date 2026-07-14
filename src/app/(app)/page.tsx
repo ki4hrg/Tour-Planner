@@ -22,6 +22,7 @@ import {
   deriveTripLifecycle,
   serializeDay,
   tripStillInPlayWhere,
+  TRAVEL_LEG_INCLUDE,
 } from "@/lib/trips";
 import { TimelineGroups } from "./trips/itinerary-timeline";
 
@@ -41,6 +42,7 @@ const DAY_ITEMS_INCLUDE = {
       },
     },
     presenters: { select: { id: true, name: true } },
+              travel: TRAVEL_LEG_INCLUDE,
     sites: {
       orderBy: { order: "asc" },
       include: { location: { select: { id: true, name: true } } },

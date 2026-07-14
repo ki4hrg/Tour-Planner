@@ -1,4 +1,4 @@
-import type { BookingStatus, Prisma } from "@prisma/client";
+import type { BookingStatus, Prisma, TravelMethod } from "@prisma/client";
 import { computeDayDate, dayIndexForDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
@@ -14,6 +14,22 @@ export type TemplateBooking = {
   notes: string | null;
 };
 
+// A travel leg copies verbatim (route + method + stops are all reusable plan,
+// nothing instance-specific).
+export type TemplateTravelLeg = {
+  method: TravelMethod;
+  fromLocationId: string | null;
+  fromLabel: string | null;
+  toLocationId: string | null;
+  toLabel: string | null;
+  stops: {
+    locationId: string | null;
+    label: string | null;
+    dwellMinutes: number | null;
+    order: number;
+  }[];
+};
+
 export type TemplateScheduleItem = {
   categoryId: string | null;
   title: string | null;
@@ -25,6 +41,7 @@ export type TemplateScheduleItem = {
   presentationId: string | null;
   sites: TemplateItemLocation[];
   bookings: TemplateBooking[];
+  travel?: TemplateTravelLeg | null;
 };
 
 export type TemplateDay = {
@@ -56,6 +73,11 @@ export type InstantiatedScheduleItem = {
   presentationId: string | null; // catalog link survives; presenters reset (omitted)
   sites: { create: InstantiatedItemLocation[] };
   bookings: { create: InstantiatedBooking[] };
+  travel?: {
+    create: Omit<TemplateTravelLeg, "stops"> & {
+      stops: { create: TemplateTravelLeg["stops"] };
+    };
+  };
 };
 
 export type InstantiatedDay = {
@@ -183,6 +205,31 @@ export function instantiateDays(
                   status: "NOT_BOOKED" as BookingStatus,
                 })),
               },
+              // The travel leg (route/method/stops) is reusable plan — copied
+              // verbatim, stops renumbered 0..n.
+              ...(item.travel
+                ? {
+                    travel: {
+                      create: {
+                        method: item.travel.method,
+                        fromLocationId: item.travel.fromLocationId,
+                        fromLabel: item.travel.fromLabel,
+                        toLocationId: item.travel.toLocationId,
+                        toLabel: item.travel.toLabel,
+                        stops: {
+                          create: [...item.travel.stops]
+                            .sort((a, b) => a.order - b.order)
+                            .map((s, sk) => ({
+                              locationId: s.locationId,
+                              label: s.label,
+                              dwellMinutes: s.dwellMinutes,
+                              order: sk,
+                            })),
+                        },
+                      },
+                    },
+                  }
+                : {}),
             })),
         },
       };

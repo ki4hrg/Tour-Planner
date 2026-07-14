@@ -8,6 +8,7 @@ import {
   TRIP_LIFECYCLE_LABELS,
   deriveTripLifecycle,
   serializeDay,
+  TRAVEL_LEG_INCLUDE,
 } from "@/lib/trips";
 import { ItineraryEditor } from "../../itinerary-editor";
 import { TemplateChip } from "../../template-chip";
@@ -42,6 +43,7 @@ export default async function ItineraryPage({
                 },
               },
               presenters: { select: { id: true, name: true } },
+              travel: TRAVEL_LEG_INCLUDE,
               sites: {
                 orderBy: { order: "asc" },
                 include: {

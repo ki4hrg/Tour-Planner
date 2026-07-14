@@ -20,8 +20,10 @@ import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import {
   BOOKING_STATUS_LABELS,
   BOOKING_STATUSES,
+  TRAVEL_METHOD_LABELS,
   effectivePresenters,
   scheduleItemPrimaryLabel,
+  travelDetailLine,
   type SerializedDay,
   type SerializedScheduleItem,
   type SerializedBooking,
@@ -30,8 +32,9 @@ import {
   TimelineGroups,
   BookingPill,
   CategoryChip,
+  TravelMethodIcon,
 } from "./itinerary-timeline";
-import type { BookingStatus } from "@prisma/client";
+import type { BookingStatus, TravelMethod } from "@prisma/client";
 import type { FormState } from "@/lib/forms";
 import {
   addDay,
@@ -49,6 +52,7 @@ import {
   createContactInline,
   createPresentationInline,
   type ScheduleItemInputData,
+  type TravelLegInputData,
   type BookingInputData,
   type CreatedLocation,
   type CreatedContact,
@@ -289,7 +293,7 @@ function DayCard({
 }) {
   const { pending, run } = useAction();
   const [editingDay, setEditingDay] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"item" | "travel" | null>(null);
   const [title, setTitle] = useState(day.title ?? "");
   const [notes, setNotes] = useState(day.logisticalNotes ?? "");
   const [participantNotes, setParticipantNotes] = useState(
@@ -477,7 +481,7 @@ function DayCard({
 
       {canEdit ? (
         <div className="border-t p-4">
-          {adding ? (
+          {adding === "item" ? (
             <div className="rounded-md border border-dashed p-3">
               <p className="mb-2 text-sm font-medium">Add an item</p>
               <ItemFields
@@ -493,16 +497,45 @@ function DayCard({
                 onSubmit={(data, done) =>
                   run(() => addScheduleItem(day.id, data), () => {
                     done();
-                    setAdding(false);
+                    setAdding(null);
                   })
                 }
-                onCancel={() => setAdding(false)}
+                onCancel={() => setAdding(null)}
+              />
+            </div>
+          ) : adding === "travel" ? (
+            <div className="rounded-md border border-dashed p-3">
+              <p className="mb-2 text-sm font-medium">Add travel</p>
+              <TravelFields
+                categories={categories}
+                locations={locations}
+                submitLabel="Add travel"
+                onSubmit={(data, done) =>
+                  run(() => addScheduleItem(day.id, data), () => {
+                    done();
+                    setAdding(null);
+                  })
+                }
+                onCancel={() => setAdding(null)}
               />
             </div>
           ) : (
-            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-              + Add item
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdding("item")}
+              >
+                + Add item
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdding("travel")}
+              >
+                + Add travel
+              </Button>
+            </div>
           )}
         </div>
       ) : null}
@@ -580,24 +613,40 @@ function ItemRow({
         <div className="min-w-0 flex-1">
           {editing && canEdit ? (
             <div className="space-y-4 rounded-md border bg-background p-3">
-              <ItemFields
-                categories={categories}
-                locations={locations}
-                contacts={contacts}
-                presentations={presentations}
-                initial={item}
-                submitLabel="Save item"
-                onCreateLocation={onCreateLocation}
-                onCreateContact={onCreateContact}
-                onCreatePresentation={onCreatePresentation}
-                onSubmit={(data, done, opts) =>
-                  run(() => updateScheduleItem(item.id, data, opts), () => {
-                    done();
-                    setEditing(false);
-                  })
-                }
-                onCancel={() => setEditing(false)}
-              />
+              {item.travel ? (
+                <TravelFields
+                  categories={categories}
+                  locations={locations}
+                  initial={item}
+                  submitLabel="Save travel"
+                  onSubmit={(data, done, opts) =>
+                    run(() => updateScheduleItem(item.id, data, opts), () => {
+                      done();
+                      setEditing(false);
+                    })
+                  }
+                  onCancel={() => setEditing(false)}
+                />
+              ) : (
+                <ItemFields
+                  categories={categories}
+                  locations={locations}
+                  contacts={contacts}
+                  presentations={presentations}
+                  initial={item}
+                  submitLabel="Save item"
+                  onCreateLocation={onCreateLocation}
+                  onCreateContact={onCreateContact}
+                  onCreatePresentation={onCreatePresentation}
+                  onSubmit={(data, done, opts) =>
+                    run(() => updateScheduleItem(item.id, data, opts), () => {
+                      done();
+                      setEditing(false);
+                    })
+                  }
+                  onCancel={() => setEditing(false)}
+                />
+              )}
               <BookingsPanel item={item} contacts={contacts} />
             </div>
           ) : (
@@ -639,6 +688,17 @@ function ItemRow({
                       {s.location.name}
                     </span>
                   ))}
+                </div>
+              ) : null}
+
+              {/* A travel item's "where" is its route. */}
+              {item.travel ? (
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <TravelMethodIcon
+                    method={item.travel.method}
+                    className="size-3.5 shrink-0"
+                  />
+                  <span>{travelDetailLine(item.travel) ?? "Route not set"}</span>
                 </div>
               ) : null}
 
@@ -1253,6 +1313,346 @@ function ItemFields({
           type="button"
           size="sm"
           disabled={timesInvalid}
+          onClick={submit}
+        >
+          {submitLabel}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// One stop row's local form state in the travel editor.
+type StopDraft = {
+  key: number;
+  locationId: string; // NONE = free-text only
+  label: string;
+  dwellMinutes: string;
+};
+
+// The travel-leg form (GH #80): method + origin/destination (catalogued
+// location or free text) + en-route stops, plus the item-level times/notes.
+// Submits through the same add/updateScheduleItem actions with a `travel`
+// payload; locations/title/presenters are forced empty server-side.
+function TravelFields({
+  categories,
+  locations,
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  categories: Category[];
+  locations: Location[];
+  initial?: SerializedScheduleItem;
+  submitLabel: string;
+  onSubmit: (
+    data: ScheduleItemInputData,
+    done: () => void,
+    opts?: { cascade?: boolean },
+  ) => void;
+  onCancel: () => void;
+}) {
+  const leg = initial?.travel ?? null;
+  const [method, setMethod] = useState<TravelMethod>(leg?.method ?? "COACH");
+  const [fromLocationId, setFromLocationId] = useState<string>(
+    leg?.fromLocation?.id ?? NONE,
+  );
+  const [fromLabel, setFromLabel] = useState(leg?.fromLabel ?? "");
+  const [toLocationId, setToLocationId] = useState<string>(
+    leg?.toLocation?.id ?? NONE,
+  );
+  const [toLabel, setToLabel] = useState(leg?.toLabel ?? "");
+  const [startTime, setStartTime] = useState(initial?.startTime ?? "");
+  const [endTime, setEndTime] = useState(initial?.endTime ?? "");
+  const [cascade, setCascade] = useState(true);
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [stops, setStops] = useState<StopDraft[]>(
+    leg?.stops.map((s, i) => ({
+      key: i,
+      locationId: s.location?.id ?? NONE,
+      label: s.label ?? "",
+      dwellMinutes: s.dwellMinutes != null ? String(s.dwellMinutes) : "",
+    })) ?? [],
+  );
+
+  // The non-system "Travel" category, when the catalog still has one — attached
+  // for its marker colour only; nothing depends on it.
+  const travelCategoryId =
+    initial?.categoryId ??
+    categories.find((c) => c.name === "Travel" && !c.system)?.id;
+
+  const timesInvalid =
+    !!startTime &&
+    !!endTime &&
+    timeToMinutes(startTime) !== null &&
+    timeToMinutes(endTime) !== null &&
+    (timeToMinutes(endTime) as number) < (timeToMinutes(startTime) as number);
+
+  // Same duration-preserving nudge as ItemFields: moving the depart time past
+  // the arrive time drags the arrive time along.
+  const onStartChange = (v: string) => {
+    const vMin = v ? timeToMinutes(v) : null;
+    const endMin = endTime ? timeToMinutes(endTime) : null;
+    if (vMin !== null && endMin !== null && vMin > endMin) {
+      const prevStart = startTime ? timeToMinutes(startTime) : null;
+      const prevDuration =
+        prevStart !== null && endMin >= prevStart ? endMin - prevStart : 0;
+      setEndTime(minutesToTime(Math.min(24 * 60 - 1, vMin + prevDuration)));
+    }
+    setStartTime(v);
+  };
+
+  const patchStop = (key: number, part: Partial<StopDraft>) =>
+    setStops((prev) => prev.map((s) => (s.key === key ? { ...s, ...part } : s)));
+
+  const canCascade = !!initial && !!startTime;
+  // A stop needs a location or a label to survive the validator.
+  const stopsIncomplete = stops.some(
+    (s) => s.locationId === NONE && !s.label.trim(),
+  );
+
+  const submit = () => {
+    const travel: TravelLegInputData = {
+      method,
+      fromLocationId: fromLocationId === NONE ? undefined : fromLocationId,
+      fromLabel: fromLabel.trim() || undefined,
+      toLocationId: toLocationId === NONE ? undefined : toLocationId,
+      toLabel: toLabel.trim() || undefined,
+      stops: stops.map((s) => ({
+        locationId: s.locationId === NONE ? undefined : s.locationId,
+        label: s.label.trim() || undefined,
+        dwellMinutes: s.dwellMinutes.trim() || undefined,
+      })),
+    };
+    onSubmit(
+      {
+        categoryId: travelCategoryId ?? undefined,
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+        notes: notes.trim() || undefined,
+        isBlock: false,
+        presenterIds: [],
+        locationIds: [],
+        travel,
+      },
+      () => {
+        if (!initial) {
+          setMethod("COACH");
+          setFromLocationId(NONE);
+          setFromLabel("");
+          setToLocationId(NONE);
+          setToLabel("");
+          setStartTime("");
+          setEndTime("");
+          setNotes("");
+          setStops([]);
+        }
+      },
+      { cascade: canCascade && cascade },
+    );
+  };
+
+  const endpointPicker = (
+    label: string,
+    locationId: string,
+    setLocationId: (v: string) => void,
+    freeText: string,
+    setFreeText: (v: string) => void,
+  ) => (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      <Select value={locationId} onValueChange={setLocationId}>
+        <SelectTrigger size="sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>— no catalogued location —</SelectItem>
+          {locations.map((l) => (
+            <SelectItem key={l.id} value={l.id}>
+              {l.name}
+              {l.region ? ` · ${l.region}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {locationId === NONE ? (
+        <Input
+          value={freeText}
+          onChange={(e) => setFreeText(e.target.value)}
+          placeholder="or type a place (e.g. Bristol)"
+        />
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Method</Label>
+          <Select
+            value={method}
+            onValueChange={(v) => setMethod(v as TravelMethod)}
+          >
+            <SelectTrigger size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(
+                Object.entries(TRAVEL_METHOD_LABELS) as [TravelMethod, string][]
+              ).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="hidden sm:block" />
+        {endpointPicker("From", fromLocationId, setFromLocationId, fromLabel, setFromLabel)}
+        {endpointPicker("To", toLocationId, setToLocationId, toLabel, setToLabel)}
+        <div className="space-y-1.5">
+          <Label className="text-xs">Depart</Label>
+          <Input
+            type="time"
+            value={startTime}
+            onChange={(e) => onStartChange(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Arrive</Label>
+          <Input
+            type="time"
+            value={endTime}
+            min={startTime || undefined}
+            aria-invalid={timesInvalid}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {timesInvalid ? (
+        <p className="text-xs text-destructive">
+          Arrival can&rsquo;t be before departure.
+        </p>
+      ) : null}
+
+      {canCascade ? (
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            className="mt-0.5"
+            checked={cascade}
+            onCheckedChange={(v) => setCascade(v === true)}
+          />
+          <span>
+            Shift later items to match
+            <span className="block text-xs text-muted-foreground">
+              Moves everything after this by the same amount, keeping the
+              day&rsquo;s spacing. Uncheck to leave later items where they are.
+            </span>
+          </span>
+        </label>
+      ) : null}
+
+      {/* En-route stops — comfort/photo stops that belong to the leg, not the day. */}
+      <div className="space-y-2 rounded-md border p-3">
+        <Label className="text-xs">En-route stops</Label>
+        {stops.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            None — add a comfort or photo stop if the leg makes one.
+          </p>
+        ) : (
+          stops.map((s) => (
+            <div key={s.key} className="flex flex-wrap items-end gap-2">
+              <div className="min-w-40 flex-1 space-y-1">
+                <Label className="text-xs">Location</Label>
+                <Select
+                  value={s.locationId}
+                  onValueChange={(v) => patchStop(s.key, { locationId: v })}
+                >
+                  <SelectTrigger size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>— free text —</SelectItem>
+                    {locations.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {s.locationId === NONE ? (
+                <div className="min-w-36 flex-1 space-y-1">
+                  <Label className="text-xs">Label</Label>
+                  <Input
+                    value={s.label}
+                    onChange={(e) => patchStop(s.key, { label: e.target.value })}
+                    placeholder="e.g. M5 services"
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                <Label className="text-xs">Dwell (min)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="5"
+                  inputMode="numeric"
+                  value={s.dwellMinutes}
+                  onChange={(e) =>
+                    patchStop(s.key, { dwellMinutes: e.target.value })
+                  }
+                  className="w-24"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setStops((prev) => prev.filter((x) => x.key !== s.key))
+                }
+                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+              >
+                Remove
+              </button>
+            </div>
+          ))
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setStops((prev) => [
+              ...prev,
+              {
+                key: (prev[prev.length - 1]?.key ?? -1) + 1,
+                locationId: NONE,
+                label: "",
+                dwellMinutes: "",
+              },
+            ])
+          }
+        >
+          + Add stop
+        </Button>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Notes</Label>
+        <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={timesInvalid || stopsIncomplete}
           onClick={submit}
         >
           {submitLabel}

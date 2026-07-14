@@ -20,6 +20,7 @@ import {
   serializeBooking,
   bookingsByLocation,
   summarizeDayLodging,
+  TRAVEL_LEG_INCLUDE,
 } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
@@ -69,6 +70,7 @@ export default async function TripOverviewPage({
                 },
               },
               presenters: { select: { id: true, name: true } },
+              travel: TRAVEL_LEG_INCLUDE,
               sites: {
                 orderBy: { order: "asc" },
                 include: {

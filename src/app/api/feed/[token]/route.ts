@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { toDateInput } from "@/lib/dates";
-import { serializeDay } from "@/lib/trips";
+import { serializeDay, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 import {
   buildFeedEvents,
   type FeedTrip,
@@ -29,6 +29,7 @@ const TRIP_INCLUDE = {
             },
           },
           presenters: { select: { id: true, name: true } },
+          travel: TRAVEL_LEG_INCLUDE,
           sites: {
             orderBy: { order: "asc" as const },
             include: { location: { select: { id: true, name: true } } },

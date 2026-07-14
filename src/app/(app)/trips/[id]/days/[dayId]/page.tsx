@@ -11,6 +11,7 @@ import {
   deriveTripLifecycle,
   serializeDay,
   summarizeDayLodging,
+  TRAVEL_LEG_INCLUDE,
 } from "@/lib/trips";
 import { DayTimeline } from "./day-timeline";
 
@@ -46,6 +47,7 @@ export default async function TripDayPage({
                 },
               },
               presenters: { select: { id: true, name: true } },
+              travel: TRAVEL_LEG_INCLUDE,
               sites: {
                 orderBy: { order: "asc" },
                 include: {

@@ -4,6 +4,7 @@ import type {
   CostUnit,
   Payment,
   PaymentScheduleItem,
+  TravelMethod,
 } from "@prisma/client";
 import { toDateInput, todayUtc } from "./dates";
 import { bookingWindow, bookingNeedsInfo, earliestCoveredDate } from "./booking";
@@ -95,6 +96,14 @@ type ItemInput = {
   endTime: string | null;
   category: { name: string } | null;
   presentation: { title: string } | null;
+  // Travel leg (GH #80) — feeds the row label ("Coach to Bristol") for a
+  // site-less booking on a travel item; optional so callers whose queries
+  // don't load it stay valid.
+  travel?: {
+    method: TravelMethod;
+    toLocation: { name: string } | null;
+    toLabel: string | null;
+  } | null;
   sites: { locationId: string }[];
   bookings: {
     id: string;

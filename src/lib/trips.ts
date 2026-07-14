@@ -5,6 +5,7 @@ import type {
   Prisma,
   ScheduleItem,
   Stay,
+  TravelMethod,
   Trip,
   TripStatus,
 } from "@prisma/client";
@@ -172,6 +173,76 @@ export type SerializedItemPresentation = {
   defaultPresenters: SerializedPerson[];
 };
 
+// A travel span's client-safe shape (GH #80). Endpoints resolve to a display
+// name via location ?? free-text label; stops are ordered.
+export type SerializedTravelStop = {
+  id: string;
+  location: { id: string; name: string } | null;
+  label: string | null;
+  dwellMinutes: number | null;
+  order: number;
+};
+
+export type SerializedTravelLeg = {
+  id: string;
+  method: TravelMethod;
+  fromLocation: { id: string; name: string } | null;
+  fromLabel: string | null;
+  toLocation: { id: string; name: string } | null;
+  toLabel: string | null;
+  stops: SerializedTravelStop[];
+};
+
+export const TRAVEL_METHOD_LABELS: Record<TravelMethod, string> = {
+  COACH: "Coach",
+  TRAIN: "Train",
+  FERRY: "Ferry",
+  FLIGHT: "Flight",
+  WALK: "Walk",
+  TAXI: "Taxi",
+  OTHER: "Travel",
+};
+
+/** Display name of a travel endpoint: catalogued location beats free text. */
+export function travelEndpointName(
+  location: { name: string } | null,
+  label: string | null,
+): string | null {
+  return location?.name ?? label ?? null;
+}
+
+/** "Old Sarum → Bristol" (or just the known endpoint) — null when neither is set. */
+export function travelRoute(travel: {
+  fromLocation: { name: string } | null;
+  fromLabel: string | null;
+  toLocation: { name: string } | null;
+  toLabel: string | null;
+}): string | null {
+  const from = travelEndpointName(travel.fromLocation, travel.fromLabel);
+  const to = travelEndpointName(travel.toLocation, travel.toLabel);
+  if (from && to) return `${from} → ${to}`;
+  return to ?? from;
+}
+
+/**
+ * "Old Sarum → Bristol · via M5 services (15 min)" — the route + stops line
+ * under a travel row's heading. Null when the leg has no route and no stops.
+ */
+export function travelDetailLine(travel: SerializedTravelLeg): string | null {
+  const stops = travel.stops
+    .map((s) => {
+      const name = s.location?.name ?? s.label;
+      if (!name) return null;
+      return s.dwellMinutes ? `${name} (${s.dwellMinutes} min)` : name;
+    })
+    .filter(Boolean);
+  return (
+    [travelRoute(travel), stops.length ? `via ${stops.join(", ")}` : null]
+      .filter(Boolean)
+      .join(" · ") || null
+  );
+}
+
 export type SerializedScheduleItem = {
   id: string;
   dayId: string;
@@ -188,16 +259,21 @@ export type SerializedScheduleItem = {
   presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
   sites: SerializedItemLocation[];
   bookings: SerializedBooking[];
+  // Set ⇒ this item is a travel span (GH #80). Optional so callers whose
+  // queries don't load the relation stay valid; absent reads as "not travel".
+  travel?: SerializedTravelLeg | null;
 };
 
 // The heading shown for a schedule item. Precedence:
 //   1. an explicit title override on the item,
 //   2. the linked talk's title,
-//   3. the category name, qualified by the venue(s) when placed — a bare "Visit"
+//   3. a travel leg's derived label — "Coach to Bristol" (method + destination;
+//      bare method label when the destination isn't set yet),
+//   4. the category name, qualified by the venue(s) when placed — a bare "Visit"
 //      is uninformative, so a located category-labelled item reads
 //      "Visit: The Old Rectory" (self-describing kinds like Free time / Break are
 //      location-less, so they stay bare),
-//   4. "Untitled item".
+//   5. "Untitled item".
 // `presentationIsPrimary` is true when the talk title IS the heading, so callers
 // avoid echoing it. `labelFromCategory` is true when the category name drives the
 // heading, so callers drop the (now redundant) category chip and instead tint
@@ -207,6 +283,11 @@ export function scheduleItemPrimaryLabel(item: {
   presentation: { title: string } | null;
   category: { name: string } | null;
   sites?: { location: { name: string } }[];
+  travel?: {
+    method: TravelMethod;
+    toLocation: { name: string } | null;
+    toLabel: string | null;
+  } | null;
 }): {
   primary: string;
   presentationIsPrimary: boolean;
@@ -223,6 +304,15 @@ export function scheduleItemPrimaryLabel(item: {
     return {
       primary: item.presentation.title,
       presentationIsPrimary: true,
+      labelFromCategory: false,
+    };
+  }
+  if (item.travel) {
+    const method = TRAVEL_METHOD_LABELS[item.travel.method];
+    const to = travelEndpointName(item.travel.toLocation, item.travel.toLabel);
+    return {
+      primary: to ? `${method} to ${to}` : method,
+      presentationIsPrimary: false,
       labelFromCategory: false,
     };
   }
@@ -355,6 +445,22 @@ type BookingRow = Booking & {
   bookedContact: { id: string; name: string } | null;
 };
 
+type TravelLegRow = {
+  id: string;
+  method: TravelMethod;
+  fromLocation: { id: string; name: string } | null;
+  fromLabel: string | null;
+  toLocation: { id: string; name: string } | null;
+  toLabel: string | null;
+  stops: {
+    id: string;
+    location: { id: string; name: string } | null;
+    label: string | null;
+    dwellMinutes: number | null;
+    order: number;
+  }[];
+};
+
 type ScheduleItemWithRelations = ScheduleItem & {
   category: { id: string; name: string; color: string | null } | null;
   presentation: {
@@ -365,6 +471,8 @@ type ScheduleItemWithRelations = ScheduleItem & {
   presenters: SerializedPerson[];
   sites: ItemLocationRow[];
   bookings: BookingRow[];
+  // Optional: present only when the caller's query loaded the relation.
+  travel?: TravelLegRow | null;
 };
 
 export function serializeBooking(b: BookingRow): SerializedBooking {
@@ -429,8 +537,41 @@ export function serializeScheduleItem(
         },
       })),
     bookings: item.bookings.map(serializeBooking),
+    travel:
+      item.travel === undefined
+        ? undefined
+        : item.travel && {
+            id: item.travel.id,
+            method: item.travel.method,
+            fromLocation: item.travel.fromLocation,
+            fromLabel: item.travel.fromLabel,
+            toLocation: item.travel.toLocation,
+            toLabel: item.travel.toLabel,
+            stops: [...item.travel.stops]
+              .sort((a, b) => a.order - b.order)
+              .map((s) => ({
+                id: s.id,
+                location: s.location,
+                label: s.label,
+                dwellMinutes: s.dwellMinutes,
+                order: s.order,
+              })),
+          },
   };
 }
+
+// The Prisma include every item query that renders travel needs — spread as
+// `travel: TRAVEL_LEG_INCLUDE` next to `sites`/`bookings`.
+export const TRAVEL_LEG_INCLUDE = {
+  include: {
+    fromLocation: { select: { id: true, name: true } },
+    toLocation: { select: { id: true, name: true } },
+    stops: {
+      orderBy: { order: "asc" },
+      include: { location: { select: { id: true, name: true } } },
+    },
+  },
+} satisfies Prisma.ScheduleItem$travelArgs;
 
 export function serializeDay(
   day: ItineraryDay & { scheduleItems: ScheduleItemWithRelations[] },

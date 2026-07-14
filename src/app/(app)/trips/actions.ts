@@ -28,6 +28,7 @@ import {
   templatizeStays,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { travelLegCreateData } from "@/lib/travel";
 import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
@@ -84,6 +85,23 @@ const TEMPLATE_DAYS_SELECT = {
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
       bookings: { select: { locationId: true, label: true, notes: true } },
+      travel: {
+        select: {
+          method: true,
+          fromLocationId: true,
+          fromLabel: true,
+          toLocationId: true,
+          toLabel: true,
+          stops: {
+            select: {
+              locationId: true,
+              label: true,
+              dwellMinutes: true,
+              order: true,
+            },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.ItineraryDaySelect;
@@ -437,6 +455,15 @@ export async function reorderDays(
 
 // --- ScheduleItem CRUD + reorder ---
 
+export type TravelLegInputData = {
+  method: string;
+  fromLocationId?: string;
+  fromLabel?: string;
+  toLocationId?: string;
+  toLabel?: string;
+  stops: { locationId?: string; label?: string; dwellMinutes?: number | string }[];
+};
+
 export type ScheduleItemInputData = {
   categoryId?: string;
   title?: string;
@@ -447,16 +474,23 @@ export type ScheduleItemInputData = {
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
+  // A travel span (GH #80). On update: null removes the leg, undefined leaves
+  // an existing leg untouched.
+  travel?: TravelLegInputData | null;
 };
 
 // A schedule item must be identifiable: it needs a title or at least one
 // location — unless its category is a self-describing built-in (Free time /
-// Break), which legitimately carries only times + notes. Returns an error
-// message when the item is under-specified, else null.
+// Break), which legitimately carries only times + notes, or it's a travel
+// span (its identity is the route). `hasExistingLeg` covers updates that
+// leave an item's persisted leg untouched (travel undefined). Returns an
+// error message when the item is under-specified, else null.
 async function identityError(
   d: ReturnType<typeof scheduleItemSchema.parse>,
+  hasExistingLeg = false,
 ): Promise<string | null> {
-  if (d.title || d.locationIds.length > 0) return null;
+  if (d.title || d.locationIds.length > 0 || d.travel || hasExistingLeg)
+    return null;
   const selfDescribing = d.categoryId
     ? (
         await prisma.scheduleItemCategory.findUnique({
@@ -480,6 +514,18 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     isBlock: d.isBlock ?? false,
     presentationId: d.presentationId || null,
   };
+}
+
+// A travel item's "where" is its leg (origin/destination), never ScheduleItemSite
+// rows — that keeps it out of venue-run grouping and venue engagements. Force
+// the site list empty whenever a leg is being set — or (on update) kept: an
+// existing leg the input leaves untouched wins over stray locationIds.
+function effectiveLocationIds(
+  d: ReturnType<typeof scheduleItemSchema.parse>,
+  hasExistingLeg = false,
+): string[] {
+  const isTravel = d.travel !== undefined ? !!d.travel : hasExistingLeg;
+  return isTravel ? [] : d.locationIds;
 }
 
 export async function addScheduleItem(
@@ -511,11 +557,14 @@ export async function addScheduleItem(
         ...toItemScalars(parsed.data),
         presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
         sites: {
-          create: parsed.data.locationIds.map((locationId, i) => ({
+          create: effectiveLocationIds(parsed.data).map((locationId, i) => ({
             locationId,
             order: i,
           })),
         },
+        ...(parsed.data.travel
+          ? { travel: { create: travelLegCreateData(parsed.data.travel) } }
+          : {}),
       },
     });
   });
@@ -537,15 +586,20 @@ export async function updateScheduleItem(
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
-  const idErr = await identityError(parsed.data);
-  if (idErr) return { error: idErr };
 
-  // Pre-edit times + day are needed to compute the ripple delta before we overwrite.
+  // Pre-edit times + day are needed to compute the ripple delta before we
+  // overwrite; the leg presence feeds the identity check and the travel-wins
+  // site handling when the input leaves the leg untouched.
   const existing = await prisma.scheduleItem.findUnique({
     where: { id: itemId },
-    select: { dayId: true },
+    select: { dayId: true, travel: { select: { id: true } } },
   });
   if (!existing) return { error: "Item not found." };
+
+  const hasExistingLeg =
+    parsed.data.travel === undefined && existing.travel != null;
+  const idErr = await identityError(parsed.data, hasExistingLeg);
+  if (idErr) return { error: idErr };
 
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
@@ -585,10 +639,25 @@ export async function updateScheduleItem(
       }
     }
 
+    // Travel leg (GH #80): an object replaces the leg wholesale, null removes
+    // it, undefined leaves an existing leg untouched.
+    if (parsed.data.travel !== undefined) {
+      await tx.travelLeg.deleteMany({ where: { scheduleItemId: itemId } });
+      if (parsed.data.travel) {
+        await tx.travelLeg.create({
+          data: {
+            scheduleItemId: itemId,
+            ...travelLegCreateData(parsed.data.travel),
+          },
+        });
+      }
+    }
+
+    const locationIds = effectiveLocationIds(parsed.data, hasExistingLeg);
     await tx.scheduleItemSite.deleteMany({ where: { scheduleItemId: itemId } });
-    if (parsed.data.locationIds.length > 0) {
+    if (locationIds.length > 0) {
       await tx.scheduleItemSite.createMany({
-        data: parsed.data.locationIds.map((locationId, i) => ({
+        data: locationIds.map((locationId, i) => ({
           scheduleItemId: itemId,
           locationId,
           order: i,
@@ -598,7 +667,7 @@ export async function updateScheduleItem(
       await tx.booking.updateMany({
         where: {
           scheduleItemId: itemId,
-          locationId: { notIn: parsed.data.locationIds },
+          locationId: { notIn: locationIds },
         },
         data: { locationId: null },
       });

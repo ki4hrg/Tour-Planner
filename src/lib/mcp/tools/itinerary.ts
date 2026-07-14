@@ -5,6 +5,27 @@ import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import { travelLegCreateData } from "@/lib/travel";
+import { TRAVEL_LEG_INCLUDE } from "@/lib/trips";
+
+// A travel span (GH #80) on add/update-schedule-item. Setting it makes the item
+// a travel leg: origin → destination by a method, item start/end = depart/arrive.
+const travelInputSchema = z.object({
+  method: z.enum(["COACH", "TRAIN", "FERRY", "FLIGHT", "WALK", "TAXI", "OTHER"]),
+  fromLocationId: z.string().optional(),
+  fromLabel: z.string().optional(),
+  toLocationId: z.string().optional(),
+  toLabel: z.string().optional(),
+  stops: z
+    .array(
+      z.object({
+        locationId: z.string().optional(),
+        label: z.string().optional(),
+        dwellMinutes: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
+});
 
 export function registerItineraryTools(server: McpServer, user: SessionUser) {
   // ── list-schedule-categories (VIEWER+) ────────────────────────────────
@@ -92,6 +113,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                     location: { select: { id: true, name: true } },
                   },
                 },
+                travel: TRAVEL_LEG_INCLUDE,
                 bookings: {
                   select: {
                     id: true,
@@ -216,7 +238,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Schedule Item",
       description:
-        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Travel', 'Free time' can be set via categoryId.",
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items.",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
@@ -228,6 +250,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         presentationId: z.string().optional(),
         presenterIds: z.array(z.string()).optional(),
         isBlock: z.boolean().optional(),
+        travel: travelInputSchema.optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -247,6 +270,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       presentationId,
       presenterIds,
       isBlock,
+      travel,
     }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -283,13 +307,18 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               presenters: presenterIds?.length
                 ? { connect: presenterIds.map((id) => ({ id })) }
                 : undefined,
-              sites: locationIds?.length
-                ? {
-                    create: locationIds.map((locationId, i) => ({
-                      locationId,
-                      order: i,
-                    })),
-                  }
+              // A travel item's "where" is its leg — never ScheduleItemSite rows.
+              sites:
+                !travel && locationIds?.length
+                  ? {
+                      create: locationIds.map((locationId, i) => ({
+                        locationId,
+                        order: i,
+                      })),
+                    }
+                  : undefined,
+              travel: travel
+                ? { create: travelLegCreateData(travel) }
                 : undefined,
             },
           });
@@ -323,7 +352,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Schedule Item",
       description:
-        "Update a schedule item's title, times, locations, category, or notes. Only include fields you want to change. Use get-itinerary to find item IDs.",
+        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one.",
       inputSchema: {
         itemId: z.string(),
         title: z.string().optional(),
@@ -334,6 +363,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         locationIds: z.array(z.string()).optional(),
         presentationId: z.string().optional(),
         presenterIds: z.array(z.string()).optional(),
+        travel: travelInputSchema.nullable().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -352,6 +382,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       locationIds,
       presentationId,
       presenterIds,
+      travel,
     }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -360,6 +391,45 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             isError: true,
           };
         }
+
+        const existing = await prisma.scheduleItem.findUnique({
+          where: { id: itemId },
+          select: {
+            title: true,
+            travel: { select: { id: true } },
+            _count: { select: { sites: true } },
+          },
+        });
+        if (!existing) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Item not found." }],
+            isError: true,
+          };
+        }
+
+        // The item must stay identifiable: removing the leg (travel: null)
+        // needs a title or locations to remain.
+        const finalTitle = title !== undefined ? title || null : existing.title;
+        const finalHasSites =
+          locationIds !== undefined
+            ? locationIds.length > 0
+            : existing._count.sites > 0;
+        if (travel === null && !finalTitle && !finalHasSites) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Removing the travel leg would leave the item with no title, locations, or route — set a title or locationIds in the same call.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // An existing leg the input leaves untouched wins over stray
+        // locationIds — a travel item's "where" is its leg (mirrors the web
+        // action's effectiveLocationIds).
+        const isTravel = travel !== undefined ? !!travel : !!existing.travel;
 
         const updateData: Record<string, unknown> = {};
         if (title !== undefined) updateData.title = title || null;
@@ -375,7 +445,22 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         }
 
         await prisma.$transaction(async (tx) => {
-          if (locationIds !== undefined) {
+          // Travel leg: an object replaces it wholesale, null removes it,
+          // undefined leaves an existing leg untouched. Setting a leg also
+          // clears the site links (a travel item's "where" is its leg).
+          if (travel !== undefined) {
+            await tx.travelLeg.deleteMany({ where: { scheduleItemId: itemId } });
+            if (travel) {
+              await tx.travelLeg.create({
+                data: { scheduleItemId: itemId, ...travelLegCreateData(travel) },
+              });
+              await tx.scheduleItemSite.deleteMany({
+                where: { scheduleItemId: itemId },
+              });
+            }
+          }
+
+          if (locationIds !== undefined && !isTravel) {
             await tx.scheduleItemSite.deleteMany({
               where: { scheduleItemId: itemId },
             });
