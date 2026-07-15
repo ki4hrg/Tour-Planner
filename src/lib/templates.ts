@@ -123,33 +123,43 @@ export type InstantiatedVenueBooking = {
  * schedule is kept (fixed installment amounts included; the planner adjusts those
  * if the next negotiation differs). Rows without a location are skipped
  * (engagements require one).
+ *
+ * Schedule precedence (GH #86): the source booking's own schedule wins; failing
+ * that, the location's standing default terms (`locationDefaults`) seed it; failing
+ * both, the engagement starts with no schedule.
  */
 export function instantiateVenueBookings(
   bookings: TemplateVenueBooking[],
+  locationDefaults?: Map<string, TemplateScheduleInstallment[]>,
 ): InstantiatedVenueBooking[] {
   return bookings
     .filter((b): b is TemplateVenueBooking & { locationId: string } =>
       Boolean(b.locationId),
     )
-    .map((b) => ({
-      locationId: b.locationId,
-      label: b.label,
-      notes: b.notes,
-      status: "NOT_BOOKED" as BookingStatus,
-      ...(b.paymentSchedule?.length
-        ? {
-            paymentSchedule: {
-              create: b.paymentSchedule.map((i) => ({
-                label: i.label,
-                percent: i.percent,
-                fixedAmount: i.fixedAmount,
-                dueOffsetDays: i.dueOffsetDays,
-                sortOrder: i.sortOrder,
-              })),
-            },
-          }
-        : {}),
-    }));
+    .map((b) => {
+      const schedule = b.paymentSchedule?.length
+        ? b.paymentSchedule
+        : (locationDefaults?.get(b.locationId) ?? []);
+      return {
+        locationId: b.locationId,
+        label: b.label,
+        notes: b.notes,
+        status: "NOT_BOOKED" as BookingStatus,
+        ...(schedule.length
+          ? {
+              paymentSchedule: {
+                create: schedule.map((i, idx) => ({
+                  label: i.label,
+                  percent: i.percent,
+                  fixedAmount: i.fixedAmount,
+                  dueOffsetDays: i.dueOffsetDays,
+                  sortOrder: idx,
+                })),
+              },
+            }
+          : {}),
+      };
+    });
 }
 
 /**

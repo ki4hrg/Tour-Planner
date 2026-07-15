@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { parseDateInput } from "@/lib/dates";
+import { zodErrorMessage } from "@/lib/forms";
+import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { serializeInstallment } from "@/lib/payment-schedule";
 
 export function registerLocationTools(server: McpServer, user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
@@ -77,7 +80,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Location Details",
       description:
-        "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. Useful before creating a booking or adding a location to an itinerary.",
+        "Get full details of a location including contacts, costs, standing payment terms (defaultPaymentSchedule — the venue's default installment pattern that seeds new engagements), host site capabilities, booking notes, and schedule limitations. Useful before creating a booking or adding a location to an itinerary.",
       inputSchema: { locationId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -112,6 +115,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 notes: true,
               },
             },
+            defaultPaymentSchedule: { orderBy: { sortOrder: "asc" } },
             hostSite: true,
           },
         });
@@ -132,6 +136,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             amount: Number(c.amount),
             confirmedAt: c.confirmedAt?.toISOString() ?? null,
           })),
+          defaultPaymentSchedule:
+            location.defaultPaymentSchedule.map(serializeInstallment),
         };
 
         return {
@@ -714,6 +720,103 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             {
               type: "text" as const,
               text: JSON.stringify({ success: true, id: costId }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── set-location-default-payment-schedule (PLANNER+) ───────────────────
+  server.registerTool(
+    "set-location-default-payment-schedule",
+    {
+      title: "Set Location Default Payment Schedule",
+      description:
+        "REPLACE a location's standing payment terms (get locationId from get-location/search-locations) with the given installments — pass an empty list to clear them. These are the venue's default terms that pre-fill a new (trip, location) engagement's payment schedule; a template's own schedule beats them, and per-trip edits then live on the booking. Each installment has EITHER percent (of the eventual agreed price) OR fixedAmount, plus dueOffsetDays = days before trip start it falls due (0 = day of, negative = after), and an optional label like 'Deposit'. They resolve to concrete amounts/dates only once seeded onto a dated trip's booking.",
+      inputSchema: {
+        locationId: z.string(),
+        installments: z.array(
+          z.object({
+            label: z.string().optional(),
+            percent: z.number().positive().max(100).optional(),
+            fixedAmount: z.number().positive().optional(),
+            dueOffsetDays: z.number().int(),
+          }),
+        ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ locationId, installments }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        // Same validator the web action uses — one home for the
+        // exactly-one-of-percent/fixedAmount rule.
+        const parsed = paymentScheduleSchema.safeParse({ installments });
+        if (!parsed.success) {
+          return {
+            content: [
+              { type: "text" as const, text: `Error: ${zodErrorMessage(parsed.error)}` },
+            ],
+            isError: true,
+          };
+        }
+
+        const location = await prisma.location.findUnique({
+          where: { id: locationId },
+          select: { id: true },
+        });
+        if (!location) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Location not found." }],
+            isError: true,
+          };
+        }
+
+        await prisma.$transaction([
+          prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
+          prisma.locationPaymentScheduleItem.createMany({
+            data: parsed.data.installments.map((i, idx) => ({
+              locationId,
+              label: i.label || null,
+              percent: i.percent ?? null,
+              fixedAmount: i.fixedAmount ?? null,
+              dueOffsetDays: i.dueOffsetDays,
+              sortOrder: idx,
+            })),
+          }),
+        ]);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { success: true, locationId, installments: parsed.data.installments.length },
+                null,
+                2,
+              ),
             },
           ],
         };

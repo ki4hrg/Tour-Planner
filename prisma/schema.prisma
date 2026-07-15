@@ -183,6 +183,7 @@ model Location {
   travelsFrom          TravelLeg[]        @relation("TravelFrom") // travel legs departing here
   travelsTo            TravelLeg[]        @relation("TravelTo") // travel legs arriving here
   travelStops          TravelStop[]       @relation("TravelStopLocation") // en-route stops here
+  defaultPaymentSchedule LocationPaymentScheduleItem[] // standing payment terms; seeds new engagements (GH #86)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -446,6 +447,27 @@ model PaymentScheduleItem {
   createdAt     DateTime @default(now())
 
   @@index([bookingId])
+}
+
+// Standing payment terms for a venue (GH #86): the installment pattern this venue
+// generally uses year to year ("20% deposit 180 days out, balance by 30"). Mirrors
+// PaymentScheduleItem but hangs off the Location, not one booking — a template for
+// new engagements, resolved to concrete amounts/dates only once it lands on a dated
+// trip's booking (same "unscheduled" semantics templates use). A new (trip,
+// location) engagement pre-fills from this; per-trip edits then live on the booking,
+// and a template's own schedule beats this default.
+model LocationPaymentScheduleItem {
+  id            String   @id @default(cuid())
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId    String
+  label         String? // e.g. "Deposit", "Balance"
+  percent       Decimal? @db.Decimal(5, 2) // of the eventual booking's agreedAmount
+  fixedAmount   Decimal? @db.Decimal(10, 2)
+  dueOffsetDays Int // days BEFORE trip.startDate (0 = day of, negative = after)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([locationId])
 }
 
 enum NoteMethod {

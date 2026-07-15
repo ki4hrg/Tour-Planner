@@ -7,6 +7,8 @@ import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { locationSchema, type LocationInput } from "@/lib/validators/location";
 import { costSchema, type CostInput } from "@/lib/validators/cost";
+import { paymentScheduleSchema } from "@/lib/validators/booking";
+import type { PaymentScheduleInputData } from "../trips/actions";
 import { hostSiteSchema } from "@/lib/validators/hostSite";
 
 function parseLocation(formData: FormData) {
@@ -192,6 +194,44 @@ export async function deleteCost(formData: FormData): Promise<void> {
   if (!id) return;
   await prisma.cost.delete({ where: { id } });
   if (locationId) revalidatePath(`/locations/${locationId}`);
+}
+
+// --- Standing payment terms (GH #86) ---
+
+// Replace a location's default payment schedule — the standing installment terms
+// that seed new engagements. Replace-the-whole-set, mirroring the booking-level
+// setPaymentSchedule action. These are unresolved (no agreed price / trip dates),
+// so they carry only percent-or-fixed + dueOffsetDays.
+export async function setLocationDefaultPaymentSchedule(
+  locationId: string,
+  input: PaymentScheduleInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = paymentScheduleSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  const location = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: { id: true },
+  });
+  if (!location) return { error: "Location not found." };
+
+  await prisma.$transaction([
+    prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
+    prisma.locationPaymentScheduleItem.createMany({
+      data: parsed.data.installments.map((i, idx) => ({
+        locationId,
+        label: i.label || null,
+        percent: i.percent ?? null,
+        fixedAmount: i.fixedAmount ?? null,
+        dueOffsetDays: i.dueOffsetDays,
+        sortOrder: idx,
+      })),
+    }),
+  ]);
+
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Payment terms saved." };
 }
 
 // --- Location ⇄ Contact links ---

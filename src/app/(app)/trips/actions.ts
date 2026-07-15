@@ -26,6 +26,7 @@ import {
   instantiateVenueBookings,
   instantiateStays,
   templatizeStays,
+  type TemplateScheduleInstallment,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
 import { travelLegCreateData } from "@/lib/travel";
@@ -144,6 +145,58 @@ const TEMPLATE_STAYS_SELECT = {
   notes: true,
 } satisfies Prisma.StaySelect;
 
+// Standing payment terms on a location (GH #86), keyed by locationId — the seed
+// source for new engagements. Locations without terms are omitted from the map.
+async function loadLocationScheduleDefaults(
+  locationIds: string[],
+): Promise<Map<string, TemplateScheduleInstallment[]>> {
+  const map = new Map<string, TemplateScheduleInstallment[]>();
+  if (locationIds.length === 0) return map;
+  const rows = await prisma.locationPaymentScheduleItem.findMany({
+    where: { locationId: { in: locationIds } },
+    orderBy: { sortOrder: "asc" },
+    select: {
+      locationId: true,
+      label: true,
+      percent: true,
+      fixedAmount: true,
+      dueOffsetDays: true,
+      sortOrder: true,
+    },
+  });
+  for (const r of rows) {
+    const list = map.get(r.locationId) ?? [];
+    list.push({
+      label: r.label,
+      percent: r.percent,
+      fixedAmount: r.fixedAmount,
+      dueOffsetDays: r.dueOffsetDays,
+      sortOrder: r.sortOrder,
+    });
+    map.set(r.locationId, list);
+  }
+  return map;
+}
+
+// The nested-create fragment that seeds a NEW venue engagement's payment schedule
+// from the location's standing terms (GH #86). Belongs on the upsert's `create`
+// branch only — an existing engagement keeps whatever schedule it already has.
+async function seedScheduleForEngagement(
+  locationId: string,
+): Promise<Prisma.PaymentScheduleItemCreateNestedManyWithoutBookingInput | undefined> {
+  const rows = (await loadLocationScheduleDefaults([locationId])).get(locationId);
+  if (!rows?.length) return undefined;
+  return {
+    create: rows.map((r, idx) => ({
+      label: r.label,
+      percent: r.percent,
+      fixedAmount: r.fixedAmount,
+      dueOffsetDays: r.dueOffsetDays,
+      sortOrder: idx,
+    })),
+  };
+}
+
 export async function createTrip(
   _prev: FormState,
   formData: FormData,
@@ -178,7 +231,20 @@ export async function createTrip(
     });
     if (!template) return { error: "Selected template no longer exists." };
     daysCreate = instantiateDays(template.days, data.startDate);
-    venueBookingsCreate = instantiateVenueBookings(template.bookings);
+    // A new engagement pre-fills its payment schedule from the location's standing
+    // terms (GH #86) unless the template booking already carries its own — load the
+    // defaults for the venues this template books so instantiateVenueBookings can
+    // apply that precedence.
+    const bookingLocationIds = [
+      ...new Set(
+        template.bookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
+      ),
+    ];
+    const locationDefaults = await loadLocationScheduleDefaults(bookingLocationIds);
+    venueBookingsCreate = instantiateVenueBookings(
+      template.bookings,
+      locationDefaults,
+    );
     // Day-relative template stays resolve to dates against the new startDate (or
     // stay day-relative when the new trip is itself a date-less template).
     staysCreate = instantiateStays(template.stays, data.startDate);
@@ -858,9 +924,10 @@ export async function upsertVenueBooking(
   if (notBookable) return { error: notBookable };
 
   const scalars = { ...toBookingScalars(parsed.data), locationId };
+  const seed = await seedScheduleForEngagement(locationId);
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, ...scalars },
+    create: { tripId, ...scalars, ...(seed ? { paymentSchedule: seed } : {}) },
     update: scalars,
   });
 
@@ -879,9 +946,10 @@ export async function setVenueBookingStatus(
   await assertRole("PLANNER");
   const notBookable = await assertBookable(locationId);
   if (notBookable) return { error: notBookable };
+  const seed = await seedScheduleForEngagement(locationId);
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, locationId, status },
+    create: { tripId, locationId, status, ...(seed ? { paymentSchedule: seed } : {}) },
     update: { status },
   });
 

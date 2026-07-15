@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
 import { setVenueBookingStatus } from "./actions";
@@ -56,6 +57,22 @@ function Cell({
               ? "Open now"
               : `Opens ${formatDate(row.earliest)}`}
       </div>
+      {/* Money state for the year (GH #86): overdue > settled > outstanding. */}
+      {row.agreedAmount != null ? (
+        <div className="text-[11px]">
+          {row.overdueAmount > 0 ? (
+            <span className="font-medium text-red-600 dark:text-red-400">
+              {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
+            </span>
+          ) : row.settled ? (
+            <span className="text-emerald-700 dark:text-emerald-300">Settled</span>
+          ) : (row.unpaidBalance ?? 0) > 0 ? (
+            <span className="text-muted-foreground">
+              {formatMoney(row.unpaidBalance ?? 0, row.agreedCurrency)} left
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

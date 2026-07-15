@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   instantiateDays,
+  instantiateVenueBookings,
   templatizeStays,
   instantiateStays,
+  type TemplateScheduleInstallment,
   type TemplateScheduleItem,
   type SourceStay,
 } from "./templates";
@@ -70,6 +72,74 @@ const sample = [
     ],
   },
 ];
+
+describe("instantiateVenueBookings", () => {
+  const inst = (
+    over: Partial<TemplateScheduleInstallment> = {},
+  ): TemplateScheduleInstallment => ({
+    label: "Deposit",
+    percent: 20,
+    fixedAmount: null,
+    dueOffsetDays: 180,
+    sortOrder: 0,
+    ...over,
+  });
+
+  it("skips bookings without a location and resets status to NOT_BOOKED", () => {
+    const out = instantiateVenueBookings([
+      { locationId: null, label: "x", notes: null },
+      { locationId: "locX", label: "Hall", notes: "n" },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].locationId).toBe("locX");
+    expect(out[0].status).toBe("NOT_BOOKED");
+  });
+
+  it("keeps the source booking's own schedule (template beats location default)", () => {
+    const defaults = new Map<string, TemplateScheduleInstallment[]>([
+      ["locX", [inst({ label: "Default", percent: 50 })]],
+    ]);
+    const out = instantiateVenueBookings(
+      [{ locationId: "locX", label: null, notes: null, paymentSchedule: [inst()] }],
+      defaults,
+    );
+    expect(out[0].paymentSchedule?.create).toHaveLength(1);
+    expect(out[0].paymentSchedule?.create[0].label).toBe("Deposit");
+    expect(out[0].paymentSchedule?.create[0].percent).toBe(20);
+  });
+
+  it("falls back to the location default when the booking has no schedule", () => {
+    const defaults = new Map<string, TemplateScheduleInstallment[]>([
+      ["locX", [inst({ label: "Default", percent: 25 }), inst({ label: "Balance", percent: 75, dueOffsetDays: 30 })]],
+    ]);
+    const out = instantiateVenueBookings(
+      [{ locationId: "locX", label: null, notes: null }],
+      defaults,
+    );
+    expect(out[0].paymentSchedule?.create).toHaveLength(2);
+    expect(out[0].paymentSchedule?.create[0].label).toBe("Default");
+    // sortOrder is renumbered 0..n regardless of source order.
+    expect(out[0].paymentSchedule?.create.map((i) => i.sortOrder)).toEqual([0, 1]);
+  });
+
+  it("leaves the engagement scheduleless when neither source nor default has one", () => {
+    const out = instantiateVenueBookings([
+      { locationId: "locX", label: null, notes: null },
+    ]);
+    expect(out[0].paymentSchedule).toBeUndefined();
+  });
+
+  it("does not apply a default meant for a different location", () => {
+    const defaults = new Map<string, TemplateScheduleInstallment[]>([
+      ["locOTHER", [inst()]],
+    ]);
+    const out = instantiateVenueBookings(
+      [{ locationId: "locX", label: null, notes: null }],
+      defaults,
+    );
+    expect(out[0].paymentSchedule).toBeUndefined();
+  });
+});
 
 describe("instantiateDays", () => {
   it("sorts and renumbers days 1..n by dayIndex", () => {

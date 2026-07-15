@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { serializeCost, isCostStale } from "@/lib/money";
+import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
+import { serializeInstallment } from "@/lib/payment-schedule";
+import { BOOKING_STATUS_LABELS } from "@/lib/trips";
+import { PaymentTermsManager } from "../payment-terms-manager";
 import { mapHref } from "@/lib/maps";
 import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
@@ -41,6 +44,7 @@ export default async function LocationDetailPage({
       tripTypes: { select: { id: true, name: true } },
       region: { select: { id: true, name: true, parentId: true } },
       costs: { orderBy: { label: "asc" } },
+      defaultPaymentSchedule: { orderBy: { sortOrder: "asc" } },
       contacts: { orderBy: { name: "asc" } },
       siteNotes: {
         orderBy: { contactedOn: "desc" },
@@ -107,6 +111,40 @@ export default async function LocationDetailPage({
     ...serializeCost(c),
     stale: isCostStale(c.confirmedAt),
   }));
+
+  // Standing payment terms (GH #86) — the venue's default installment pattern that
+  // seeds new engagements. Unresolved (no agreed price / dates) at this level.
+  const defaultSchedule = location.defaultPaymentSchedule.map(serializeInstallment);
+
+  // Engagement history: every real-trip booking at this venue, newest first, with
+  // its agreed price and how much has been settled — so the money conversation for
+  // this relationship has one home across years.
+  const engagementBookings = await prisma.booking.findMany({
+    where: { locationId: id, tripId: { not: null }, trip: { isTemplate: false } },
+    include: {
+      trip: { select: { id: true, name: true, startDate: true } },
+      payments: { select: { amount: true } },
+    },
+  });
+  const engagementHistory = engagementBookings
+    .map((b) => {
+      const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      const paid = b.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      return {
+        bookingId: b.id,
+        tripId: b.trip!.id,
+        tripName: b.trip!.name,
+        year: b.trip!.startDate ? b.trip!.startDate.getUTCFullYear() : null,
+        startMs: b.trip!.startDate ? b.trip!.startDate.getTime() : 0,
+        status: b.status,
+        agreed,
+        currency: b.agreedCurrency,
+        paid,
+        outstanding: agreed == null ? null : Math.max(0, agreed - paid),
+        settled: agreed != null && paid >= agreed,
+      };
+    })
+    .sort((a, b) => b.startMs - a.startMs || a.tripName.localeCompare(b.tripName));
 
   // Trips touching this venue that are ongoing or start within 30 days — the
   // on-site working set. Touch = engagement booking, schedule-item site, or stay.
@@ -433,6 +471,59 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {defaultSchedule.length > 0 || engagementHistory.length > 0 || canEdit ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Payment terms</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                Standing terms
+              </p>
+              <PaymentTermsManager
+                locationId={location.id}
+                installments={defaultSchedule}
+                canEdit={canEdit}
+              />
+            </div>
+            {engagementHistory.length > 0 ? (
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  Engagement history
+                </p>
+                <ul className="space-y-1 text-sm">
+                  {engagementHistory.map((e) => (
+                    <li
+                      key={e.bookingId}
+                      className="flex flex-wrap items-baseline gap-x-2"
+                    >
+                      <Link
+                        href={`/trips/${e.tripId}/booking`}
+                        className="font-medium hover:underline"
+                      >
+                        {e.year ?? e.tripName}
+                      </Link>
+                      <span className="text-xs text-muted-foreground">
+                        {BOOKING_STATUS_LABELS[e.status]}
+                        {e.agreed != null
+                          ? ` · ${formatMoney(e.agreed, e.currency)} agreed`
+                          : ""}
+                        {e.settled
+                          ? " · settled"
+                          : e.outstanding != null && e.outstanding > 0
+                            ? ` · ${formatMoney(e.outstanding, e.currency)} outstanding`
+                            : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {location.hostSite || canEdit ? (
         <Card>

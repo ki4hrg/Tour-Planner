@@ -1,4 +1,4 @@
-import type { PaymentScheduleItem } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { addDays, toDateInput } from "./dates";
 
 // Payment-schedule resolution (GH #51): turn a booking's raw installments
@@ -28,11 +28,22 @@ export type ResolvedInstallment = ScheduleInstallmentInput & {
   state: InstallmentState; // "unscheduled" = amount or due date unresolvable
 };
 
+// The raw installment shape both a booking's PaymentScheduleItem and a location's
+// LocationPaymentScheduleItem (GH #86) satisfy — serialized identically.
+type RawInstallment = {
+  id: string;
+  label: string | null;
+  percent: Prisma.Decimal | null;
+  fixedAmount: Prisma.Decimal | null;
+  dueOffsetDays: number;
+  sortOrder: number;
+};
+
 // Prisma Decimal → number at the boundary, same convention as serializeCost /
 // serializePayment in money.ts. Every resolveSchedule caller feeds rows through
 // this so the conversion lives in exactly one place.
 export function serializeInstallment(
-  i: PaymentScheduleItem,
+  i: RawInstallment,
 ): ScheduleInstallmentInput {
   return {
     id: i.id,
