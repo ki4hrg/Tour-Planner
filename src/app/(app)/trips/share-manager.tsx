@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { ShareAudience } from "@prisma/client";
 import { toast } from "sonner";
-import { Copy, Check, Trash2 } from "lucide-react";
+import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +62,21 @@ function shareUrl(token: string): string {
   return `${window.location.origin}/share/${token}`;
 }
 
+// The redacted calendar (.ics) for a share link — same audience scoping as the
+// HTML page. https:// for pasting into Google Calendar ("From URL"); webcal://
+// for one-tap subscribe on iOS/macOS (Google honours it too).
+function icsPath(token: string): string {
+  return `/api/share/${token}.ics`;
+}
+function icsHttpsUrl(token: string): string {
+  if (typeof window === "undefined") return icsPath(token);
+  return `${window.location.origin}${icsPath(token)}`;
+}
+function icsWebcalUrl(token: string): string {
+  if (typeof window === "undefined") return icsPath(token);
+  return `webcal://${window.location.host}${icsPath(token)}`;
+}
+
 export function ShareManager({
   tripId,
   canEdit,
@@ -103,12 +118,20 @@ function LinkRow({
 }) {
   const { pending, run } = useAction();
   const [copied, setCopied] = useState(false);
+  const [icsCopied, setIcsCopied] = useState(false);
 
   const copy = async () => {
     await navigator.clipboard.writeText(shareUrl(link.token));
     setCopied(true);
     toast.success("Link copied.");
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const copyIcs = async () => {
+    await navigator.clipboard.writeText(icsHttpsUrl(link.token));
+    setIcsCopied(true);
+    toast.success("Calendar URL copied.");
+    setTimeout(() => setIcsCopied(false), 1500);
   };
 
   return (
@@ -147,6 +170,30 @@ function LinkRow({
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         </Button>
       </div>
+      {link.enabled ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Calendar:</span>
+          <Button asChild size="sm" variant="outline">
+            <a href={icsWebcalUrl(link.token)}>
+              <CalendarPlus className="size-4" /> Subscribe
+            </a>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={copyIcs}
+            aria-label="Copy calendar URL"
+          >
+            {icsCopied ? (
+              <Check className="size-4" />
+            ) : (
+              <Copy className="size-4" />
+            )}
+            <span className="ml-1">Copy URL</span>
+          </Button>
+        </div>
+      ) : null}
       {canEdit ? (
         <div className="mt-2 flex items-center gap-2">
           <Button

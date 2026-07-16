@@ -43,6 +43,6 @@ export const config = {
   // so it sees the public source path. Without this, OAuth discovery would be
   // redirected to /login and MCP clients could never authenticate.
   matcher: [
-    "/((?!api/auth|api/mcp|api/oauth|api/well-known|api/feed|\\.well-known|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
+    "/((?!api/auth|api/mcp|api/oauth|api/well-known|api/feed|api/share|\\.well-known|_next/static|_next/image|favicon.ico|icon.svg|manifest.webmanifest|sw.js|share|setup).*)",
   ],
 };
