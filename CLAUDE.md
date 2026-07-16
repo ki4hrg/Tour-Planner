@@ -179,9 +179,10 @@ npm test                          # vitest
   (`src/lib/share.ts`).
 - **Routing**: authenticated pages live under `src/app/(app)/` (shell = `AppNav` +
   `requireUser` layout). Public routes: `/login`, `/setup`, `/share/[token]`,
-  `/api/{auth,mcp,oauth,well-known}`, `/api/feed/[token].ics`. The `src/proxy.ts`
-  matcher excludes those + assets (add the route's path segment to the negative
-  lookahead when introducing a new public endpoint).
+  `/api/{auth,mcp,oauth,well-known}`, `/api/feed/[token].ics`,
+  `/api/share/[token].ics`. The `src/proxy.ts` matcher excludes those + assets
+  (add the route's path segment to the negative lookahead when introducing a new
+  public endpoint).
 - **Calendar feeds (`CalendarFeed`)**: subscribable iCalendar (.ics) feeds served at
   `/api/feed/<token>.ics` (`webcal://` for one-tap subscribe). Token is an unguessable
   cuid capability like a `ShareLink`; `scope` ∈ `TRIP | TRIP_TYPE | ALL` (DB CHECK
@@ -191,8 +192,19 @@ npm test                          # vitest
   (no `Z`/`TZID`) since the app stores tz-free `"HH:MM"` — see `src/lib/ics.ts` (pure
   RFC 5545 generator) + `src/lib/calendar-feed.ts` (day/item/stay → events), both
   unit-tested. Mint/copy UI: `CalendarFeedManager`, mounted on the trip page,
-  trip-type page, and `/settings` (the ALL feed). Participant-safe calendar feeds
-  (redacted, tied to ShareLinks) are tracked as a follow-up, NOT built here.
+  trip-type page, and `/settings` (the ALL feed).
+- **Participant-safe calendar feeds (`ShareLink` .ics, GH #81)**: the redacted,
+  audience-scoped counterpart to `CalendarFeed`, served at `/api/share/<token>.ics`
+  off the same `ShareLink` token the `/share/<token>` HTML page uses. Reuses the
+  `src/lib/ics.ts` + `src/lib/calendar-feed.ts` generators; `src/lib/share-feed.ts`
+  (`buildShareFeedEvents`, unit-tested) applies the audience redaction **before**
+  events are built — `scopeDaysToLocation` + `redactDaysForShare` for HOST_SITE
+  scope + booking strip, and for any non-STAFF audience also strips day logistical
+  notes, trip-level notes, and stay notes — so a PARTICIPANT/HOST_SITE feed can
+  never leak bookings, contacts, or internal notes even in the raw payload (mirrors
+  the HTML share redaction; never rely on omitting at render). Honours
+  `isShareLinkActive` (404 on unknown/disabled/expired). Copy/subscribe affordance
+  lives in `ShareManager` next to each link (webcal:// + https:// ics URLs).
 - **Data model**: `prisma/schema.prisma` is the source of truth. Key shapes: `Trip` →
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
   `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).
