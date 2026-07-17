@@ -8,6 +8,8 @@ import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { locationSchema, type LocationInput } from "@/lib/validators/location";
 import { costSchema, type CostInput } from "@/lib/validators/cost";
 import { hostSiteSchema } from "@/lib/validators/hostSite";
+import { paymentScheduleSchema } from "@/lib/validators/booking";
+import type { PaymentScheduleInputData } from "../trips/actions";
 
 function parseLocation(formData: FormData) {
   return locationSchema.safeParse({
@@ -318,4 +320,39 @@ export async function unmarkHostSite(locationId: string): Promise<FormState> {
   revalidatePath("/locations");
   revalidatePath(`/locations/${locationId}`);
   return { ok: true, message: "Host site status removed." };
+}
+
+// --- Standing payment terms (GH #86): the venue's default schedule ---
+
+// Replace the location's whole default schedule in one go — same REPLACE
+// semantics as setPaymentSchedule on a booking. These installments are
+// date-relative (days before trip start), so they seed a new engagement's
+// PaymentScheduleItem set verbatim; resolution only happens once they land on a
+// dated trip's booking. Editing here never touches existing engagements.
+export async function setLocationPaymentSchedule(
+  locationId: string,
+  input: PaymentScheduleInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!locationId) return { error: "Missing location." };
+  const parsed = paymentScheduleSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  await prisma.$transaction([
+    prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
+    prisma.locationPaymentScheduleItem.createMany({
+      data: parsed.data.installments.map((i, idx) => ({
+        locationId,
+        label: i.label || null,
+        percent: i.percent ?? null,
+        fixedAmount: i.fixedAmount ?? null,
+        dueOffsetDays: i.dueOffsetDays,
+        sortOrder: idx,
+      })),
+    }),
+  ]);
+
+  revalidatePath("/locations");
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Payment terms saved." };
 }

@@ -25,6 +25,11 @@ import {
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
+import {
+  resolveSchedule,
+  scheduleAttention,
+  serializeInstallment,
+} from "@/lib/payment-schedule";
 import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
 import { LodgingManager } from "../lodging-manager";
@@ -149,6 +154,7 @@ export default async function TripOverviewPage({
       bookedContact: { select: { id: true, name: true } },
       location: { select: { name: true } },
       payments: { select: { amount: true } },
+      paymentSchedule: true,
     },
   });
   const bookingByLocation = bookingsByLocation(
@@ -180,6 +186,81 @@ export default async function TripOverviewPage({
       const lodging = lodgingByCurrency.get(currency) ?? 0;
       return { currency, cost, lodging, total: (cost?.total ?? 0) + lodging };
     });
+
+  // Money panel (GH #86): actual committed spend across this trip's venue
+  // engagements — agreed / paid / outstanding per currency — plus the overdue
+  // or next-due installment, so a payment problem is visible from the trip page
+  // without opening the booking dashboard. Templates have no dates, so their
+  // installments never resolve — the panel is dated-trip only.
+  const moneyByCurrency = new Map<
+    string,
+    { agreed: number; paid: number; outstanding: number }
+  >();
+  const moneyAttention: {
+    venue: string;
+    currency: string;
+    amount: number;
+    dueDate: string;
+    overdue: boolean;
+  }[] = [];
+  const moneyToday = todayUtc();
+  for (const b of engagementBookings) {
+    const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+    const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
+    if (agreed != null || paid > 0) {
+      const row = moneyByCurrency.get(b.agreedCurrency) ?? {
+        agreed: 0,
+        paid: 0,
+        outstanding: 0,
+      };
+      row.agreed += agreed ?? 0;
+      row.paid += paid;
+      row.outstanding += agreed != null ? Math.max(0, agreed - paid) : 0;
+      moneyByCurrency.set(b.agreedCurrency, row);
+    }
+    const resolved = resolveSchedule(
+      b.paymentSchedule.map(serializeInstallment),
+      {
+        agreedAmount: agreed,
+        paidTotal: paid,
+        tripStartDate: trip.startDate,
+        today: moneyToday,
+      },
+    );
+    const venue = b.location?.name ?? b.label ?? "Booking";
+    for (const inst of resolved) {
+      if (inst.state === "overdue" && inst.outstanding && inst.dueDate) {
+        moneyAttention.push({
+          venue,
+          currency: b.agreedCurrency,
+          amount: inst.outstanding,
+          dueDate: inst.dueDate,
+          overdue: true,
+        });
+      }
+    }
+    const { nextDue } = scheduleAttention(resolved);
+    if (nextDue?.dueDate && nextDue.outstanding) {
+      moneyAttention.push({
+        venue,
+        currency: b.agreedCurrency,
+        amount: nextDue.outstanding,
+        dueDate: nextDue.dueDate,
+        overdue: false,
+      });
+    }
+  }
+  const moneyRows = [...moneyByCurrency.entries()]
+    .map(([currency, v]) => ({ currency, ...v }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+  // Overdue first, then soonest due.
+  moneyAttention.sort(
+    (a, b) =>
+      Number(b.overdue) - Number(a.overdue) || a.dueDate.localeCompare(b.dueDate),
+  );
+  const overdueCount = moneyAttention.filter((a) => a.overdue).length;
+  const showMoney =
+    !trip.isTemplate && (moneyRows.length > 0 || moneyAttention.length > 0);
 
   // For the Lodging manager (PLANNER edits inline). Only host sites flagged as
   // providing lodging can be picked for a stay.
@@ -603,6 +684,80 @@ export default async function TripOverviewPage({
               )}
             </CardContent>
           </Card>
+
+          {showMoney ? (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <CardTitle className="text-base">Money</CardTitle>
+                <Link
+                  href={`/trips/${trip.id}/booking`}
+                  className="text-xs text-muted-foreground hover:underline"
+                >
+                  Booking dashboard →
+                </Link>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {moneyRows.length > 0 ? (
+                  <dl className="space-y-1">
+                    {moneyRows.map((r) => (
+                      <div
+                        key={r.currency}
+                        className="grid grid-cols-3 items-baseline gap-x-3"
+                      >
+                        <dt className="font-medium">{r.currency}</dt>
+                        <dd className="text-muted-foreground">
+                          {formatMoney(r.paid, r.currency)} paid of{" "}
+                          {formatMoney(r.agreed, r.currency)}
+                        </dd>
+                        <dd className="text-right font-medium">
+                          {r.outstanding > 0
+                            ? `${formatMoney(r.outstanding, r.currency)} left`
+                            : "settled"}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No agreed prices logged yet.
+                  </p>
+                )}
+
+                {moneyAttention.length > 0 ? (
+                  <div className="border-t pt-2">
+                    {overdueCount > 0 ? (
+                      <p className="mb-1 text-xs font-medium text-red-600 dark:text-red-400">
+                        {overdueCount} payment{overdueCount === 1 ? "" : "s"} overdue
+                      </p>
+                    ) : (
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">
+                        Next due
+                      </p>
+                    )}
+                    <ul className="space-y-0.5">
+                      {moneyAttention.slice(0, 3).map((a, i) => (
+                        <li key={`${a.venue}-${a.dueDate}-${i}`} className="truncate">
+                          <span
+                            className={
+                              a.overdue
+                                ? "font-medium text-red-600 dark:text-red-400"
+                                : "font-medium text-amber-700 dark:text-amber-300"
+                            }
+                          >
+                            {formatMoney(a.amount, a.currency)}
+                          </span>{" "}
+                          <span className="text-muted-foreground">
+                            — {a.venue} · {a.overdue ? "was due" : "due"}{" "}
+                            {formatDate(a.dueDate)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader>

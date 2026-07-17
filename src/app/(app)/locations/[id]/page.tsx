@@ -18,6 +18,7 @@ import { todayUtc, toDateInput, formatDate, addDays, isOngoing } from "@/lib/dat
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
+import { LocationPaymentTerms } from "../location-payment-terms";
 import { LocationContactsManager } from "../location-contacts-manager";
 import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
 import { HostSitePanel } from "../host-site-panel";
@@ -41,6 +42,7 @@ export default async function LocationDetailPage({
       tripTypes: { select: { id: true, name: true } },
       region: { select: { id: true, name: true, parentId: true } },
       costs: { orderBy: { label: "asc" } },
+      defaultPaymentSchedule: { orderBy: { sortOrder: "asc" } },
       contacts: { orderBy: { name: "asc" } },
       siteNotes: {
         orderBy: { contactedOn: "desc" },
@@ -107,6 +109,18 @@ export default async function LocationDetailPage({
     ...serializeCost(c),
     stale: isCostStale(c.confirmedAt),
   }));
+
+  // Standing payment terms (GH #86) — Decimals flattened at the boundary. The
+  // currency is per-engagement, so the read view just borrows the first cost's
+  // currency (else USD) to format any fixed amounts.
+  const paymentTerms = location.defaultPaymentSchedule.map((t) => ({
+    id: t.id,
+    label: t.label,
+    percent: t.percent == null ? null : Number(t.percent),
+    fixedAmount: t.fixedAmount == null ? null : Number(t.fixedAmount),
+    dueOffsetDays: t.dueOffsetDays,
+  }));
+  const termsCurrency = location.costs[0]?.currency ?? "USD";
 
   // Trips touching this venue that are ongoing or start within 30 days — the
   // on-site working set. Touch = engagement booking, schedule-item site, or stay.
@@ -433,6 +447,22 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {location.bookable && (paymentTerms.length > 0 || canEdit) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Payment terms</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LocationPaymentTerms
+              locationId={location.id}
+              terms={paymentTerms}
+              currency={termsCurrency}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {location.hostSite || canEdit ? (
         <Card>
