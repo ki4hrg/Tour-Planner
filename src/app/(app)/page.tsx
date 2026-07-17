@@ -150,6 +150,8 @@ export default async function Home({
       select: {
         id: true,
         label: true,
+        bookedOn: true,
+        createdAt: true,
         agreedAmount: true,
         agreedCurrency: true,
         location: { select: { name: true } },
@@ -254,7 +256,13 @@ export default async function Home({
       const paidTotal = b.payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const resolved = resolveSchedule(
         b.paymentSchedule.map(serializeInstallment),
-        { agreedAmount, paidTotal, tripStartDate: b.trip!.startDate, today },
+        {
+          agreedAmount,
+          paidTotal,
+          tripStartDate: b.trip!.startDate,
+          bookingDate: b.bookedOn ?? b.createdAt,
+          today,
+        },
       );
       return resolved
         .filter(

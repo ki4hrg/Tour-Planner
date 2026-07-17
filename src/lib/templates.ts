@@ -1,4 +1,10 @@
-import type { BookingStatus, Prisma, TravelMethod } from "@prisma/client";
+import type {
+  BookingStatus,
+  PaymentAnchor,
+  PaymentOffsetUnit,
+  Prisma,
+  TravelMethod,
+} from "@prisma/client";
 import { computeDayDate, dayIndexForDate } from "./dates";
 
 // Minimal shapes the deep-copy needs — kept framework-light so the helper is a
@@ -97,7 +103,11 @@ export type TemplateScheduleInstallment = {
   // Prisma.Decimal flows through untouched (never coerced across this boundary).
   percent: Prisma.Decimal | number | null;
   fixedAmount: Prisma.Decimal | number | null;
-  dueOffsetDays: number;
+  // Anchor + offset carry over verbatim (GH #86): all date-relative, so they
+  // resolve against the new trip's dates / booking date once instantiated.
+  anchor: PaymentAnchor;
+  offsetValue: number | null;
+  offsetUnit: PaymentOffsetUnit | null;
   sortOrder: number;
 };
 
@@ -143,7 +153,9 @@ export function instantiateVenueBookings(
                 label: i.label,
                 percent: i.percent,
                 fixedAmount: i.fixedAmount,
-                dueOffsetDays: i.dueOffsetDays,
+                anchor: i.anchor,
+                offsetValue: i.offsetValue,
+                offsetUnit: i.offsetUnit,
                 sortOrder: i.sortOrder,
               })),
             },

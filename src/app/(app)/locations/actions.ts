@@ -8,7 +8,7 @@ import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { locationSchema, type LocationInput } from "@/lib/validators/location";
 import { costSchema, type CostInput } from "@/lib/validators/cost";
 import { hostSiteSchema } from "@/lib/validators/hostSite";
-import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import type { PaymentScheduleInputData } from "../trips/actions";
 
 function parseLocation(formData: FormData) {
@@ -341,13 +341,9 @@ export async function setLocationPaymentSchedule(
   await prisma.$transaction([
     prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
     prisma.locationPaymentScheduleItem.createMany({
-      data: parsed.data.installments.map((i, idx) => ({
+      data: installmentRows(parsed.data.installments).map((r) => ({
         locationId,
-        label: i.label || null,
-        percent: i.percent ?? null,
-        fixedAmount: i.fixedAmount ?? null,
-        dueOffsetDays: i.dueOffsetDays,
-        sortOrder: idx,
+        ...r,
       })),
     }),
   ]);

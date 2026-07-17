@@ -20,6 +20,11 @@ export const bookingSchema = z.object({
   bookedContactId: optionalId,
   confirmationRef: z.string().trim().optional(),
   notes: z.string().trim().optional(),
+  // When the engagement was booked — anchors BOOKING-relative installments.
+  bookedOn: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use yyyy-mm-dd.").optional(),
+  ),
   // The negotiated engagement price (asking price lives in the cost catalog).
   agreedAmount: optionalMoney,
   agreedCurrency: z.string().trim().optional(),
@@ -45,8 +50,13 @@ export const paymentSchema = z.object({
 
 export type PaymentInput = z.infer<typeof paymentSchema>;
 
-// One installment of a payment schedule (GH #51). Exactly one of percent /
-// fixedAmount, due `dueOffsetDays` before trip start (negative = after).
+export const PAYMENT_ANCHORS = ["EVENT_START", "BOOKING", "NONE"] as const;
+export const PAYMENT_OFFSET_UNITS = ["DAY", "WEEK", "MONTH"] as const;
+
+// One installment of a payment schedule (GH #51; anchors #86 refinement). Exactly
+// one of percent / fixedAmount. The due date is `offsetValue` `offsetUnit`s from
+// the `anchor`: EVENT_START = before trip start (negative = after), BOOKING =
+// after the booking date, NONE = no deadline (offset omitted).
 const installmentSchema = z
   .object({
     label: z.string().trim().optional(),
@@ -62,17 +72,44 @@ const installmentSchema = z
       (v) => (v === "" || v == null ? undefined : Number(v)),
       z.number().positive("Amount must be positive.").optional(),
     ),
-    dueOffsetDays: z.preprocess(
+    anchor: z.enum(PAYMENT_ANCHORS).default("EVENT_START"),
+    offsetValue: z.preprocess(
       (v) => (v === "" || v == null ? undefined : Number(v)),
-      z.number().int("Days must be a whole number."),
+      z.number().int("Offset must be a whole number.").optional(),
+    ),
+    offsetUnit: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : v),
+      z.enum(PAYMENT_OFFSET_UNITS).optional(),
     ),
   })
   .refine((i) => (i.percent == null) !== (i.fixedAmount == null), {
     message: "Each installment needs a percentage or a fixed amount (not both).",
-  });
+  })
+  .refine(
+    (i) =>
+      i.anchor === "NONE" || (i.offsetValue != null && i.offsetUnit != null),
+    {
+      message: "A dated installment needs an offset value and unit.",
+    },
+  );
 
 export const paymentScheduleSchema = z.object({
   installments: z.array(installmentSchema).max(20, "Too many installments."),
 });
 
 export type PaymentScheduleInput = z.infer<typeof paymentScheduleSchema>;
+
+// Parsed installments → Prisma scalar rows shared by every write site (booking +
+// location schedules, web action + MCP). Callers spread bookingId / locationId
+// on top. NONE clears the offset fields to satisfy the payment_schedule_anchor CHECK.
+export function installmentRows(installments: PaymentScheduleInput["installments"]) {
+  return installments.map((i, idx) => ({
+    label: i.label || null,
+    percent: i.percent ?? null,
+    fixedAmount: i.fixedAmount ?? null,
+    anchor: i.anchor,
+    offsetValue: i.anchor === "NONE" ? null : (i.offsetValue ?? null),
+    offsetUnit: i.anchor === "NONE" ? null : (i.offsetUnit ?? null),
+    sortOrder: idx,
+  }));
+}

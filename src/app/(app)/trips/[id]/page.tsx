@@ -224,6 +224,7 @@ export default async function TripOverviewPage({
         agreedAmount: agreed,
         paidTotal: paid,
         tripStartDate: trip.startDate,
+        bookingDate: b.bookedOn ?? b.createdAt,
         today: moneyToday,
       },
     );

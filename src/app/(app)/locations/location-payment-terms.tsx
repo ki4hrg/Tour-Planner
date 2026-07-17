@@ -13,21 +13,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/money";
+import {
+  describeCadence,
+  type PaymentAnchor,
+  type PaymentOffsetUnit,
+} from "@/lib/payment-schedule";
 import type { FormState } from "@/lib/forms";
 import { setLocationPaymentSchedule } from "./actions";
 
 // A venue's STANDING payment terms (GH #86) — the deposit/balance cadence that
 // tends to hold year to year. Stored on the Location like the Cost catalog and
-// used to pre-fill a new engagement's schedule. These are date-relative
-// ("N days before trip start") and carry no resolved amounts of their own —
-// resolution happens once they land on a dated trip's booking.
+// used to pre-fill a new engagement's schedule. These are anchor-relative and
+// carry no resolved amounts/dates of their own — resolution happens once they
+// land on a real booking (dated trip / booked-on date).
 
 export type StandingTerm = {
   id: string;
   label: string | null;
   percent: number | null;
   fixedAmount: number | null;
-  dueOffsetDays: number;
+  anchor: PaymentAnchor;
+  offsetValue: number | null;
+  offsetUnit: PaymentOffsetUnit | null;
 };
 
 type Draft = {
@@ -35,7 +42,9 @@ type Draft = {
   label: string;
   mode: "percent" | "fixed";
   value: string;
-  offsetDays: string;
+  anchor: PaymentAnchor;
+  offset: string;
+  unit: PaymentOffsetUnit;
 };
 
 function draftsFrom(terms: StandingTerm[]): Draft[] {
@@ -44,18 +53,21 @@ function draftsFrom(terms: StandingTerm[]): Draft[] {
     label: t.label ?? "",
     mode: t.percent != null ? "percent" : "fixed",
     value: String(t.percent ?? t.fixedAmount ?? ""),
-    offsetDays: String(t.dueOffsetDays),
+    anchor: t.anchor,
+    offset: t.offsetValue == null ? "" : String(t.offsetValue),
+    unit: t.offsetUnit ?? "DAY",
   }));
 }
 
-// "180 days before start" / "day of" / "30 days after start" — the same
-// date-relative language the booking schedule uses, minus the resolved date.
-function offsetLabel(days: number): string {
-  if (days === 0) return "day of start";
-  return days > 0
-    ? `${days} day${days === 1 ? "" : "s"} before start`
-    : `${-days} day${days === -1 ? "" : "s"} after start`;
-}
+const newDraft = (key: number): Draft => ({
+  key,
+  label: "",
+  mode: "percent",
+  value: "",
+  anchor: "EVENT_START",
+  offset: "30",
+  unit: "DAY",
+});
 
 export function LocationPaymentTerms({
   locationId,
@@ -88,7 +100,7 @@ export function LocationPaymentTerms({
     setDrafts(
       terms.length
         ? draftsFrom(terms)
-        : [{ key: 0, label: "Deposit", mode: "percent", value: "", offsetDays: "180" }],
+        : [{ ...newDraft(0), label: "Deposit", offset: "180" }],
     );
     setEditing(true);
   };
@@ -104,7 +116,9 @@ export function LocationPaymentTerms({
             label: d.label.trim() || undefined,
             percent: d.mode === "percent" ? d.value : undefined,
             fixedAmount: d.mode === "fixed" ? d.value : undefined,
-            dueOffsetDays: d.offsetDays,
+            anchor: d.anchor,
+            offsetValue: d.anchor === "NONE" ? undefined : d.offset,
+            offsetUnit: d.anchor === "NONE" ? undefined : d.unit,
           })),
         }),
       () => setEditing(false),
@@ -141,7 +155,7 @@ export function LocationPaymentTerms({
                     ? `${t.percent}% of agreed`
                     : formatMoney(t.fixedAmount ?? 0, currency)}
                   {" · "}
-                  {offsetLabel(t.dueOffsetDays)}
+                  {describeCadence(t)}
                 </span>
               </li>
             ))}
@@ -186,17 +200,52 @@ export function LocationPaymentTerms({
                   <SelectItem value="fixed">fixed amount</SelectItem>
                 </SelectContent>
               </Select>
-              <div className="space-y-1">
-                <Label className="text-xs">Days before start</Label>
-                <Input
-                  type="number"
-                  step="1"
-                  inputMode="numeric"
-                  value={d.offsetDays}
-                  onChange={(e) => patch(d.key, { offsetDays: e.target.value })}
-                  className="w-28"
-                />
-              </div>
+              {/* Offset value + unit — hidden for a no-deadline (NONE) term. */}
+              {d.anchor !== "NONE" ? (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Offset</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      inputMode="numeric"
+                      value={d.offset}
+                      onChange={(e) => patch(d.key, { offset: e.target.value })}
+                      className="w-20"
+                    />
+                  </div>
+                  <Select
+                    value={d.unit}
+                    onValueChange={(unit) =>
+                      patch(d.key, { unit: unit as PaymentOffsetUnit })
+                    }
+                  >
+                    <SelectTrigger size="sm" className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DAY">days</SelectItem>
+                      <SelectItem value="WEEK">weeks</SelectItem>
+                      <SelectItem value="MONTH">months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              ) : null}
+              <Select
+                value={d.anchor}
+                onValueChange={(anchor) =>
+                  patch(d.key, { anchor: anchor as PaymentAnchor })
+                }
+              >
+                <SelectTrigger size="sm" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EVENT_START">before trip start</SelectItem>
+                  <SelectItem value="BOOKING">after booking</SelectItem>
+                  <SelectItem value="NONE">no deadline</SelectItem>
+                </SelectContent>
+              </Select>
               <button
                 type="button"
                 disabled={pending}
@@ -217,13 +266,7 @@ export function LocationPaymentTerms({
               onClick={() =>
                 setDrafts((prev) => [
                   ...prev,
-                  {
-                    key: (prev[prev.length - 1]?.key ?? -1) + 1,
-                    label: "",
-                    mode: "percent",
-                    value: "",
-                    offsetDays: "30",
-                  },
+                  newDraft((prev[prev.length - 1]?.key ?? -1) + 1),
                 ])
               }
             >
@@ -231,7 +274,12 @@ export function LocationPaymentTerms({
             </Button>
             <Button
               size="sm"
-              disabled={pending || drafts.some((d) => !d.value || d.offsetDays === "")}
+              disabled={
+                pending ||
+                drafts.some(
+                  (d) => !d.value || (d.anchor !== "NONE" && d.offset === ""),
+                )
+              }
               onClick={save}
             >
               Save terms

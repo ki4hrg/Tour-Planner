@@ -55,6 +55,7 @@ export type VenueBookingRow = {
   sessions: CoveredSession[];
   nightCount: number;
   costs: SerializedCost[];
+  bookedOn: string | null; // planner-set booking date (anchors BOOKING installments)
   // The engagement's negotiated price + payment log. `unpaidBalance` is null
   // until an agreed amount is set; `settled` means payments cover it.
   agreedAmount: number | null;
@@ -130,6 +131,10 @@ type EngagementInput = {
     phone?: string | null;
     email?: string | null;
   } | null;
+  // Anchor date for BOOKING-relative installments (GH #86); resolution uses
+  // bookedOn ?? createdAt.
+  bookedOn?: Date | null;
+  createdAt?: Date | null;
   // Prisma Decimal (or already-numeric) — flattened to number in the row.
   agreedAmount?: Payment["amount"] | number | null;
   agreedCurrency?: string;
@@ -155,8 +160,8 @@ export type DashboardData = {
   engagements: EngagementInput[];
   stays: StayInput[];
   locations: LocationInput[];
-  // Anchors payment-schedule due dates (dueOffsetDays counts back from this);
-  // null (template / undated trip) leaves installments "unscheduled".
+  // Anchors EVENT_START payment installments (offset counts back from this);
+  // null (template / undated trip) leaves those installments "unscheduled".
   tripStartDate?: Date | null;
 };
 
@@ -256,6 +261,7 @@ export function buildDashboardRows(data: DashboardData): {
         agreedAmount,
         paidTotal,
         tripStartDate: data.tripStartDate ?? null,
+        bookingDate: eng?.bookedOn ?? eng?.createdAt ?? null,
         today,
       },
     );
@@ -292,6 +298,7 @@ export function buildDashboardRows(data: DashboardData): {
       contactName: eng?.bookedContact?.name ?? null,
       contactPhone: eng?.bookedContact?.phone ?? null,
       contactEmail: eng?.bookedContact?.email ?? null,
+      bookedOn: eng?.bookedOn ? toDateInput(eng.bookedOn) : null,
       sessions: v.sessions,
       nightCount: v.nights,
       costs,

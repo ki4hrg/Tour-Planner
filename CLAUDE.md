@@ -47,9 +47,9 @@ recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
 incl. agreed price + paid total), `add-booking` (P, upserts the `(trip, location)`
-engagement; idempotent; takes `agreedAmount`/`agreedCurrency`/`agreedUnit`),
-`update-booking` (P), `list-payments` (V, the payment log + outstanding balance),
-`add-payment` (P, logs a payment against the booking's agreed price).
+engagement; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
+`update-booking` (P, incl. `bookedOn`), `list-payments` (V, the payment log +
+outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
 payment terms + host site), `list-regions` (V, resolves `regionId`), `list-trip-types`
@@ -244,19 +244,28 @@ npm test                          # vitest
   (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
   the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
   in `src/app/(app)/trips/actions.ts`.
-- **Payment schedules (GH #51)**: a booking may carry `PaymentScheduleItem`
+- **Payment schedules (GH #51, anchors #86)**: a booking may carry `PaymentScheduleItem`
   installments — EITHER a `percent` of the agreed price OR a `fixedAmount` (DB CHECK
-  `payment_schedule_amount`), due `dueOffsetDays` **before** `trip.startDate`
-  (negative = after). Resolution (amounts, due dates, oldest-due-first allocation of
-  the payment log, paid/overdue/upcoming state) is pure in
+  `payment_schedule_amount`). The due date is `offsetValue` `offsetUnit`s
+  (DAY/WEEK/MONTH, calendar-aware) from a selectable `anchor` (DB CHECK
+  `payment_schedule_anchor`: NONE ⇒ offset null, else both set):
+  **`EVENT_START`** = offset **before** `trip.startDate` (negative = after; the
+  original behavior); **`BOOKING`** = offset **after** the booking's `bookedOn`
+  (planner-set date; falls back to `createdAt`); **`NONE`** = no deadline (owed until
+  paid, never overdue — a deposit-at-booking with no fixed date; sorts/allocates
+  last, so "pay this first" is a `BOOKING` offset 0, not `NONE`). Resolution
+  (amounts, due dates via `describeCadence` for the human "rule", earliest-due-first
+  ordering + allocation, paid/overdue/upcoming/unscheduled state) is pure in
   `src/lib/payment-schedule.ts` (`resolveSchedule`/`scheduleAttention`, unit-tested);
-  editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
-  MCP tool). Surfaces: booking-row schedule editor + status chips, the dashboard's
-  "Payment overdue" attention filter, the home "Payments due" card, and the trip
-  overview **Money** panel (agreed/paid/outstanding per currency + overdue/next-due,
-  in `trips/[id]/page.tsx`). Schedules are date-relative, so they templatize/
-  instantiate verbatim (unlike the agreed price, which resets); an installment on a
-  date-less template is "unscheduled".
+  every caller passes both `tripStartDate` and `bookingDate` (`bookedOn ?? createdAt`).
+  Editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
+  MCP tool; `installmentRows` in `validators/booking.ts` is the shared parsed→row map).
+  Surfaces: booking-row schedule editor (anchor/unit selectors + `bookedOn` field) +
+  status chips, the dashboard's "Payment overdue" attention filter, the home "Payments
+  due" card, and the trip overview **Money** panel (in `trips/[id]/page.tsx`). Schedules
+  are anchor-relative, so they templatize/instantiate verbatim (unlike the agreed price,
+  which resets); an installment whose anchor date isn't known yet (date-less template,
+  no booking date) is "unscheduled".
 - **Standing payment terms (GH #86)**: a venue's deposit/balance cadence tends to
   hold year to year, so `Location.defaultPaymentSchedule` (`LocationPaymentScheduleItem`,
   same shape + `location_payment_schedule_amount` CHECK as `PaymentScheduleItem`) is a
@@ -267,8 +276,10 @@ npm test                          # vitest
   points are `upsertVenueBooking` + `setVenueBookingStatus` (create branch) and
   `createTrip`'s template instantiation (`applyLocationScheduleDefaults`). Precedence:
   **an instantiated template's own schedule wins, then the location default, then
-  empty.** Editing the terms never touches existing bookings. Like booking schedules,
-  a term is "unscheduled" until it lands on a dated trip.
+  empty.** Editing the terms never touches existing bookings. Terms carry the same
+  `anchor`/`offsetValue`/`offsetUnit` shape (+ `location_payment_schedule_anchor`
+  CHECK); a `BOOKING`/`NONE` term resolves per engagement once seeded onto a real
+  booking, and like booking schedules a term is "unscheduled" until it lands on one.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
   **exactly one of** Location / Booking / Trip / Stay (DB CHECK
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
