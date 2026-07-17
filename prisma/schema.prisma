@@ -55,14 +55,14 @@ enum CalendarFeedScope {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  role         Role     @default(PLANNER)
-  createdAt    DateTime @default(now())
-  trips        Trip[]   @relation("CreatedTrips")
-  authoredNotes Note[]  @relation("AuthoredNotes")
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  name                 String?
+  passwordHash         String
+  role                 Role                  @default(PLANNER)
+  createdAt            DateTime              @default(now())
+  trips                Trip[]                @relation("CreatedTrips")
+  authoredNotes        Note[]                @relation("AuthoredNotes")
   todoistConnection    TodoistConnection?
   tripTodoistLinks     TripTodoistLink[]
   tripTypeTodoistLinks TripTypeTodoistLink[]
@@ -94,12 +94,12 @@ model TodoistConnection {
 
 // Per-user routing: this trip's follow-ups go to this Todoist project.
 model TripTodoistLink {
-  id               String @id @default(cuid())
-  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId           String
-  trip             Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  tripId           String
-  todoistProjectId String
+  id                 String  @id @default(cuid())
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  trip               Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId             String
+  todoistProjectId   String
   // Denormalized at link time so the trip page can show the project's name
   // without a Todoist API call (GH #50). Null on pre-existing links until the
   // picker self-heals it; display falls back to a generic label.
@@ -123,13 +123,13 @@ model TripTypeTodoistLink {
 }
 
 model TripType {
-  id              String     @id @default(cuid())
-  name            String     @unique
+  id              String                @id @default(cuid())
+  name            String                @unique
   description     String?
   color           String?
-  defaultCurrency String     @default("USD")
+  defaultCurrency String                @default("USD")
   locations       Location[] // implicit m2m (tags)
-  regions         Region[]   @relation("RegionTripTypes") // regions this type plans in
+  regions         Region[]              @relation("RegionTripTypes") // regions this type plans in
   trips           Trip[]
   calendarFeeds   CalendarFeed[]
   todoistLinks    TripTypeTodoistLink[]
@@ -154,37 +154,38 @@ model Region {
 }
 
 model Location {
-  id                   String             @id @default(cuid())
-  name                 String
-  region               Region?            @relation(fields: [regionId], references: [id], onDelete: SetNull)
-  regionId             String?
-  address              String?
-  description          String? // itinerary-facing (shown on shared itineraries)
-  notes                String? // internal planning scratch (staff-only)
-  website              String?
-  mapUrl               String? // optional one-tap "open in maps"
-  bookable             Boolean            @default(true) // false = never booked (walk-by stops); hidden from booking attention
-  bookingOpensLeadDays Int? // earliest bookable = startDate - this
-  bookingNotes         String?
-  scheduleLimitations  String?
-  archivedAt           DateTime? // set instead of deleting when referenced by a schedule item
-  tripTypes            TripType[] // tags; drives default filtering
-  contacts             Contact[]          @relation("ContactToLocation") // implicit m2m
-  primaryContact       Contact?           @relation("LocationPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
-  primaryContactId     String? // the go-to contact for this venue; must be one of `contacts`
-  costs                Cost[]
-  scheduleItems        ScheduleItemSite[] // schedule items that visit this site
-  bookings             Booking[] // bookings made against this location
-  hostSite             HostSite? // 1:1 extension; presence ⇒ this location can host/lodge
-  stays                Stay[]             @relation("Lodging") // per-trip lodging spans here
-  shareLinks           ShareLink[]        @relation("HostSiteShareLinks") // HOST_SITE links scoped here
-  siteNotes            Note[]             @relation("LocationNotes") // contact log for this venue
-  primaryForDays       ItineraryDay[]     @relation("DayPrimaryLocation") // days that default new items here
-  travelsFrom          TravelLeg[]        @relation("TravelFrom") // travel legs departing here
-  travelsTo            TravelLeg[]        @relation("TravelTo") // travel legs arriving here
-  travelStops          TravelStop[]       @relation("TravelStopLocation") // en-route stops here
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                     String                        @id @default(cuid())
+  name                   String
+  region                 Region?                       @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  regionId               String?
+  address                String?
+  description            String? // itinerary-facing (shown on shared itineraries)
+  notes                  String? // internal planning scratch (staff-only)
+  website                String?
+  mapUrl                 String? // optional one-tap "open in maps"
+  bookable               Boolean                       @default(true) // false = never booked (walk-by stops); hidden from booking attention
+  bookingOpensLeadDays   Int? // earliest bookable = startDate - this
+  bookingNotes           String?
+  scheduleLimitations    String?
+  archivedAt             DateTime? // set instead of deleting when referenced by a schedule item
+  tripTypes              TripType[] // tags; drives default filtering
+  contacts               Contact[]                     @relation("ContactToLocation") // implicit m2m
+  primaryContact         Contact?                      @relation("LocationPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  primaryContactId       String? // the go-to contact for this venue; must be one of `contacts`
+  costs                  Cost[]
+  defaultPaymentSchedule LocationPaymentScheduleItem[] // standing payment terms (GH #86); seeds new engagements
+  scheduleItems          ScheduleItemSite[] // schedule items that visit this site
+  bookings               Booking[] // bookings made against this location
+  hostSite               HostSite? // 1:1 extension; presence ⇒ this location can host/lodge
+  stays                  Stay[]                        @relation("Lodging") // per-trip lodging spans here
+  shareLinks             ShareLink[]                   @relation("HostSiteShareLinks") // HOST_SITE links scoped here
+  siteNotes              Note[]                        @relation("LocationNotes") // contact log for this venue
+  primaryForDays         ItineraryDay[]                @relation("DayPrimaryLocation") // days that default new items here
+  travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
+  travelsTo              TravelLeg[]                   @relation("TravelTo") // travel legs arriving here
+  travelStops            TravelStop[]                  @relation("TravelStopLocation") // en-route stops here
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
 
   @@index([regionId])
   @@index([primaryContactId])
@@ -219,48 +220,48 @@ model Cost {
 }
 
 model Trip {
-  id               String         @id @default(cuid())
+  id               String            @id @default(cuid())
   name             String
-  tripType         TripType       @relation(fields: [tripTypeId], references: [id])
+  tripType         TripType          @relation(fields: [tripTypeId], references: [id])
   tripTypeId       String
-  isTemplate       Boolean        @default(false)
-  startDate        DateTime?      @db.Date
-  endDate          DateTime?      @db.Date
+  isTemplate       Boolean           @default(false)
+  startDate        DateTime?         @db.Date
+  endDate          DateTime?         @db.Date
   capacity         Int? // max slots
   participantCount Int? // actual registered headcount (for cost totals)
-  status           TripStatus     @default(ACTIVE)
+  status           TripStatus        @default(ACTIVE)
   // The currencies this trip works in (ISO 4217 codes). Trip-scoped currency
   // pickers offer these instead of free text (GH #11); seeded from the trip
   // type's defaultCurrency.
-  currencies       String[]       @default([])
+  currencies       String[]          @default([])
   notes            String?
-  createdBy        User?          @relation("CreatedTrips", fields: [createdById], references: [id])
+  createdBy        User?             @relation("CreatedTrips", fields: [createdById], references: [id])
   createdById      String?
   days             ItineraryDay[]
   shareLinks       ShareLink[]
   calendarFeeds    CalendarFeed[]
   stays            Stay[]
   bookings         Booking[] // venue-engagement bookings scoped to this trip
-  notesLog         Note[]         @relation("TripNotes")
+  notesLog         Note[]            @relation("TripNotes")
   todoistLinks     TripTodoistLink[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 model ItineraryDay {
-  id               String         @id @default(cuid())
-  trip             Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  tripId           String
-  dayIndex         Int // 1-based ordering key (NOT unique; renumber in txn)
-  date             DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
-  title            String?
-  logisticalNotes  String? // staff-only on participant/host-site shares
-  participantNotes String? // participant-facing free text (devotional theme, scripture, walk notes)
+  id                String         @id @default(cuid())
+  trip              Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripId            String
+  dayIndex          Int // 1-based ordering key (NOT unique; renumber in txn)
+  date              DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
+  title             String?
+  logisticalNotes   String? // staff-only on participant/host-site shares
+  participantNotes  String? // participant-facing free text (devotional theme, scripture, walk notes)
   // Default venue for the day: new schedule items pre-fill their location picker
   // with this. Optional; SetNull so archiving/deleting a location never drops days.
-  primaryLocation   Location?     @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
+  primaryLocation   Location?      @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
   primaryLocationId String?
-  scheduleItems    ScheduleItem[]
+  scheduleItems     ScheduleItem[]
 
   @@index([tripId])
   @@index([primaryLocationId])
@@ -381,34 +382,34 @@ model ScheduleItemSite {
 // (DB CHECKs in the migration: num_nonnulls(scheduleItemId, tripId)=1, and
 // tripId ⇒ locationId). One engagement per (trip, location) — see @@unique below.
 model Booking {
-  id              String        @id @default(cuid())
-  scheduleItem    ScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  id              String                @id @default(cuid())
+  scheduleItem    ScheduleItem?         @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
   scheduleItemId  String? // set for a site-less / single-session item booking
-  trip            Trip?         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip            Trip?                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId          String? // set for a venue-engagement booking (with locationId)
-  location        Location?     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location        Location?             @relation(fields: [locationId], references: [id], onDelete: Cascade)
   locationId      String? // the engaged venue (required when tripId is set)
   label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
-  status          BookingStatus @default(NOT_BOOKED)
-  bookedContact   Contact?      @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
+  status          BookingStatus         @default(NOT_BOOKED)
+  bookedContact   Contact?              @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
   bookedContactId String?
   confirmationRef String?
   notes           String?
   // The negotiated price for THIS engagement (the location cost catalog is the
   // asking price; this is what was actually agreed). Settled when payments cover it.
-  agreedAmount    Decimal?      @db.Decimal(10, 2)
-  agreedCurrency  String        @default("USD")
+  agreedAmount    Decimal?              @db.Decimal(10, 2)
+  agreedCurrency  String                @default("USD")
   agreedUnit      CostUnit?
   payments        Payment[]
   paymentSchedule PaymentScheduleItem[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  notesLog        Note[]                @relation("BookingNotes")
 
   @@unique([tripId, locationId]) // one engagement per venue per trip (NULL tripId rows are distinct)
   @@index([scheduleItemId])
   @@index([tripId])
   @@index([locationId])
-  notesLog        Note[]        @relation("BookingNotes")
 }
 
 // A payment logged against a booking's agreed price. An engagement is settled
@@ -448,6 +449,29 @@ model PaymentScheduleItem {
   @@index([bookingId])
 }
 
+// A location's STANDING payment terms (GH #86) — a venue's deposit/balance
+// cadence tends to hold year to year ("20% deposit 180 days out, balance by
+// 30"), so it lives on the Location like the Cost catalog rather than on one
+// trip's booking. New venue engagements pre-fill their PaymentScheduleItem set
+// from this (precedence: an instantiated template's own schedule wins, then this
+// default, then empty). Same shape/CHECK as PaymentScheduleItem: an installment
+// is EITHER a percent of the eventual agreed price OR a fixed amount, due
+// `dueOffsetDays` before trip start. Resolution only lands once the schedule is
+// copied onto a dated trip's booking — a default row is "unscheduled" on its own.
+model LocationPaymentScheduleItem {
+  id            String   @id @default(cuid())
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId    String
+  label         String? // e.g. "Deposit", "Balance"
+  percent       Decimal? @db.Decimal(5, 2) // of the engagement's agreedAmount
+  fixedAmount   Decimal? @db.Decimal(10, 2) // in the engagement's agreedCurrency
+  dueOffsetDays Int
+  sortOrder     Int      @default(0) // stable display order for equal offsets
+  createdAt     DateTime @default(now())
+
+  @@index([locationId])
+}
+
 enum NoteMethod {
   CALL
   EMAIL
@@ -459,14 +483,14 @@ enum NoteMethod {
 // trip. Polymorphic: attaches to exactly one of a Location, Booking, Trip, or Stay
 // (DB CHECK: num_nonnulls(...) = 1). Generalizable beyond bookings.
 model Note {
-  id          String     @id @default(cuid())
-  body        String
-  method      NoteMethod @default(OTHER)
-  contact     Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  contactId   String? // the person spoken to, if a catalogued contact
-  contactedOn DateTime   @db.Date // when the contact happened (may differ from createdAt)
-  followUp    Boolean    @default(false)
-  dueDate     DateTime?  @db.Date // optional follow-up deadline
+  id            String     @id @default(cuid())
+  body          String
+  method        NoteMethod @default(OTHER)
+  contact       Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contactId     String? // the person spoken to, if a catalogued contact
+  contactedOn   DateTime   @db.Date // when the contact happened (may differ from createdAt)
+  followUp      Boolean    @default(false)
+  dueDate       DateTime?  @db.Date // optional follow-up deadline
   todoistTaskId String? // the Todoist task mirroring this follow-up, if pushed
 
   location   Location? @relation("LocationNotes", fields: [locationId], references: [id], onDelete: Cascade)

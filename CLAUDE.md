@@ -33,7 +33,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-39 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+40 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -51,12 +51,14 @@ engagement; idempotent; takes `agreedAmount`/`agreedCurrency`/`agreedUnit`),
 `update-booking` (P), `list-payments` (V, the payment log + outstanding balance),
 `add-payment` (P, logs a payment against the booking's agreed price).
 
-**locations.ts** — `search-locations` (V), `get-location` (V, incl. costs + host
-site), `list-regions` (V, resolves `regionId`), `list-trip-types` (V, resolves
-`tripTypeId`), `create-location` (P), `update-location` (P), `set-host-site` (P,
-upserts capability flags or `remove`s host-site status), `set-primary-contact` (P,
-links the contact + marks it primary, or clears the designation),
-`add-location-cost` (P), `update-location-cost` (P).
+**locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
+payment terms + host site), `list-regions` (V, resolves `regionId`), `list-trip-types`
+(V, resolves `tripTypeId`), `create-location` (P), `update-location` (P),
+`set-host-site` (P, upserts capability flags or `remove`s host-site status),
+`set-primary-contact` (P, links the contact + marks it primary, or clears the
+designation), `add-location-cost` (P), `update-location-cost` (P),
+`set-location-payment-schedule` (P, REPLACE the venue's standing terms that seed new
+engagements — GH #86).
 
 **contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P).
 Passing `locationIds` on a write REPLACES the linked-location set.
@@ -250,9 +252,23 @@ npm test                          # vitest
   `src/lib/payment-schedule.ts` (`resolveSchedule`/`scheduleAttention`, unit-tested);
   editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
   MCP tool). Surfaces: booking-row schedule editor + status chips, the dashboard's
-  "Payment overdue" attention filter, and the home "Payments due" card. Schedules
-  are date-relative, so they templatize/instantiate verbatim (unlike the agreed
-  price, which resets); an installment on a date-less template is "unscheduled".
+  "Payment overdue" attention filter, the home "Payments due" card, and the trip
+  overview **Money** panel (agreed/paid/outstanding per currency + overdue/next-due,
+  in `trips/[id]/page.tsx`). Schedules are date-relative, so they templatize/
+  instantiate verbatim (unlike the agreed price, which resets); an installment on a
+  date-less template is "unscheduled".
+- **Standing payment terms (GH #86)**: a venue's deposit/balance cadence tends to
+  hold year to year, so `Location.defaultPaymentSchedule` (`LocationPaymentScheduleItem`,
+  same shape + `location_payment_schedule_amount` CHECK as `PaymentScheduleItem`) is a
+  first-class default on the location, like its `Cost` catalog. Editing lives on the
+  Location page (`location-payment-terms.tsx`, `setLocationPaymentSchedule` action) +
+  `set-location-payment-schedule` MCP tool; read via `get-location`. A NEW venue
+  engagement pre-fills its `PaymentScheduleItem` set from these terms — the seeding
+  points are `upsertVenueBooking` + `setVenueBookingStatus` (create branch) and
+  `createTrip`'s template instantiation (`applyLocationScheduleDefaults`). Precedence:
+  **an instantiated template's own schedule wins, then the location default, then
+  empty.** Editing the terms never touches existing bookings. Like booking schedules,
+  a term is "unscheduled" until it lands on a dated trip.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
   **exactly one of** Location / Booking / Trip / Stay (DB CHECK
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked

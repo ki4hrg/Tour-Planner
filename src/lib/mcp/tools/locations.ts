@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { parseDateInput } from "@/lib/dates";
+import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { zodErrorMessage } from "@/lib/forms";
 
 export function registerLocationTools(server: McpServer, user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
@@ -112,6 +114,17 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 notes: true,
               },
             },
+            // Standing payment terms (GH #86) that seed new engagements here.
+            defaultPaymentSchedule: {
+              orderBy: { sortOrder: "asc" },
+              select: {
+                id: true,
+                label: true,
+                percent: true,
+                fixedAmount: true,
+                dueOffsetDays: true,
+              },
+            },
             hostSite: true,
           },
         });
@@ -132,6 +145,11 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             amount: Number(c.amount),
             confirmedAt: c.confirmedAt?.toISOString() ?? null,
           })),
+          defaultPaymentSchedule: location.defaultPaymentSchedule.map((t) => ({
+            ...t,
+            percent: t.percent == null ? null : Number(t.percent),
+            fixedAmount: t.fixedAmount == null ? null : Number(t.fixedAmount),
+          })),
         };
 
         return {
@@ -142,6 +160,113 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── set-location-payment-schedule (PLANNER+) ───────────────────────────
+  server.registerTool(
+    "set-location-payment-schedule",
+    {
+      title: "Set Location Payment Terms",
+      description:
+        "REPLACE a location's STANDING payment terms (get locationId from get-location / search-locations) with the given installments — pass an empty list to clear them. These are the venue's default deposit/balance cadence (they tend to hold year to year), stored on the location like its cost catalog; a NEW venue engagement pre-fills its own schedule from them (an instantiated template's schedule wins, then these, then empty). Editing terms never changes existing bookings — use set-payment-schedule for a specific booking. Each installment has EITHER percent (of the eventual agreed price) OR fixedAmount, plus dueOffsetDays = days before trip start it falls due (0 = day of, negative = after), and an optional label like 'Deposit'.",
+      inputSchema: {
+        locationId: z.string(),
+        installments: z.array(
+          z.object({
+            label: z.string().optional(),
+            percent: z.number().positive().max(100).optional(),
+            fixedAmount: z.number().positive().optional(),
+            dueOffsetDays: z.number().int(),
+          }),
+        ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ locationId, installments }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Insufficient permissions. PLANNER role or higher required.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Same validator the web action uses — one home for the
+        // exactly-one-of-percent/fixedAmount rule.
+        const parsed = paymentScheduleSchema.safeParse({ installments });
+        if (!parsed.success) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: ${zodErrorMessage(parsed.error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const location = await prisma.location.findUnique({
+          where: { id: locationId },
+          select: { id: true },
+        });
+        if (!location) {
+          return {
+            content: [
+              { type: "text" as const, text: "Error: Location not found." },
+            ],
+            isError: true,
+          };
+        }
+
+        await prisma.$transaction([
+          prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
+          prisma.locationPaymentScheduleItem.createMany({
+            data: parsed.data.installments.map((i, idx) => ({
+              locationId,
+              label: i.label || null,
+              percent: i.percent ?? null,
+              fixedAmount: i.fixedAmount ?? null,
+              dueOffsetDays: i.dueOffsetDays,
+              sortOrder: idx,
+            })),
+          }),
+        ]);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { success: true, installments: installments.length },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
           isError: true,
         };
       }
