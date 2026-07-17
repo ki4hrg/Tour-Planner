@@ -4,9 +4,9 @@ import type { BookingStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
-import { todayUtc } from "@/lib/dates";
+import { todayUtc, parseDateInput } from "@/lib/dates";
 import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
-import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
@@ -144,7 +144,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -154,6 +154,10 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
+        bookedOn: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         agreedAmount: z.number().nonnegative().optional(),
         agreedCurrency: z.string().optional(),
         agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
@@ -174,6 +178,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       bookedContactId,
       confirmationRef,
       notes,
+      bookedOn,
       agreedAmount,
       agreedCurrency,
       agreedUnit,
@@ -223,6 +228,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           bookedContactId: bookedContactId || null,
           confirmationRef: confirmationRef || null,
           notes: notes || null,
+          bookedOn: bookedOn ? parseDateInput(bookedOn) : null,
           agreedAmount: agreedAmount ?? null,
           agreedCurrency: agreedCurrency || "USD",
           agreedUnit: agreedUnit ?? null,
@@ -267,13 +273,17 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Booking",
       description:
-        "Update a booking's status, contact, confirmation reference, notes, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; pass agreedAmount: 0 to keep, omit to leave unchanged). Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
+        "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; pass agreedAmount: 0 to keep, omit to leave unchanged). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
       inputSchema: {
         bookingId: z.string(),
         status: z.string().optional(),
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
+        bookedOn: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         agreedAmount: z.number().nonnegative().optional(),
         agreedCurrency: z.string().optional(),
         agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
@@ -291,6 +301,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       bookedContactId,
       confirmationRef,
       notes,
+      bookedOn,
       agreedAmount,
       agreedCurrency,
       agreedUnit,
@@ -315,6 +326,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         if (confirmationRef !== undefined)
           data.confirmationRef = confirmationRef;
         if (notes !== undefined) data.notes = notes;
+        if (bookedOn !== undefined) data.bookedOn = parseDateInput(bookedOn);
         if (agreedAmount !== undefined) data.agreedAmount = agreedAmount;
         if (agreedCurrency !== undefined) data.agreedCurrency = agreedCurrency;
         if (agreedUnit !== undefined) data.agreedUnit = agreedUnit;
@@ -378,6 +390,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             agreedAmount: true,
             agreedCurrency: true,
             agreedUnit: true,
+            bookedOn: true,
+            createdAt: true,
             payments: { orderBy: { paidOn: "asc" } },
             paymentSchedule: true,
             // Trip start anchors the schedule's due dates, whichever way the
@@ -415,7 +429,13 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           null;
         const schedule = resolveSchedule(
           booking.paymentSchedule.map(serializeInstallment),
-          { agreedAmount, paidTotal, tripStartDate, today: todayUtc() },
+          {
+            agreedAmount,
+            paidTotal,
+            tripStartDate,
+            bookingDate: booking.bookedOn ?? booking.createdAt,
+            today: todayUtc(),
+          },
         );
 
         return {
@@ -462,7 +482,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Set Payment Schedule",
       description:
-        "REPLACE a booking's payment schedule (get bookingId from list-bookings) with the given installments — pass an empty list to clear it. Each installment has EITHER percent (of the booking's agreed price) OR fixedAmount (in its agreed currency), plus dueOffsetDays = days before trip start it falls due (0 = day of, negative = after), and an optional label like 'Deposit'. Example: 20% due 180 days out, 30% at 90, balance at 30. See list-payments for the resolved due dates and paid/overdue state.",
+        "REPLACE a booking's payment schedule (get bookingId from list-bookings) with the given installments — pass an empty list to clear it. Each installment has EITHER percent (of the booking's agreed price) OR fixedAmount (in its agreed currency), plus an optional label like 'Deposit'. The due date is set by anchor: 'EVENT_START' (default) → offsetValue offsetUnits BEFORE trip start (offsetValue negative = after start); 'BOOKING' → offsetValue offsetUnits AFTER the booking's booked-on date; 'NONE' → no deadline (omit offsetValue/offsetUnit; never overdue). offsetUnit is 'DAY', 'WEEK', or 'MONTH'. Examples: 20% EVENT_START 180 DAY (180 days before start); a fixed 500 BOOKING 0 DAY (due on the booking date); a NONE deposit owed with no fixed deadline. See list-payments for resolved due dates and paid/overdue state.",
       inputSchema: {
         bookingId: z.string(),
         installments: z.array(
@@ -470,7 +490,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             label: z.string().optional(),
             percent: z.number().positive().max(100).optional(),
             fixedAmount: z.number().positive().optional(),
-            dueOffsetDays: z.number().int(),
+            anchor: z.enum(["EVENT_START", "BOOKING", "NONE"]).optional(),
+            offsetValue: z.number().int().optional(),
+            offsetUnit: z.enum(["DAY", "WEEK", "MONTH"]).optional(),
           }),
         ),
       },
@@ -524,13 +546,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         await prisma.$transaction([
           prisma.paymentScheduleItem.deleteMany({ where: { bookingId } }),
           prisma.paymentScheduleItem.createMany({
-            data: parsed.data.installments.map((i, idx) => ({
+            data: installmentRows(parsed.data.installments).map((r) => ({
               bookingId,
-              label: i.label || null,
-              percent: i.percent ?? null,
-              fixedAmount: i.fixedAmount ?? null,
-              dueOffsetDays: i.dueOffsetDays,
-              sortOrder: idx,
+              ...r,
             })),
           }),
         ]);

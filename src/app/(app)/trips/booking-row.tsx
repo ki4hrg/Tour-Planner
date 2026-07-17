@@ -23,7 +23,12 @@ import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/l
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
-import type { ResolvedInstallment } from "@/lib/payment-schedule";
+import {
+  describeCadence,
+  type ResolvedInstallment,
+  type PaymentAnchor,
+  type PaymentOffsetUnit,
+} from "@/lib/payment-schedule";
 import {
   setVenueBookingStatus,
   setBookingStatus,
@@ -203,6 +208,7 @@ function VenueDetails({
   );
   const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
   const [agreedUnit, setAgreedUnit] = useState<string>(row.agreedUnit ?? NONE);
+  const [bookedOn, setBookedOn] = useState(row.bookedOn ?? "");
   // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
   const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
 
@@ -215,6 +221,7 @@ function VenueDetails({
         bookedContactId: contactId === NONE ? undefined : contactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
+        bookedOn: bookedOn || undefined,
         agreedAmount: agreedAmount.trim() || undefined,
         agreedCurrency,
         agreedUnit: agreedUnit === NONE ? undefined : agreedUnit,
@@ -273,6 +280,18 @@ function VenueDetails({
                 placeholder="e.g. CONF123"
               />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Booked on</Label>
+            <Input
+              type="date"
+              value={bookedOn}
+              onChange={(e) => setBookedOn(e.target.value)}
+              className="w-40"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Anchors any &quot;after booking&quot; payment installments.
+            </p>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Agreed price</Label>
@@ -364,12 +383,15 @@ const INSTALLMENT_STATE_STYLES: Record<ResolvedInstallment["state"], string> = {
   unscheduled: "text-amber-700 dark:text-amber-300",
 };
 
-const INSTALLMENT_STATE_LABELS: Record<ResolvedInstallment["state"], string> = {
-  paid: "paid",
-  overdue: "overdue",
-  upcoming: "due",
-  unscheduled: "needs agreed price / trip dates",
-};
+// The right-hand state chip text for one resolved installment.
+function installmentStateText(i: ResolvedInstallment): string {
+  if (i.state === "unscheduled") return "needs agreed price / dates";
+  if (i.state === "paid") return "paid";
+  if (i.state === "overdue")
+    return `overdue${i.dueDate ? ` ${formatDate(i.dueDate)}` : ""}`;
+  // upcoming — a NONE installment has no date, so it's just owed.
+  return i.dueDate ? `due ${formatDate(i.dueDate)}` : "outstanding";
+}
 
 // One editable installment row's local form state.
 type InstallmentDraft = {
@@ -377,7 +399,9 @@ type InstallmentDraft = {
   label: string;
   mode: "percent" | "fixed";
   value: string;
-  offsetDays: string;
+  anchor: PaymentAnchor;
+  offset: string;
+  unit: PaymentOffsetUnit;
 };
 
 function draftsFromRow(schedule: ResolvedInstallment[]): InstallmentDraft[] {
@@ -386,7 +410,9 @@ function draftsFromRow(schedule: ResolvedInstallment[]): InstallmentDraft[] {
     label: i.label ?? "",
     mode: i.percent != null ? "percent" : "fixed",
     value: String(i.percent ?? i.fixedAmount ?? ""),
-    offsetDays: String(i.dueOffsetDays),
+    anchor: i.anchor,
+    offset: i.offsetValue == null ? "" : String(i.offsetValue),
+    unit: i.offsetUnit ?? "DAY",
   }));
 }
 
@@ -408,7 +434,17 @@ function PaymentSchedule({
     setDrafts(
       row.schedule.length
         ? draftsFromRow(row.schedule)
-        : [{ key: 0, label: "Deposit", mode: "percent", value: "", offsetDays: "180" }],
+        : [
+            {
+              key: 0,
+              label: "Deposit",
+              mode: "percent",
+              value: "",
+              anchor: "EVENT_START",
+              offset: "180",
+              unit: "DAY",
+            },
+          ],
     );
     setEditing(true);
   };
@@ -424,7 +460,9 @@ function PaymentSchedule({
             label: d.label.trim() || undefined,
             percent: d.mode === "percent" ? d.value : undefined,
             fixedAmount: d.mode === "fixed" ? d.value : undefined,
-            dueOffsetDays: d.offsetDays,
+            anchor: d.anchor,
+            offsetValue: d.anchor === "NONE" ? undefined : d.offset,
+            offsetUnit: d.anchor === "NONE" ? undefined : d.unit,
           })),
         }),
       () => setEditing(false),
@@ -459,11 +497,11 @@ function PaymentSchedule({
                   {i.percent != null
                     ? `${i.percent}%${i.amountDue != null ? ` · ${formatMoney(i.amountDue, row.agreedCurrency)}` : ""}`
                     : formatMoney(i.fixedAmount ?? 0, row.agreedCurrency)}
+                  {" · "}
+                  {describeCadence(i)}
                 </span>
                 <span className={cn("text-xs", INSTALLMENT_STATE_STYLES[i.state])}>
-                  {i.state === "unscheduled"
-                    ? INSTALLMENT_STATE_LABELS.unscheduled
-                    : `${INSTALLMENT_STATE_LABELS[i.state]}${i.dueDate ? ` ${formatDate(i.dueDate)}` : ""}`}
+                  {installmentStateText(i)}
                   {i.state !== "paid" && i.covered > 0
                     ? ` · ${formatMoney(i.covered, row.agreedCurrency)} covered`
                     : ""}
@@ -511,17 +549,52 @@ function PaymentSchedule({
                   <SelectItem value="fixed">fixed amount</SelectItem>
                 </SelectContent>
               </Select>
-              <div className="space-y-1">
-                <Label className="text-xs">Days before start</Label>
-                <Input
-                  type="number"
-                  step="1"
-                  inputMode="numeric"
-                  value={d.offsetDays}
-                  onChange={(e) => patch(d.key, { offsetDays: e.target.value })}
-                  className="w-28"
-                />
-              </div>
+              {/* Offset value + unit — hidden for a no-deadline (NONE) installment. */}
+              {d.anchor !== "NONE" ? (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Offset</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      inputMode="numeric"
+                      value={d.offset}
+                      onChange={(e) => patch(d.key, { offset: e.target.value })}
+                      className="w-20"
+                    />
+                  </div>
+                  <Select
+                    value={d.unit}
+                    onValueChange={(unit) =>
+                      patch(d.key, { unit: unit as PaymentOffsetUnit })
+                    }
+                  >
+                    <SelectTrigger size="sm" className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DAY">days</SelectItem>
+                      <SelectItem value="WEEK">weeks</SelectItem>
+                      <SelectItem value="MONTH">months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              ) : null}
+              <Select
+                value={d.anchor}
+                onValueChange={(anchor) =>
+                  patch(d.key, { anchor: anchor as PaymentAnchor })
+                }
+              >
+                <SelectTrigger size="sm" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EVENT_START">before trip start</SelectItem>
+                  <SelectItem value="BOOKING">after booking</SelectItem>
+                  <SelectItem value="NONE">no deadline</SelectItem>
+                </SelectContent>
+              </Select>
               <button
                 type="button"
                 disabled={pending}
@@ -547,7 +620,9 @@ function PaymentSchedule({
                     label: "",
                     mode: "percent",
                     value: "",
-                    offsetDays: "30",
+                    anchor: "EVENT_START",
+                    offset: "30",
+                    unit: "DAY",
                   },
                 ])
               }
@@ -556,7 +631,12 @@ function PaymentSchedule({
             </Button>
             <Button
               size="sm"
-              disabled={pending || drafts.some((d) => !d.value || d.offsetDays === "")}
+              disabled={
+                pending ||
+                drafts.some(
+                  (d) => !d.value || (d.anchor !== "NONE" && d.offset === ""),
+                )
+              }
               onClick={save}
             >
               Save schedule

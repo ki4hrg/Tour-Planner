@@ -56,6 +56,8 @@ const TRIP_SELECT = {
       notes: true,
       bookedContactId: true,
       bookedContact: { select: { id: true, name: true } },
+      bookedOn: true,
+      createdAt: true,
       agreedAmount: true,
       agreedCurrency: true,
       payments: true,

@@ -7,6 +7,8 @@ import type {
   TripStatus,
   BookingStatus,
   ShareAudience,
+  PaymentAnchor,
+  PaymentOffsetUnit,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
@@ -18,6 +20,7 @@ import {
   bookingSchema,
   paymentSchema,
   paymentScheduleSchema,
+  installmentRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate } from "@/lib/dates";
@@ -120,7 +123,9 @@ const TEMPLATE_VENUE_BOOKING_SELECT = {
       label: true,
       percent: true,
       fixedAmount: true,
-      dueOffsetDays: true,
+      anchor: true,
+      offsetValue: true,
+      offsetUnit: true,
       sortOrder: true,
     },
   },
@@ -799,6 +804,7 @@ export type BookingInputData = {
   bookedContactId?: string;
   confirmationRef?: string;
   notes?: string;
+  bookedOn?: string; // "yyyy-mm-dd"
   agreedAmount?: number | string;
   agreedCurrency?: string;
   agreedUnit?: string;
@@ -812,6 +818,7 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
     bookedContactId: d.bookedContactId || null,
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
+    bookedOn: d.bookedOn ? parseDateInput(d.bookedOn) : null,
     agreedAmount: d.agreedAmount ?? null,
     agreedCurrency: d.agreedCurrency || "USD",
     agreedUnit: d.agreedUnit ?? null,
@@ -863,24 +870,38 @@ async function seedScheduleFromLocation(
     orderBy: { sortOrder: "asc" },
   });
   if (!defaults.length) return undefined;
-  return {
-    create: defaults.map((d) => ({
-      label: d.label,
-      percent: d.percent,
-      fixedAmount: d.fixedAmount,
-      dueOffsetDays: d.dueOffsetDays,
-      sortOrder: d.sortOrder,
-    })),
-  };
+  return { create: defaults.map(toScheduleSeed) };
 }
 
 type LocationScheduleSeed = {
   label: string | null;
   percent: Prisma.Decimal | null;
   fixedAmount: Prisma.Decimal | null;
-  dueOffsetDays: number;
+  anchor: PaymentAnchor;
+  offsetValue: number | null;
+  offsetUnit: PaymentOffsetUnit | null;
   sortOrder: number;
 };
+
+function toScheduleSeed(d: {
+  label: string | null;
+  percent: Prisma.Decimal | null;
+  fixedAmount: Prisma.Decimal | null;
+  anchor: PaymentAnchor;
+  offsetValue: number | null;
+  offsetUnit: PaymentOffsetUnit | null;
+  sortOrder: number;
+}): LocationScheduleSeed {
+  return {
+    label: d.label,
+    percent: d.percent,
+    fixedAmount: d.fixedAmount,
+    anchor: d.anchor,
+    offsetValue: d.offsetValue,
+    offsetUnit: d.offsetUnit,
+    sortOrder: d.sortOrder,
+  };
+}
 
 // Fill each instantiated engagement that carries NO schedule with its location's
 // standing terms (GH #86). One batched query for all locations that need one;
@@ -898,13 +919,7 @@ async function applyLocationScheduleDefaults(
   const byLoc = new Map<string, LocationScheduleSeed[]>();
   for (const d of defaults) {
     const arr = byLoc.get(d.locationId) ?? [];
-    arr.push({
-      label: d.label,
-      percent: d.percent,
-      fixedAmount: d.fixedAmount,
-      dueOffsetDays: d.dueOffsetDays,
-      sortOrder: d.sortOrder,
-    });
+    arr.push(toScheduleSeed(d));
     byLoc.set(d.locationId, arr);
   }
   return bookings.map((b) => {
@@ -1100,14 +1115,16 @@ export async function addPayment(
   return { ok: true, message: "Payment logged." };
 }
 
-// --- Payment schedule (installments due relative to trip start; GH #51) ---
+// --- Payment schedule (installments due relative to a selectable anchor; GH #51/#86) ---
 
 export type PaymentScheduleInputData = {
   installments: {
     label?: string;
     percent?: number | string;
     fixedAmount?: number | string;
-    dueOffsetDays: number | string;
+    anchor?: "EVENT_START" | "BOOKING" | "NONE";
+    offsetValue?: number | string;
+    offsetUnit?: "DAY" | "WEEK" | "MONTH";
   }[];
 };
 
@@ -1128,13 +1145,9 @@ export async function setPaymentSchedule(
   await prisma.$transaction([
     prisma.paymentScheduleItem.deleteMany({ where: { bookingId } }),
     prisma.paymentScheduleItem.createMany({
-      data: parsed.data.installments.map((i, idx) => ({
+      data: installmentRows(parsed.data.installments).map((r) => ({
         bookingId,
-        label: i.label || null,
-        percent: i.percent ?? null,
-        fixedAmount: i.fixedAmount ?? null,
-        dueOffsetDays: i.dueOffsetDays,
-        sortOrder: idx,
+        ...r,
       })),
     }),
   ]);

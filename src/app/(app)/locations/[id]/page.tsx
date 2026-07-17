@@ -124,7 +124,9 @@ export default async function LocationDetailPage({
     label: t.label,
     percent: t.percent == null ? null : Number(t.percent),
     fixedAmount: t.fixedAmount == null ? null : Number(t.fixedAmount),
-    dueOffsetDays: t.dueOffsetDays,
+    anchor: t.anchor,
+    offsetValue: t.offsetValue,
+    offsetUnit: t.offsetUnit,
   }));
   const termsCurrency = location.costs[0]?.currency ?? "USD";
 
@@ -219,6 +221,8 @@ export default async function LocationDetailPage({
         select: {
           id: true,
           status: true,
+          bookedOn: true,
+          createdAt: true,
           agreedAmount: true,
           agreedCurrency: true,
           payments: { select: { amount: true } },
@@ -238,6 +242,7 @@ export default async function LocationDetailPage({
           agreedAmount: agreed,
           paidTotal: paid,
           tripStartDate: b.trip!.startDate,
+          bookingDate: b.bookedOn ?? b.createdAt,
           today,
         },
       );

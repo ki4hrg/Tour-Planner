@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { parseDateInput } from "@/lib/dates";
-import { paymentScheduleSchema } from "@/lib/validators/booking";
+import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
 
 export function registerLocationTools(server: McpServer, user: SessionUser) {
@@ -122,7 +122,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 label: true,
                 percent: true,
                 fixedAmount: true,
-                dueOffsetDays: true,
+                anchor: true,
+                offsetValue: true,
+                offsetUnit: true,
               },
             },
             hostSite: true,
@@ -172,7 +174,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Set Location Payment Terms",
       description:
-        "REPLACE a location's STANDING payment terms (get locationId from get-location / search-locations) with the given installments — pass an empty list to clear them. These are the venue's default deposit/balance cadence (they tend to hold year to year), stored on the location like its cost catalog; a NEW venue engagement pre-fills its own schedule from them (an instantiated template's schedule wins, then these, then empty). Editing terms never changes existing bookings — use set-payment-schedule for a specific booking. Each installment has EITHER percent (of the eventual agreed price) OR fixedAmount, plus dueOffsetDays = days before trip start it falls due (0 = day of, negative = after), and an optional label like 'Deposit'.",
+        "REPLACE a location's STANDING payment terms (get locationId from get-location / search-locations) with the given installments — pass an empty list to clear them. These are the venue's default deposit/balance cadence (they tend to hold year to year), stored on the location like its cost catalog; a NEW venue engagement pre-fills its own schedule from them (an instantiated template's schedule wins, then these, then empty). Editing terms never changes existing bookings — use set-payment-schedule for a specific booking. Each installment has EITHER percent (of the eventual agreed price) OR fixedAmount, plus an optional label like 'Deposit'. The due date is set by anchor: 'EVENT_START' (default) → offsetValue offsetUnits before trip start (negative = after); 'BOOKING' → offsetValue offsetUnits after the engagement's booked-on date; 'NONE' → no deadline (omit offsetValue/offsetUnit). offsetUnit is 'DAY', 'WEEK', or 'MONTH'. A BOOKING/NONE term resolves per engagement once seeded onto a real booking.",
       inputSchema: {
         locationId: z.string(),
         installments: z.array(
@@ -180,7 +182,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             label: z.string().optional(),
             percent: z.number().positive().max(100).optional(),
             fixedAmount: z.number().positive().optional(),
-            dueOffsetDays: z.number().int(),
+            anchor: z.enum(["EVENT_START", "BOOKING", "NONE"]).optional(),
+            offsetValue: z.number().int().optional(),
+            offsetUnit: z.enum(["DAY", "WEEK", "MONTH"]).optional(),
           }),
         ),
       },
@@ -236,13 +240,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         await prisma.$transaction([
           prisma.locationPaymentScheduleItem.deleteMany({ where: { locationId } }),
           prisma.locationPaymentScheduleItem.createMany({
-            data: parsed.data.installments.map((i, idx) => ({
+            data: installmentRows(parsed.data.installments).map((r) => ({
               locationId,
-              label: i.label || null,
-              percent: i.percent ?? null,
-              fixedAmount: i.fixedAmount ?? null,
-              dueOffsetDays: i.dueOffsetDays,
-              sortOrder: idx,
+              ...r,
             })),
           }),
         ]);

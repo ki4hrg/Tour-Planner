@@ -38,6 +38,25 @@ enum CostUnit {
   PER_GROUP
 }
 
+// What a payment installment's due date is measured from (GH #86 refinement).
+// EVENT_START: relative to trip.startDate (offset counts BEFORE start, the
+// original behavior). BOOKING: relative to the booking's bookedOn date (offset
+// counts AFTER booking). NONE: no deadline — owed until paid, never overdue
+// (e.g. a deposit taken at booking with no fixed date). See src/lib/payment-schedule.ts.
+enum PaymentAnchor {
+  EVENT_START
+  BOOKING
+  NONE
+}
+
+// Unit for a payment installment's offset from its anchor. MONTH/WEEK add
+// calendar-aware (see shiftByOffset in src/lib/payment-schedule.ts).
+enum PaymentOffsetUnit {
+  DAY
+  WEEK
+  MONTH
+}
+
 enum ShareAudience {
   STAFF
   PARTICIPANT
@@ -395,6 +414,9 @@ model Booking {
   bookedContactId String?
   confirmationRef String?
   notes           String?
+  // When the engagement was booked — the anchor date for BOOKING-relative payment
+  // installments (GH #86). Planner-set; resolution falls back to createdAt when null.
+  bookedOn        DateTime?             @db.Date
   // The negotiated price for THIS engagement (the location cost catalog is the
   // asking price; this is what was actually agreed). Settled when payments cover it.
   agreedAmount    Decimal?              @db.Decimal(10, 2)
@@ -432,19 +454,24 @@ model Payment {
 // An installment in a booking's payment schedule — "20% deposit due 180 days
 // before the trip starts, balance by 30 days out". Amount is EITHER a percentage
 // of the booking's agreed price OR a fixed amount in its agreed currency (DB
-// CHECK payment_schedule_amount: exactly one). `dueOffsetDays` counts days
-// BEFORE trip.startDate (0 = day of, negative = after); the concrete due date is
-// derived on dated trips, so schedules templatize/instantiate cleanly.
+// CHECK payment_schedule_amount: exactly one). The due date is `offsetValue`
+// `offsetUnit`s from the `anchor` (GH #86 refinement): EVENT_START counts BEFORE
+// trip.startDate (negative = after), BOOKING counts AFTER the booking's bookedOn
+// date, NONE has no deadline (offsetValue/offsetUnit null — DB CHECK
+// payment_schedule_anchor). Concrete dates derive on dated trips, so schedules
+// templatize/instantiate cleanly.
 model PaymentScheduleItem {
-  id            String   @id @default(cuid())
-  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  bookingId     String
-  label         String? // e.g. "Deposit", "Balance"
-  percent       Decimal? @db.Decimal(5, 2) // of the booking's agreedAmount
-  fixedAmount   Decimal? @db.Decimal(10, 2) // in the booking's agreedCurrency
-  dueOffsetDays Int
-  sortOrder     Int      @default(0) // stable display order for equal offsets
-  createdAt     DateTime @default(now())
+  id          String             @id @default(cuid())
+  booking     Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId   String
+  label       String? // e.g. "Deposit", "Balance"
+  percent     Decimal?           @db.Decimal(5, 2) // of the booking's agreedAmount
+  fixedAmount Decimal?           @db.Decimal(10, 2) // in the booking's agreedCurrency
+  anchor      PaymentAnchor      @default(EVENT_START)
+  offsetValue Int? // in offsetUnit; anchor-natural direction (EVENT_START=before start, BOOKING=after booking). null iff anchor=NONE
+  offsetUnit  PaymentOffsetUnit? // null iff anchor=NONE
+  sortOrder   Int                @default(0) // stable display order for equal due dates
+  createdAt   DateTime           @default(now())
 
   @@index([bookingId])
 }
@@ -454,20 +481,22 @@ model PaymentScheduleItem {
 // 30"), so it lives on the Location like the Cost catalog rather than on one
 // trip's booking. New venue engagements pre-fill their PaymentScheduleItem set
 // from this (precedence: an instantiated template's own schedule wins, then this
-// default, then empty). Same shape/CHECK as PaymentScheduleItem: an installment
-// is EITHER a percent of the eventual agreed price OR a fixed amount, due
-// `dueOffsetDays` before trip start. Resolution only lands once the schedule is
-// copied onto a dated trip's booking — a default row is "unscheduled" on its own.
+// default, then empty). Same shape/CHECKs as PaymentScheduleItem (amount +
+// anchor). A BOOKING-anchored standing term carries no booking date of its own —
+// it resolves only once seeded onto a real engagement, like EVENT_START terms
+// stay unscheduled until a dated trip.
 model LocationPaymentScheduleItem {
-  id            String   @id @default(cuid())
-  location      Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  locationId    String
-  label         String? // e.g. "Deposit", "Balance"
-  percent       Decimal? @db.Decimal(5, 2) // of the engagement's agreedAmount
-  fixedAmount   Decimal? @db.Decimal(10, 2) // in the engagement's agreedCurrency
-  dueOffsetDays Int
-  sortOrder     Int      @default(0) // stable display order for equal offsets
-  createdAt     DateTime @default(now())
+  id          String             @id @default(cuid())
+  location    Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  label       String? // e.g. "Deposit", "Balance"
+  percent     Decimal?           @db.Decimal(5, 2) // of the engagement's agreedAmount
+  fixedAmount Decimal?           @db.Decimal(10, 2) // in the engagement's agreedCurrency
+  anchor      PaymentAnchor      @default(EVENT_START)
+  offsetValue Int? // in offsetUnit; anchor-natural direction. null iff anchor=NONE
+  offsetUnit  PaymentOffsetUnit? // null iff anchor=NONE
+  sortOrder   Int                @default(0) // stable display order for equal due dates
+  createdAt   DateTime           @default(now())
 
   @@index([locationId])
 }
