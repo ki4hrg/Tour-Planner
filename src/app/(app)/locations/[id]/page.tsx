@@ -10,7 +10,13 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { serializeCost, isCostStale } from "@/lib/money";
+import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
+import { BOOKING_STATUS_LABELS } from "@/lib/trips";
+import {
+  resolveSchedule,
+  scheduleAttention,
+  serializeInstallment,
+} from "@/lib/payment-schedule";
 import { mapHref } from "@/lib/maps";
 import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
@@ -204,6 +210,53 @@ export default async function LocationDetailPage({
     (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
   );
 
+  // Engagement history (GH #86 part C): the money conversation for this venue in
+  // one place — every non-template trip's booking here with its status and
+  // agreed/paid/outstanding/overdue state, newest first.
+  const engagementRows = location.bookable
+    ? await prisma.booking.findMany({
+        where: { locationId: id, trip: { isTemplate: false } },
+        select: {
+          id: true,
+          status: true,
+          agreedAmount: true,
+          agreedCurrency: true,
+          payments: { select: { amount: true } },
+          paymentSchedule: true,
+          trip: { select: { id: true, name: true, startDate: true } },
+        },
+      })
+    : [];
+  const engagements = engagementRows
+    .filter((b) => b.trip != null)
+    .map((b) => {
+      const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
+      const resolved = resolveSchedule(
+        b.paymentSchedule.map(serializeInstallment),
+        {
+          agreedAmount: agreed,
+          paidTotal: paid,
+          tripStartDate: b.trip!.startDate,
+          today,
+        },
+      );
+      const { overdueAmount } = scheduleAttention(resolved);
+      return {
+        bookingId: b.id,
+        tripId: b.trip!.id,
+        tripName: b.trip!.name,
+        startDate: b.trip!.startDate,
+        status: b.status,
+        currency: b.agreedCurrency,
+        agreed,
+        paid,
+        outstanding: agreed == null ? null : Math.max(0, agreed - paid),
+        overdueAmount,
+      };
+    })
+    .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0));
+
   const hostSiteSummary = location.hostSite
     ? [
         location.hostSite.providesLodging ? "lodging" : null,
@@ -283,6 +336,62 @@ export default async function LocationDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {location.bookable && engagements.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Engagement history</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y text-sm">
+              {engagements.map((e) => (
+                <li
+                  key={e.bookingId}
+                  className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0"
+                >
+                  <span className="min-w-0">
+                    <Link
+                      href={`/trips/${e.tripId}/booking`}
+                      className="font-medium hover:underline"
+                    >
+                      {e.tripName}
+                    </Link>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {e.startDate ? formatDate(e.startDate) : "—"} ·{" "}
+                      {BOOKING_STATUS_LABELS[e.status]}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs">
+                    {e.agreed == null ? (
+                      <span className="text-muted-foreground">no agreed price</span>
+                    ) : (
+                      <>
+                        <span className="text-muted-foreground">
+                          {formatMoney(e.paid, e.currency)} /{" "}
+                          {formatMoney(e.agreed, e.currency)}
+                        </span>{" "}
+                        {e.overdueAmount > 0 ? (
+                          <span className="font-medium text-red-600 dark:text-red-400">
+                            · {formatMoney(e.overdueAmount, e.currency)} overdue
+                          </span>
+                        ) : e.outstanding && e.outstanding > 0 ? (
+                          <span className="font-medium text-amber-700 dark:text-amber-300">
+                            · {formatMoney(e.outstanding, e.currency)} left
+                          </span>
+                        ) : (
+                          <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                            · settled
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
         </div>
 
         {/* Reference/metadata — leads on mobile, left 1/3 on desktop. */}

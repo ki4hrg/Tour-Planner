@@ -688,7 +688,14 @@ export default async function TripOverviewPage({
           {showMoney ? (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
-                <CardTitle className="text-base">Money</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  Money
+                  {overdueCount > 0 ? (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
+                      {overdueCount} overdue
+                    </span>
+                  ) : null}
+                </CardTitle>
                 <Link
                   href={`/trips/${trip.id}/booking`}
                   className="text-xs text-muted-foreground hover:underline"

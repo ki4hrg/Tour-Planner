@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
 import { setVenueBookingStatus } from "./actions";
@@ -21,6 +22,32 @@ export type VenueLine = {
   name: string;
   byTrip: Record<string, VenueBookingRow | null>;
 };
+
+// Compact per-cell money state (GH #86 part C) so cross-year settled/outstanding
+// reads at a glance: overdue beats outstanding beats settled. Null when there's
+// no agreed price to reason about.
+function MoneyLine({ row }: { row: VenueBookingRow }) {
+  if (row.overdueAmount > 0)
+    return (
+      <div className="text-[11px] font-medium text-red-600 dark:text-red-400">
+        {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
+      </div>
+    );
+  if (row.agreedAmount == null) return null;
+  if (row.settled)
+    return (
+      <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+        settled
+      </div>
+    );
+  if (row.unpaidBalance != null && row.unpaidBalance > 0)
+    return (
+      <div className="text-[11px] text-amber-700 dark:text-amber-300">
+        {formatMoney(row.unpaidBalance, row.agreedCurrency)} left
+      </div>
+    );
+  return null;
+}
 
 // One year's cell for a venue: the inline status control + a compact window hint.
 function Cell({
@@ -56,6 +83,7 @@ function Cell({
               ? "Open now"
               : `Opens ${formatDate(row.earliest)}`}
       </div>
+      <MoneyLine row={row} />
     </div>
   );
 }
