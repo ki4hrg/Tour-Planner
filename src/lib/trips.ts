@@ -418,9 +418,22 @@ export function effectivePresenters(item: {
     : (item.presentation?.defaultPresenters ?? []);
 }
 
+// A rough-plan day-location assignment (GH #9): a location intended for the day
+// with no timed schedule item.
+export type SerializedPlannedLocation = {
+  id: string;
+  locationId: string;
+  name: string;
+  note: string | null;
+  order: number;
+};
+
 export type SerializedDay = Omit<ItineraryDay, "date"> & {
   date: string | null;
   items: SerializedScheduleItem[];
+  // Rough-plan cluster (GH #9). Optional so callers whose queries don't load the
+  // relation (and hand-built fixtures) stay valid; absent reads as "none".
+  plannedLocations?: SerializedPlannedLocation[];
 };
 
 export type SerializedTrip = Omit<Trip, "startDate" | "endDate"> & {
@@ -573,13 +586,41 @@ export const TRAVEL_LEG_INCLUDE = {
   },
 } satisfies Prisma.ScheduleItem$travelArgs;
 
+// The Prisma include every day query needs to render the rough-plan cluster (GH
+// #9) — spread as `plannedLocations: PLANNED_LOCATIONS_INCLUDE` next to
+// `scheduleItems` under a day's include.
+export const PLANNED_LOCATIONS_INCLUDE = {
+  orderBy: { order: "asc" },
+  include: { location: { select: { name: true } } },
+} satisfies Prisma.ItineraryDay$plannedLocationsArgs;
+
+// The relational shape for a rough-plan assignment (a subset of the Prisma row).
+type PlannedLocationRow = {
+  id: string;
+  locationId: string;
+  note: string | null;
+  order: number;
+  location: { name: string };
+};
+
 export function serializeDay(
-  day: ItineraryDay & { scheduleItems: ScheduleItemWithRelations[] },
+  day: ItineraryDay & {
+    scheduleItems: ScheduleItemWithRelations[];
+    // Optional: present only when the caller's query loaded the relation.
+    plannedLocations?: PlannedLocationRow[];
+  },
 ): SerializedDay {
   return {
     ...day,
     date: day.date ? toDateInput(day.date) : null,
     items: day.scheduleItems.map(serializeScheduleItem),
+    plannedLocations: (day.plannedLocations ?? []).map((p) => ({
+      id: p.id,
+      locationId: p.locationId,
+      name: p.location.name,
+      note: p.note,
+      order: p.order,
+    })),
   };
 }
 

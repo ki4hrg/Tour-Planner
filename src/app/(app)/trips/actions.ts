@@ -14,7 +14,7 @@ import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { tripSchema, type TripInput } from "@/lib/validators/trip";
-import { daySchema } from "@/lib/validators/day";
+import { daySchema, plannedLocationSchema } from "@/lib/validators/day";
 import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
 import {
   bookingSchema,
@@ -75,6 +75,9 @@ const TEMPLATE_DAYS_SELECT = {
   dayIndex: true,
   title: true,
   logisticalNotes: true,
+  plannedLocations: {
+    select: { locationId: true, order: true, note: true },
+  },
   scheduleItems: {
     orderBy: { order: "asc" },
     select: {
@@ -461,6 +464,84 @@ export async function reorderDays(
 
   revalidateTrip(tripId);
   return { ok: true };
+}
+
+// --- Rough-plan day locations (GH #9) ---
+//
+// A day-level set of intended locations with no times — "we'll be in this city
+// seeing A, B, C" — distinct from the timed ScheduleItem route. A planner adds/
+// removes them freely and later promotes one into a real schedule item.
+
+export async function addPlannedLocation(
+  dayId: string,
+  input: { locationId: string; note?: string },
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = plannedLocationSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+
+  // Idempotent per (day, location): re-adding an existing planned location just
+  // updates its note. New rows append to the end of the loose cluster.
+  const count = await prisma.itineraryDayLocation.count({ where: { dayId } });
+  await prisma.itineraryDayLocation.upsert({
+    where: { dayId_locationId: { dayId, locationId: parsed.data.locationId } },
+    update: { note: parsed.data.note || null },
+    create: {
+      dayId,
+      locationId: parsed.data.locationId,
+      note: parsed.data.note || null,
+      order: count,
+    },
+  });
+
+  const tripId = await tripIdForDay(dayId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Planned location added." };
+}
+
+export async function removePlannedLocation(id: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const planned = await prisma.itineraryDayLocation.findUnique({
+    where: { id },
+    select: { dayId: true },
+  });
+  if (!planned) return { error: "Planned location not found." };
+
+  await prisma.itineraryDayLocation.delete({ where: { id } });
+
+  const tripId = await tripIdForDay(planned.dayId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Planned location removed." };
+}
+
+// Promote a rough assignment into a real, time-less schedule item at the end of
+// the day, then drop the rough row. The location identifies the item (no title/
+// times needed), matching how addScheduleItem builds a located stop. Any note on
+// the rough row carries over to the item's notes so the planner's context survives.
+export async function promotePlannedLocation(id: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const planned = await prisma.itineraryDayLocation.findUnique({
+    where: { id },
+    select: { dayId: true, locationId: true, note: true },
+  });
+  if (!planned) return { error: "Planned location not found." };
+
+  await prisma.$transaction(async (tx) => {
+    const count = await tx.scheduleItem.count({ where: { dayId: planned.dayId } });
+    await tx.scheduleItem.create({
+      data: {
+        dayId: planned.dayId,
+        order: count + 1,
+        notes: planned.note || null,
+        sites: { create: [{ locationId: planned.locationId, order: 0 }] },
+      },
+    });
+    await tx.itineraryDayLocation.delete({ where: { id } });
+  });
+
+  const tripId = await tripIdForDay(planned.dayId);
+  if (tripId) revalidateTrip(tripId);
+  return { ok: true, message: "Promoted to a schedule item." };
 }
 
 // --- ScheduleItem CRUD + reorder ---

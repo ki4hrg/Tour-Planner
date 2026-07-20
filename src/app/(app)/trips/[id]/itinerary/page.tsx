@@ -9,6 +9,7 @@ import {
   deriveTripLifecycle,
   serializeDay,
   TRAVEL_LEG_INCLUDE,
+  PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { ItineraryEditor } from "../../itinerary-editor";
 import { TemplateChip } from "../../template-chip";
@@ -56,6 +57,7 @@ export default async function ItineraryPage({
               },
             },
           },
+          plannedLocations: PLANNED_LOCATIONS_INCLUDE,
         },
       },
     },

@@ -33,17 +33,22 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-40 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+43 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
 `create-trip` (P), `update-trip` (P).
 
 **itinerary.ts** — `list-schedule-categories` (V, resolves `categoryId`),
-`get-itinerary` (V, the full day→item→site/booking tree), `add-day` (P),
+`get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
+`plannedLocations`), `add-day` (P),
 `update-day` (P, title + logistical/participant notes), `delete-day` (P, renumbers +
 recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
-`delete-schedule-item` (P, renumbers `order` in a txn).
+`delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
+(P, rough day→location assignment with no times — GH #9; idempotent per
+`(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
+`promote-planned-location` (P, converts a rough assignment into a time-less
+schedule item, then drops it).
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
 incl. agreed price + paid total), `add-booking` (P, upserts the `(trip, location)`

@@ -200,6 +200,7 @@ model Location {
   shareLinks             ShareLink[]                   @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   siteNotes              Note[]                        @relation("LocationNotes") // contact log for this venue
   primaryForDays         ItineraryDay[]                @relation("DayPrimaryLocation") // days that default new items here
+  plannedForDays         ItineraryDayLocation[]        @relation("PlannedDayLocations") // rough-plan day assignments (GH #9)
   travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
   travelsTo              TravelLeg[]                   @relation("TravelTo") // travel legs arriving here
   travelStops            TravelStop[]                  @relation("TravelStopLocation") // en-route stops here
@@ -281,9 +282,34 @@ model ItineraryDay {
   primaryLocation   Location?      @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
   primaryLocationId String?
   scheduleItems     ScheduleItem[]
+  // Rough-plan layer (GH #9): locations intended for this day WITHOUT committing
+  // to timed schedule items — "we'll be in this city seeing A, B, C." Promoted
+  // into a real ScheduleItem when the day firms up.
+  plannedLocations  ItineraryDayLocation[]
 
   @@index([tripId])
   @@index([primaryLocationId])
+}
+
+// A day-level "rough plan" assignment (GH #9): a location intended for a day at a
+// coarse, time-free granularity, distinct from the timed ScheduleItem/ScheduleItemSite
+// route. One row per (day, location); `order` sequences the loose cluster; `note` is
+// an optional short qualifier ("morning", "if time"). Cascade on the location matches
+// ScheduleItemSite — a hard-deleted location drops its rough assignments (but a
+// location present in any rough plan is archived rather than hard-deleted; see
+// deleteLocation). A planner promotes a row into a real schedule item, which deletes it.
+model ItineraryDayLocation {
+  id         String       @id @default(cuid())
+  day        ItineraryDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId      String
+  location   Location     @relation("PlannedDayLocations", fields: [locationId], references: [id], onDelete: Cascade)
+  locationId String
+  order      Int          @default(0)
+  note       String?
+
+  @@unique([dayId, locationId])
+  @@index([dayId])
+  @@index([locationId])
 }
 
 // A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).

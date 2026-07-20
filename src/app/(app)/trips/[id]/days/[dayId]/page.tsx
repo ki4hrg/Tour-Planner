@@ -12,6 +12,7 @@ import {
   serializeDay,
   summarizeDayLodging,
   TRAVEL_LEG_INCLUDE,
+  PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { DayTimeline } from "./day-timeline";
 
@@ -70,6 +71,7 @@ export default async function TripDayPage({
               },
             },
           },
+          plannedLocations: PLANNED_LOCATIONS_INCLUDE,
         },
       },
     },
@@ -91,6 +93,15 @@ export default async function TripDayPage({
   const lodging = summarizeDayLodging(trip.days, stays)[day.id] ?? null;
 
   const serialized = serializeDay(day);
+
+  // Rough-plan locations (GH #9) not already realised as a timed stop — a loose
+  // "planned" line distinct from the day's timeline below.
+  const visitedNames = new Set(
+    serialized.items.flatMap((it) => it.sites.map((s) => s.location.name)),
+  );
+  const plannedNames = (serialized.plannedLocations ?? [])
+    .filter((p) => !visitedNames.has(p.name))
+    .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -120,6 +131,12 @@ export default async function TripDayPage({
         {day.participantNotes ? (
           <p className="whitespace-pre-wrap text-sm italic text-muted-foreground">
             {day.participantNotes}
+          </p>
+        ) : null}
+        {plannedNames.length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium">Planned:</span>{" "}
+            {plannedNames.join(" · ")}
           </p>
         ) : null}
       </header>
