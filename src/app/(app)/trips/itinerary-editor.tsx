@@ -27,6 +27,7 @@ import {
   type SerializedDay,
   type SerializedScheduleItem,
   type SerializedBooking,
+  type SerializedPlannedLocation,
 } from "@/lib/trips";
 import {
   TimelineGroups,
@@ -45,6 +46,9 @@ import {
   updateScheduleItem,
   deleteScheduleItem,
   reorderScheduleItems,
+  addPlannedLocation,
+  removePlannedLocation,
+  promotePlannedLocation,
   addBooking,
   updateBooking,
   deleteBooking,
@@ -449,6 +453,16 @@ function DayCard({
         </p>
       ) : null}
 
+      {/* Rough-plan cluster (GH #9): intended venues with no times, distinct from
+          the timed route below. Planners can add/remove/promote; viewers see a
+          read-only list (hidden entirely when empty). */}
+      <PlannedLocations
+        dayId={day.id}
+        planned={day.plannedLocations ?? []}
+        locations={locations}
+        canEdit={canEdit}
+      />
+
       {/* Editing: the day's route line with per-item controls. Read-only viewers
           get the grouped venue-run layout (location once per run). */}
       <div className="px-4 py-3">
@@ -537,6 +551,125 @@ function DayCard({
               </Button>
             </div>
           )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// The day's rough-plan cluster (GH #9): locations intended for the day with no
+// timed schedule item. A loose set a planner firms up later — each entry can be
+// promoted into a real schedule item (which removes it here). Renders nothing for
+// a viewer when empty; a planner always gets the add control.
+function PlannedLocations({
+  dayId,
+  planned,
+  locations,
+  canEdit,
+}: {
+  dayId: string;
+  planned: SerializedPlannedLocation[];
+  locations: Location[];
+  canEdit: boolean;
+}) {
+  const { pending, run } = useAction();
+  const [pick, setPick] = useState<string>(NONE);
+  const [note, setNote] = useState("");
+
+  if (!canEdit && planned.length === 0) return null;
+
+  // Don't offer a location already planned for this day (one row per pair).
+  const plannedIds = new Set(planned.map((p) => p.locationId));
+  const available = locations.filter((l) => !plannedIds.has(l.id));
+
+  const add = () => {
+    if (pick === NONE) return;
+    run(() => addPlannedLocation(dayId, { locationId: pick, note }), () => {
+      setPick(NONE);
+      setNote("");
+    });
+  };
+
+  return (
+    <div className="space-y-2 border-b px-4 py-3">
+      <p className="text-xs font-medium text-muted-foreground">
+        Planned locations{" "}
+        <span className="font-normal">(rough — no times yet)</span>
+      </p>
+
+      {planned.length > 0 ? (
+        <ul className="flex flex-wrap gap-1.5">
+          {planned.map((p) => (
+            <li
+              key={p.id}
+              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm"
+            >
+              <span>{p.name}</span>
+              {p.note ? (
+                <span className="text-xs text-muted-foreground">· {p.note}</span>
+              ) : null}
+              {canEdit ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => run(() => promotePlannedLocation(p.id))}
+                    className="rounded px-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
+                    title="Promote to a schedule item"
+                    aria-label={`Promote ${p.name} to a schedule item`}
+                  >
+                    → schedule
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => run(() => removePlannedLocation(p.id))}
+                    className="rounded px-1 text-muted-foreground hover:bg-background hover:text-destructive disabled:opacity-50"
+                    title="Remove planned location"
+                    aria-label={`Remove ${p.name}`}
+                  >
+                    ×
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : canEdit ? (
+        <p className="text-sm text-muted-foreground">
+          None yet — rough out the day&rsquo;s venues before setting times.
+        </p>
+      ) : null}
+
+      {canEdit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={pick} onValueChange={setPick}>
+            <SelectTrigger size="sm" className="w-56">
+              <SelectValue placeholder="Add a location…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>Add a location…</SelectItem>
+              {available.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note (optional)"
+            className="h-8 w-40"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending || pick === NONE}
+            onClick={add}
+          >
+            Add
+          </Button>
         </div>
       ) : null}
     </div>

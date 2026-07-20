@@ -83,7 +83,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Itinerary",
       description:
-        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. This is the most detailed view of a trip's plan.",
+        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. Also returns each day's plannedLocations — the rough-plan venues assigned to the day without timed items (see add-planned-location). This is the most detailed view of a trip's plan.",
       inputSchema: { tripId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -101,6 +101,10 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           orderBy: { dayIndex: "asc" },
           include: {
             primaryLocation: { select: { id: true, name: true } },
+            plannedLocations: {
+              orderBy: { order: "asc" },
+              include: { location: { select: { id: true, name: true } } },
+            },
             scheduleItems: {
               orderBy: { order: "asc" },
               include: {
@@ -710,6 +714,204 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             {
               type: "text",
               text: JSON.stringify({ success: true, id: itemId }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── add-planned-location (PLANNER+) ───────────────────────────────────
+  server.registerTool(
+    "add-planned-location",
+    {
+      title: "Add Planned Location",
+      description:
+        "Assign a location to a day as a ROUGH plan (GH #9) — 'we'll be in this city seeing this venue' — WITHOUT committing to a timed schedule item. Idempotent per (day, location): re-adding updates the note. Get dayId from get-itinerary and locationId from search-locations. Use this for early, coarse planning; promote-planned-location turns it into a real schedule item later.",
+      inputSchema: {
+        dayId: z.string(),
+        locationId: z.string(),
+        note: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId, locationId, note }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const count = await prisma.itineraryDayLocation.count({
+          where: { dayId },
+        });
+        const row = await prisma.itineraryDayLocation.upsert({
+          where: { dayId_locationId: { dayId, locationId } },
+          update: { note: note || null },
+          create: { dayId, locationId, note: note || null, order: count },
+        });
+
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(row, null, 2) },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── remove-planned-location (PLANNER+) ────────────────────────────────
+  server.registerTool(
+    "remove-planned-location",
+    {
+      title: "Remove Planned Location",
+      description:
+        "Remove a rough-plan location assignment (GH #9) from a day. Identified by the (dayId, locationId) pair — the same values passed to add-planned-location; find them via get-itinerary. Does NOT touch any timed schedule items at that location.",
+      inputSchema: { dayId: z.string(), locationId: z.string() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId, locationId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const existing = await prisma.itineraryDayLocation.findUnique({
+          where: { dayId_locationId: { dayId, locationId } },
+          select: { id: true },
+        });
+        if (!existing) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: No such planned location for this day",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        await prisma.itineraryDayLocation.delete({
+          where: { id: existing.id },
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, dayId, locationId }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── promote-planned-location (PLANNER+) ───────────────────────────────
+  server.registerTool(
+    "promote-planned-location",
+    {
+      title: "Promote Planned Location",
+      description:
+        "Turn a rough-plan location assignment (GH #9) into a real, time-less schedule item at the end of the day, then remove the rough assignment. The location identifies the new item (no title/times needed); any note carries over to the item's notes. Identified by the (dayId, locationId) pair — find them via get-itinerary. Set times afterward with update-schedule-item.",
+      inputSchema: { dayId: z.string(), locationId: z.string() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId, locationId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Not authorized" }],
+            isError: true,
+          };
+        }
+
+        const planned = await prisma.itineraryDayLocation.findUnique({
+          where: { dayId_locationId: { dayId, locationId } },
+          select: { id: true, note: true },
+        });
+        if (!planned) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: No such planned location for this day",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const item = await prisma.$transaction(async (tx) => {
+          const count = await tx.scheduleItem.count({ where: { dayId } });
+          const created = await tx.scheduleItem.create({
+            data: {
+              dayId,
+              order: count + 1,
+              notes: planned.note || null,
+              sites: { create: [{ locationId, order: 0 }] },
+            },
+          });
+          await tx.itineraryDayLocation.delete({ where: { id: planned.id } });
+          return created;
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ success: true, scheduleItemId: item.id }, null, 2),
             },
           ],
         };

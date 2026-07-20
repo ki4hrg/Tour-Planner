@@ -51,6 +51,11 @@ const sample = [
     dayIndex: 2,
     title: "Second",
     logisticalNotes: "notes-2",
+    // Out of order + with a note, to exercise sort/renumber/carry-over.
+    plannedLocations: [
+      { locationId: "plB", order: 1, note: null },
+      { locationId: "plA", order: 0, note: "am" },
+    ],
     scheduleItems: [
       item(2, { sites: [{ locationId: "locB", order: 0 }] }),
       item(1, { sites: [{ locationId: "locA", order: 0 }] }),
@@ -60,6 +65,7 @@ const sample = [
     dayIndex: 1,
     title: "First",
     logisticalNotes: null,
+    plannedLocations: [],
     scheduleItems: [
       item(1, {
         title: "Talk",
@@ -107,12 +113,23 @@ describe("instantiateDays", () => {
     expect(firstItem.sites.create).toEqual([{ locationId: "locX", order: 0 }]);
   });
 
+  it("carries rough-plan locations verbatim, sorted + renumbered 0..n (GH #9)", () => {
+    const out = instantiateDays(sample, null);
+    // Day 1 (First) had none; day 2 (Second) had two, given out of order.
+    expect(out[0].plannedLocations.create).toEqual([]);
+    expect(out[1].plannedLocations.create).toEqual([
+      { locationId: "plA", order: 0, note: "am" },
+      { locationId: "plB", order: 1, note: null },
+    ]);
+  });
+
   it("carries the catalogued talk link but resets per-occurrence presenters", () => {
     const days = [
       {
         dayIndex: 1,
         title: null,
         logisticalNotes: null,
+        plannedLocations: [],
         scheduleItems: [item(1, { presentationId: "talkA" })],
       },
     ];
@@ -143,6 +160,7 @@ describe("instantiateDays", () => {
           dayIndex: 1,
           title: null,
           logisticalNotes: null,
+          plannedLocations: [],
           scheduleItems: [
             item(1, {
               title: null,
@@ -176,7 +194,15 @@ describe("instantiateDays", () => {
     ]);
     // Items without a leg omit the key entirely.
     const plain = instantiateDays(
-      [{ dayIndex: 1, title: null, logisticalNotes: null, scheduleItems: [item(1)] }],
+      [
+        {
+          dayIndex: 1,
+          title: null,
+          logisticalNotes: null,
+          plannedLocations: [],
+          scheduleItems: [item(1)],
+        },
+      ],
       null,
     );
     expect(plain[0].scheduleItems.create[0].travel).toBeUndefined();

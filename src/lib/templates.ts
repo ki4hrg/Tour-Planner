@@ -50,11 +50,20 @@ export type TemplateScheduleItem = {
   travel?: TemplateTravelLeg | null;
 };
 
+// A rough-plan day-location assignment (GH #9): reusable planning intent (a
+// location + optional note, no times), so it carries over like schedule-item sites.
+export type TemplatePlannedLocation = {
+  locationId: string;
+  order: number;
+  note: string | null;
+};
+
 export type TemplateDay = {
   dayIndex: number;
   title: string | null;
   logisticalNotes: string | null;
   scheduleItems: TemplateScheduleItem[];
+  plannedLocations: TemplatePlannedLocation[];
 };
 
 // Prisma nested-create payloads (typed structurally so this file stays
@@ -92,6 +101,7 @@ export type InstantiatedDay = {
   title: string | null;
   logisticalNotes: string | null;
   scheduleItems: { create: InstantiatedScheduleItem[] };
+  plannedLocations: { create: TemplatePlannedLocation[] };
 };
 
 // A venue-engagement booking lives at the trip level (tripId + locationId), so it
@@ -170,6 +180,8 @@ export function instantiateVenueBookings(
  * - dayIndex and item order are renumbered 1..n (source gaps are normalised).
  * - each day's date is derived from the new trip's startDate (null if unset).
  * - location links are carried over (re-ordered 0..n).
+ * - rough-plan day locations (GH #9) carry over verbatim (re-ordered 0..n) as
+ *   reusable planning intent, like schedule-item sites.
  * - bookings are carried over as planning intent but RESET: status → NOT_BOOKED
  *   and the instance-specific actuals (bookedContact, confirmationRef) are
  *   dropped by omission. Reusable text (label, notes) is kept.
@@ -190,6 +202,15 @@ export function instantiateDays(
         date: computeDayDate(startDate, dayIndex),
         title: day.title,
         logisticalNotes: day.logisticalNotes,
+        plannedLocations: {
+          create: [...day.plannedLocations]
+            .sort((a, b) => a.order - b.order)
+            .map((p, pi) => ({
+              locationId: p.locationId,
+              order: pi,
+              note: p.note,
+            })),
+        },
         scheduleItems: {
           create: [...day.scheduleItems]
             .sort((a, b) => a.order - b.order)

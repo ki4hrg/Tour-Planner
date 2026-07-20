@@ -101,12 +101,13 @@ export async function deleteLocation(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  // Archive if any itinerary item references this location (preserve trip history);
-  // hard-delete only when unreferenced.
-  const refCount = await prisma.scheduleItemSite.count({
-    where: { locationId: id },
-  });
-  if (refCount > 0) {
+  // Archive if any itinerary item OR rough-plan day assignment (GH #9) references
+  // this location (preserve trip history); hard-delete only when unreferenced.
+  const [itemRefs, plannedRefs] = await Promise.all([
+    prisma.scheduleItemSite.count({ where: { locationId: id } }),
+    prisma.itineraryDayLocation.count({ where: { locationId: id } }),
+  ]);
+  if (itemRefs + plannedRefs > 0) {
     await prisma.location.update({
       where: { id },
       data: { archivedAt: new Date() },

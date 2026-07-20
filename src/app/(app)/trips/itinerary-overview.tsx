@@ -148,6 +148,12 @@ function DayRow({
   const { head, overflow } = siteRollup(allSites);
   const count = day.items.length;
 
+  // Rough-plan locations (GH #9) not already visited by a timed item — a loose
+  // "planned" cluster distinct from the timed route. A note qualifies the name.
+  const plannedNames = (day.plannedLocations ?? [])
+    .filter((p) => !allSites.includes(p.name))
+    .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
+
   return (
     <li className="py-1">
       <Collapsible open={open} onOpenChange={onToggle}>
@@ -185,16 +191,22 @@ function DayRow({
           </span>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          {count === 0 ? (
-            <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
-              <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
-              {lodging ? <OvernightLine lodging={lodging} /> : null}
-            </div>
-          ) : (
-            <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
+          <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
+            {plannedNames.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Planned:</span>{" "}
+                {plannedNames.join(" · ")}
+              </p>
+            ) : null}
+            {count === 0 ? (
+              <>
+                <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
+                {lodging ? <OvernightLine lodging={lodging} /> : null}
+              </>
+            ) : (
               <TimelineGroups items={day.items} lodging={lodging} linkVenues showGaps />
-            </div>
-          )}
+            )}
+          </div>
         </CollapsibleContent>
       </Collapsible>
     </li>

@@ -15,3 +15,12 @@ export const daySchema = z.object({
 });
 
 export type DayInput = z.infer<typeof daySchema>;
+
+// A rough-plan day-location assignment (GH #9): a location intended for a day
+// without a timed schedule item, plus an optional short qualifier ("morning").
+export const plannedLocationSchema = z.object({
+  locationId: z.string().min(1, "Pick a location."),
+  note: z.string().trim().optional(),
+});
+
+export type PlannedLocationInput = z.infer<typeof plannedLocationSchema>;

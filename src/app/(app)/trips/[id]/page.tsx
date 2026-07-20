@@ -21,6 +21,7 @@ import {
   bookingsByLocation,
   summarizeDayLodging,
   TRAVEL_LEG_INCLUDE,
+  PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
 import { rollUpStays } from "@/lib/stays";
@@ -88,6 +89,7 @@ export default async function TripOverviewPage({
               },
             },
           },
+          plannedLocations: PLANNED_LOCATIONS_INCLUDE,
         },
       },
     },
