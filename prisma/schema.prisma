@@ -86,6 +86,7 @@ model User {
   tripTodoistLinks     TripTodoistLink[]
   tripTypeTodoistLinks TripTypeTodoistLink[]
   calendarFeeds        CalendarFeed[]        @relation("CreatedCalendarFeeds")
+  uploadedDocuments    Document[]            @relation("UploadedDocuments")
 }
 
 enum TodoistAuthType {
@@ -199,6 +200,7 @@ model Location {
   stays                  Stay[]                        @relation("Lodging") // per-trip lodging spans here
   shareLinks             ShareLink[]                   @relation("HostSiteShareLinks") // HOST_SITE links scoped here
   siteNotes              Note[]                        @relation("LocationNotes") // contact log for this venue
+  documents              Document[]                    @relation("LocationDocuments") // venue paperwork reusable across trips
   primaryForDays         ItineraryDay[]                @relation("DayPrimaryLocation") // days that default new items here
   plannedForDays         ItineraryDayLocation[]        @relation("PlannedDayLocations") // rough-plan day assignments (GH #9)
   travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
@@ -263,23 +265,24 @@ model Trip {
   stays            Stay[]
   bookings         Booking[] // venue-engagement bookings scoped to this trip
   notesLog         Note[]            @relation("TripNotes")
+  documents        Document[]        @relation("TripDocuments") // trip-level files (participant itineraries, rosters)
   todoistLinks     TripTodoistLink[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
 
 model ItineraryDay {
-  id                String         @id @default(cuid())
-  trip              Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  id                String                 @id @default(cuid())
+  trip              Trip                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId            String
   dayIndex          Int // 1-based ordering key (NOT unique; renumber in txn)
-  date              DateTime?      @db.Date // derived from trip.startDate + (dayIndex - 1)
+  date              DateTime?              @db.Date // derived from trip.startDate + (dayIndex - 1)
   title             String?
   logisticalNotes   String? // staff-only on participant/host-site shares
   participantNotes  String? // participant-facing free text (devotional theme, scripture, walk notes)
   // Default venue for the day: new schedule items pre-fill their location picker
   // with this. Optional; SetNull so archiving/deleting a location never drops days.
-  primaryLocation   Location?      @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
+  primaryLocation   Location?              @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
   primaryLocationId String?
   scheduleItems     ScheduleItem[]
   // Rough-plan layer (GH #9): locations intended for this day WITHOUT committing
@@ -453,6 +456,7 @@ model Booking {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   notesLog        Note[]                @relation("BookingNotes")
+  documents       Document[]            @relation("BookingDocuments") // signed contracts, invoices, confirmations
 
   @@unique([tripId, locationId]) // one engagement per venue per trip (NULL tripId rows are distinct)
   @@index([scheduleItemId])
@@ -649,30 +653,31 @@ model Presentation {
 // the trip while an excursion stay overrides occupancy for a night — resolved by
 // `priority`). Costs are per-Stay and independent (do NOT dedupe nights).
 model Stay {
-  id                    String    @id @default(cuid())
-  trip                  Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  id                    String     @id @default(cuid())
+  trip                  Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId                String
-  location              Location  @relation("Lodging", fields: [locationId], references: [id], onDelete: Restrict)
+  location              Location   @relation("Lodging", fields: [locationId], references: [id], onDelete: Restrict)
   locationId            String
   // A stay anchors EITHER to absolute dates (dated trip) OR to 1-based day
   // indices (date-less template). Exactly one mode is populated — enforced by a
   // DB CHECK (invisible to Prisma; see the migration). checkInDayIndex mirrors
   // ItineraryDay.dayIndex; checkOutDayIndex may be dayCount+1 (departure morning
   // after the last day), matching how an absolute checkOut can be endDate+1.
-  checkIn               DateTime? @db.Date
-  checkOut              DateTime? @db.Date
+  checkIn               DateTime?  @db.Date
+  checkOut              DateTime?  @db.Date
   checkInDayIndex       Int?
   checkOutDayIndex      Int?
   arrivalTime           String? // "HH:MM"
   departureTime         String?
   headcount             Int?
-  costPerPersonPerNight Decimal?  @db.Decimal(10, 2)
-  currency              String    @default("USD")
-  priority              Int       @default(0) // higher wins for "tonight's bed" when stays overlap (base=0, excursion>0)
+  costPerPersonPerNight Decimal?   @db.Decimal(10, 2)
+  currency              String     @default("USD")
+  priority              Int        @default(0) // higher wins for "tonight's bed" when stays overlap (base=0, excursion>0)
   notes                 String?
-  notesLog              Note[]    @relation("StayNotes")
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  notesLog              Note[]     @relation("StayNotes")
+  documents             Document[] @relation("StayDocuments") // stay-specific paperwork (rooming lists, arrival sheets)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
   // Lodging booking state lives on the venue engagement Booking(tripId, locationId).
 
   @@index([tripId])
@@ -732,4 +737,75 @@ model OAuthRefreshToken {
   @@index([familyId])
   @@index([userId])
   @@index([expiresAt])
+}
+
+// --- Documents (file management) ---
+
+// What a stored file IS. Purely descriptive — drives grouping and filtering in
+// the UI; it never affects who may download (that's `shareAudiences`).
+enum DocumentKind {
+  CONTRACT
+  INVOICE
+  RECEIPT
+  ITINERARY
+  ROSTER
+  CONFIRMATION
+  PERMIT
+  MAP
+  OTHER
+}
+
+// A file filed against exactly one of a Location / Booking / Trip / Stay (DB
+// CHECK: num_nonnulls(locationId, bookingId, tripId, stayId) = 1) — the same
+// polymorphism as Note, and for the same reason: a contract belongs to the
+// engagement, a printable itinerary to the trip, a floor plan to the venue.
+//
+// This row is METADATA ONLY. The bytes live in DocumentBlob (1:1) so listing a
+// trip's documents never drags megabytes of bytea through Prisma; nothing in the
+// app selects the blob except the download routes.
+model Document {
+  id          String       @id @default(cuid())
+  title       String // human label; defaults to the uploaded filename
+  description String?
+  kind        DocumentKind @default(OTHER)
+  filename    String // sanitized original name, used for Content-Disposition
+  contentType String // validated against the allowlist in src/lib/documents.ts
+  size        Int // bytes
+  checksum    String // sha256 hex — integrity + duplicate detection
+
+  // Non-staff audiences allowed to download this through a share link. Empty
+  // (the default) = staff-only, i.e. the authenticated app. STAFF share links
+  // always see every document on their trip, so STAFF never appears here.
+  shareAudiences ShareAudience[] @default([])
+
+  location   Location? @relation("LocationDocuments", fields: [locationId], references: [id], onDelete: Cascade)
+  locationId String?
+  booking    Booking?  @relation("BookingDocuments", fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  String?
+  trip       Trip?     @relation("TripDocuments", fields: [tripId], references: [id], onDelete: Cascade)
+  tripId     String?
+  stay       Stay?     @relation("StayDocuments", fields: [stayId], references: [id], onDelete: Cascade)
+  stayId     String?
+
+  blob         DocumentBlob?
+  uploadedBy   User?         @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([locationId])
+  @@index([bookingId])
+  @@index([tripId])
+  @@index([stayId])
+  @@index([uploadedById])
+  @@index([checksum])
+}
+
+// The bytes behind a Document, split out so document listings stay cheap.
+// Postgres TOASTs the bytea out-of-line, and the row dies with its Document.
+model DocumentBlob {
+  id         String   @id @default(cuid())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String   @unique
+  bytes      Bytes
 }

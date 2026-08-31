@@ -20,6 +20,7 @@ import {
 import { mapHref } from "@/lib/maps";
 import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
+import { serializeDocument, DOCUMENT_SELECT } from "@/lib/documents";
 import { todayUtc, toDateInput, formatDate, addDays, isOngoing } from "@/lib/dates";
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
@@ -29,6 +30,7 @@ import { LocationContactsManager } from "../location-contacts-manager";
 import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
 import { HostSitePanel } from "../host-site-panel";
 import { NotesThread } from "../../notes/notes-thread";
+import { DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +59,9 @@ export default async function LocationDetailPage({
           createdBy: { select: { id: true, name: true } },
         },
       },
+      // Venue paperwork that outlives any one trip — floor plans, standing
+      // terms, risk assessments.
+      documents: { orderBy: { createdAt: "desc" }, select: DOCUMENT_SELECT },
       hostSite: {
         select: {
           id: true,
@@ -308,6 +313,21 @@ export default async function LocationDetailPage({
             canEdit={canEdit}
             today={toDateInput(todayUtc())}
             todoistDestinationPicker={todoistConnected}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Documents</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DocumentsPanel
+            target="location"
+            targetId={location.id}
+            documents={location.documents.map(serializeDocument)}
+            canEdit={canEdit}
+            emptyLabel="No files for this venue yet."
           />
         </CardContent>
       </Card>

@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
+import type { SerializedDocument } from "@/lib/documents";
 import { isBookingSecured } from "@/lib/booking";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
 
@@ -47,6 +48,7 @@ export function BookingDashboard({
   itemRows,
   contacts,
   currencies,
+  documentsByBooking,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -55,7 +57,12 @@ export function BookingDashboard({
   contacts: ContactOption[];
   // The trip's currency vocabulary (GH #11) — price/payment pickers offer these.
   currencies: string[];
+  // Files filed against each booking, keyed by booking id. A venue with no
+  // engagement yet has no id and so no files — it gets an empty list.
+  documentsByBooking: Record<string, SerializedDocument[]>;
 }) {
+  const docsFor = (bookingId: string | null) =>
+    (bookingId && documentsByBooking[bookingId]) || [];
   const [filters, setFilters] = useState<Filters>({
     windowOpen: true,
     missingPrice: true,
@@ -133,10 +140,16 @@ export function BookingDashboard({
                     canEdit={canEdit}
                     contacts={contacts}
                     currencies={currencies}
+                    documents={docsFor(row.bookingId)}
                   />
                 ))}
                 {shownItems.map((row) => (
-                  <ItemRow key={row.bookingId} row={row} canEdit={canEdit} />
+                  <ItemRow
+                    key={row.bookingId}
+                    row={row}
+                    canEdit={canEdit}
+                    documents={docsFor(row.bookingId)}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -151,10 +164,16 @@ export function BookingDashboard({
                 canEdit={canEdit}
                 contacts={contacts}
                 currencies={currencies}
+                documents={docsFor(row.bookingId)}
               />
             ))}
             {shownItems.map((row) => (
-              <ItemCard key={row.bookingId} row={row} canEdit={canEdit} />
+              <ItemCard
+                key={row.bookingId}
+                row={row}
+                canEdit={canEdit}
+                documents={docsFor(row.bookingId)}
+              />
             ))}
           </div>
         </>

@@ -10,6 +10,14 @@ import {
   scopeDaysToLocation,
   SHARE_AUDIENCE_LABELS,
 } from "@/lib/share";
+import {
+  DOCUMENT_SELECT,
+  formatFileSize,
+  isInlineViewable,
+  shareDocumentHref,
+} from "@/lib/documents";
+import { shareDocumentWhere } from "@/lib/share-documents";
+import { DOCUMENT_KIND_LABELS } from "@/lib/validators/document";
 import { TimelineGroups } from "../../(app)/trips/itinerary-timeline";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +116,19 @@ export default async function SharePage({
   // payload — hiding them only at render would still leak them to view-source.
   days = redactDaysForShare(days, view, link.locationId);
 
+  // Files released to this audience. The where clause is the gate — the page
+  // never sees a document it isn't allowed to list, so nothing can leak through
+  // the RSC payload the way an unrendered prop would.
+  const documents = await prisma.document.findMany({
+    where: shareDocumentWhere({
+      tripId: trip.id,
+      audience: link.audience,
+      locationId: link.locationId,
+    }),
+    orderBy: { createdAt: "desc" },
+    select: DOCUMENT_SELECT,
+  });
+
   const scopeName =
     view.scopeToLocation && link.location ? link.location.name : null;
 
@@ -135,6 +156,38 @@ export default async function SharePage({
           </p>
         ) : null}
       </header>
+
+      {documents.length > 0 ? (
+        <section className="rounded-md border p-4">
+          <h2 className="mb-2 text-lg font-semibold">Documents</h2>
+          <ul className="space-y-1 text-sm">
+            {documents.map((doc) => (
+              <li key={doc.id}>
+                <a
+                  href={shareDocumentHref(
+                    token,
+                    doc.id,
+                    isInlineViewable(doc.contentType),
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium hover:underline"
+                >
+                  {doc.title}
+                </a>
+                <span className="text-xs text-muted-foreground">
+                  {" "}
+                  · {DOCUMENT_KIND_LABELS[doc.kind]} ·{" "}
+                  {formatFileSize(doc.size)}
+                </span>
+                {doc.description ? (
+                  <p className="text-muted-foreground">{doc.description}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {days.length === 0 ? (
         <p className="text-sm text-muted-foreground">
