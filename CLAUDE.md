@@ -33,7 +33,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-43 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+48 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -78,6 +78,12 @@ stay anchors EITHER to calendar dates (dated trip) OR to 1-based day numbers
 (date-less template): `add`/`update` pick the mode from the trip and pass the
 matching pair (`checkIn`/`checkOut` vs `checkInDayIndex`/`checkOutDayIndex`).
 
+**documents.ts** — `list-documents` (V, metadata + a `downloadUrl` that still needs
+an authenticated session; never the bytes), `add-document` (P, bytes as base64 —
+this is how an agent files a generated participant itinerary), `update-document`
+(P, metadata only; `shareAudiences` REPLACES the released-to set),
+`delete-document` (P, hard delete — no archive, blob cascades).
+
 **notes.ts** — `list-notes` (V), `add-note` (P). Polymorphic `target` ∈
 `location | booking | trip | stay`; `add-note` defaults `contactedOn` to today via
 `todayUtc()` and best-effort pushes a flagged follow-up to the caller's Todoist
@@ -99,6 +105,9 @@ matching pair (`checkIn`/`checkOut` vs `checkInDayIndex`/`checkOutDayIndex`).
   capabilities that expose trip data to outside audiences (PARTICIPANT / HOST_SITE);
   minting them over MCP widens the blast radius of a leaked token. Revisit only with a
   clear use case, and mirror the server-side redaction (`redactDaysForShare`).
+- **Document bytes over MCP reads.** `list-documents` returns metadata and a URL,
+  never the file. Streaming a 25MB base64 blob into a tool result would blow the
+  context for no gain; the URL works in any authenticated browser session.
 - **`update-note` / `delete-note`.** Only create + list are exposed; editing/removing
   log entries is rare and currently a UI-only concern.
 - **Reordering (`reorderDays`, `reorderScheduleItems`).** Drag-reorder is a UI gesture;
@@ -187,7 +196,7 @@ npm test                          # vitest
 - **Routing**: authenticated pages live under `src/app/(app)/` (shell = `AppNav` +
   `requireUser` layout). Public routes: `/login`, `/setup`, `/share/[token]`,
   `/api/{auth,mcp,oauth,well-known}`, `/api/feed/[token].ics`,
-  `/api/share/[token].ics`. The `src/proxy.ts` matcher excludes those + assets
+  `/api/share/[token].ics`, `/api/share/[token]/documents/[id]`. The `src/proxy.ts` matcher excludes those + assets
   (add the route's path segment to the negative lookahead when introducing a new
   public endpoint).
 - **Calendar feeds (`CalendarFeed`)**: subscribable iCalendar (.ics) feeds served at
@@ -290,6 +299,36 @@ npm test                          # vitest
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
   `Contact`, `contactedOn`, follow-up + `dueDate`, and `createdBy`. Reusable
   `<NotesThread>` (`src/app/(app)/notes/`); primary surface is the Location page.
+- **Documents / file management**: `Document` is metadata attaching to **exactly
+  one of** Location / Booking / Trip / Stay — the same polymorphism as `Note`,
+  same CHECK (`document_single_target`) — and the bytes live in a 1:1
+  `DocumentBlob` (Postgres `bytea`). **Never select `blob` in a listing**: the
+  split exists so document lists stay cheap, and `DOCUMENT_SELECT` in
+  `src/lib/documents.ts` is the include every listing spreads. Where a file goes:
+  the venue engagement `Booking` for contracts/invoices/confirmations (lodging
+  included — a `Stay` has no booking of its own), the `Trip` for participant
+  itineraries and rosters, the `Location` for venue paperwork that outlives any
+  one trip, the `Stay` for stay-specific sheets. Reusable `<DocumentsPanel>`
+  (`src/app/(app)/documents/`) is mounted on the trip page, the Location page,
+  every booking row, and each stay in the Lodging panel; `/documents` is the
+  library index across all of them. Bytes are immutable — replacing a file means
+  a new upload, so `updateDocument` only touches metadata.
+- **Document sharing + serving**: `Document.shareAudiences` (a `ShareAudience[]`,
+  empty by default) lists the **non-staff** audiences a file is released to; STAFF
+  is never stored, because a staff link is the authenticated view under a token
+  and sees the trip's whole file set. `shareDocumentWhere` in
+  `src/lib/share-documents.ts` is the single gate (scope AND release, both in
+  SQL) used by the share page and the share download route — a withheld file is
+  never fetched, so it can't leak through the RSC payload the way an unrendered
+  prop would. Venue documents are deliberately outside whole-trip share scope
+  (a `Location`'s files are global across trips); only a HOST_SITE link scoped to
+  that venue reaches them. Two download routes, both returning
+  `documentResponse()`: `/api/documents/[id]` (session required, re-checked in
+  the route, not just in `src/proxy.ts`) and `/api/share/[token]/documents/[id]`
+  (token + audience). Uploads are inert-by-allowlist (`ALLOWED_CONTENT_TYPES` —
+  no `text/html`, no `image/svg+xml`) and served with `nosniff` plus
+  `Content-Security-Policy: default-src 'none'; sandbox`, since they come off the
+  app's own origin.
 
 ## Database & migrations
 
@@ -322,7 +361,12 @@ Production applies migrations via `migrate deploy` on container boot.
 4. **Env values UNQUOTED** in `.env.example` / Dockhand (quotes leak literally).
 5. **Serwist + Next 16 Turbopack** conflict: `next.config.ts` only wraps `withSerwist`
    when `NODE_ENV !== "development"`; the build script uses `--webpack`.
-6. **react-hooks/purity lint**: no `Date.now()` / `new Date()` in component render
+6. **Server Action body size**: document uploads ride through a Server Action, whose
+   default request cap is 1MB. `next.config.ts` sets
+   `experimental.serverActions.bodySizeLimit` to `26mb`, just above the 25MB
+   `MAX_DOCUMENT_BYTES` (the extra covers the multipart envelope). Raising one
+   without the other silently breaks uploads at the boundary.
+7. **react-hooks/purity lint**: no `Date.now()` / `new Date()` in component render
    (even Server Components). Extract to a plain helper (see `isCostStale` in
    `src/lib/money.ts`, `todayUtc` in `src/lib/dates.ts`).
 

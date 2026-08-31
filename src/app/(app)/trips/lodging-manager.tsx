@@ -36,6 +36,9 @@ const NONE = "__none__";
 type Location = { id: string; name: string; region: string | null };
 
 // Run a FormState-returning action, surfacing the result as a toast.
+import type { SerializedDocument } from "@/lib/documents";
+import { DocumentsPanel } from "../documents/documents-panel";
+
 function useAction() {
   const [pending, start] = useTransition();
   const run = (fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>, onOk?: () => void) =>
@@ -58,6 +61,7 @@ export function LodgingManager({
   locations: initialLocations,
   stays,
   currencies,
+  documentsByStay,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -69,6 +73,10 @@ export function LodgingManager({
   stays: SerializedStay[];
   // The trip's currency vocabulary (GH #11) — the stay form picks from these.
   currencies: string[];
+  // Stay-specific paperwork (rooming lists, arrival sheets), keyed by stay id.
+  // The lodging CONTRACT belongs to the venue engagement, not here — a stay has
+  // no booking of its own (see the booking dashboard).
+  documentsByStay: Record<string, SerializedDocument[]>;
 }) {
   const locations = useMemo(
     () => initialLocations.sort((a, b) => a.name.localeCompare(b.name)),
@@ -94,6 +102,7 @@ export function LodgingManager({
               dayCount={dayCount}
               locations={locations}
               currencies={currencies}
+              documents={documentsByStay[stay.id] ?? []}
             />
           ))}
         </div>
@@ -145,6 +154,7 @@ function StayRow({
   dayCount,
   locations,
   currencies,
+  documents,
 }: {
   tripId: string;
   stay: SerializedStay;
@@ -153,9 +163,11 @@ function StayRow({
   dayCount: number;
   locations: Location[];
   currencies: string[];
+  documents: SerializedDocument[];
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
 
   // Day-relative (template) stay: span/nights come from the day indices; there
   // are no calendar dates. Dated stay: parse the "yyyy-mm-dd" anchors.
@@ -242,6 +254,18 @@ function StayRow({
                     Manage in booking dashboard →
                   </Link>
                 ) : null}
+                {canEdit || documents.length > 0 ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => setShowFiles((v) => !v)}
+                    aria-expanded={showFiles}
+                  >
+                    {documents.length > 0
+                      ? `Files (${documents.length})`
+                      : "Files"}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -269,6 +293,18 @@ function StayRow({
               </div>
             ) : null}
           </div>
+
+          {showFiles ? (
+            <div className="border-t pt-2">
+              <DocumentsPanel
+                target="stay"
+                targetId={stay.id}
+                documents={documents}
+                canEdit={canEdit}
+                emptyLabel="No files for this stay. The lodging contract belongs on the venue booking."
+              />
+            </div>
+          ) : null}
         </>
       )}
     </div>

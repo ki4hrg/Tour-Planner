@@ -4,6 +4,15 @@ import withSerwistInit from "@serwist/next";
 const nextConfig: NextConfig = {
   // Produce a self-contained server bundle for the Docker image.
   output: "standalone",
+  experimental: {
+    serverActions: {
+      // Document uploads ride through a Server Action, and the default cap is
+      // 1MB. Sits just above MAX_DOCUMENT_BYTES (25MB, enforced in
+      // src/lib/validators/document.ts) to leave room for the multipart
+      // envelope — the action re-checks the real file size itself.
+      bodySizeLimit: "26mb",
+    },
+  },
   async rewrites() {
     return [
       {

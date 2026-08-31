@@ -18,6 +18,8 @@ import {
 import { TableCell, TableRow } from "@/components/ui/table";
 import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
+import type { SerializedDocument } from "@/lib/documents";
+import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
@@ -190,12 +192,14 @@ function VenueDetails({
   canEdit,
   contacts,
   currencies,
+  documents,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
   currencies: string[];
+  documents: SerializedDocument[];
 }) {
   const { pending, run } = useAction();
 
@@ -370,6 +374,23 @@ function VenueDetails({
       {row.bookingId && (row.payments.length > 0 || canEdit) ? (
         <div className="md:col-span-2">
           <PaymentLog row={row} canEdit={canEdit} currencies={currencies} />
+        </div>
+      ) : null}
+
+      {/* Paperwork for the engagement — the contract, the invoice, the signed
+          confirmation. Needs the engagement to exist to attach to. */}
+      {row.bookingId && (documents.length > 0 || canEdit) ? (
+        <div className="md:col-span-2">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            Documents
+          </p>
+          <DocumentsPanel
+            target="booking"
+            targetId={row.bookingId}
+            documents={documents}
+            canEdit={canEdit}
+            emptyLabel="No contracts or invoices filed for this venue yet."
+          />
         </div>
       ) : null}
     </div>
@@ -808,12 +829,14 @@ export function VenueRow({
   canEdit,
   contacts,
   currencies,
+  documents,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
   currencies: string[];
+  documents: SerializedDocument[];
 }) {
   const [open, setOpen] = useState(false);
   const coverage = coverageLine(row);
@@ -890,6 +913,7 @@ export function VenueRow({
               canEdit={canEdit}
               contacts={contacts}
               currencies={currencies}
+              documents={documents}
             />
           </TableCell>
         </TableRow>
@@ -906,12 +930,14 @@ export function VenueCard({
   canEdit,
   contacts,
   currencies,
+  documents,
 }: {
   row: VenueBookingRow;
   tripId: string;
   canEdit: boolean;
   contacts: ContactOption[];
   currencies: string[];
+  documents: SerializedDocument[];
 }) {
   const [open, setOpen] = useState(false);
   const coverage = coverageLine(row);
@@ -995,6 +1021,7 @@ export function VenueCard({
             canEdit={canEdit}
             contacts={contacts}
             currencies={currencies}
+            documents={documents}
           />
         </div>
       ) : null}
@@ -1005,17 +1032,32 @@ export function VenueCard({
 export function ItemRow({
   row,
   canEdit,
+  documents,
 }: {
   row: ItemBookingRow;
   canEdit: boolean;
+  documents: SerializedDocument[];
 }) {
+  // A one-off booking has no editor of its own, but it does collect paperwork
+  // (a coach hire has a contract like any venue), so it expands for that alone.
+  const [open, setOpen] = useState(false);
+
   return (
+    <>
     <TableRow>
       <TableCell>
-        <span className="font-medium">{row.label}</span>
+        <button
+          type="button"
+          className="text-left font-medium hover:underline"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {row.label}
+        </button>
         <span className="block text-xs text-muted-foreground">
           Day {row.dayIndex}
           {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off
+          {documents.length > 0 ? ` · ${documents.length} file${documents.length === 1 ? "" : "s"}` : ""}
         </span>
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">—</TableCell>
@@ -1034,6 +1076,20 @@ export function ItemRow({
         />
       </TableCell>
     </TableRow>
+    {open ? (
+      <TableRow className="hover:bg-transparent">
+        <TableCell colSpan={5} className="bg-muted/30">
+          <DocumentsPanel
+            target="booking"
+            targetId={row.bookingId}
+            documents={documents}
+            canEdit={canEdit}
+            emptyLabel="No paperwork filed for this booking yet."
+          />
+        </TableCell>
+      </TableRow>
+    ) : null}
+    </>
   );
 }
 
@@ -1041,20 +1097,34 @@ export function ItemRow({
 export function ItemCard({
   row,
   canEdit,
+  documents,
 }: {
   row: ItemBookingRow;
   canEdit: boolean;
+  documents: SerializedDocument[];
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0">
-          <span className="font-medium">{row.label}</span>
+          <button
+            type="button"
+            className="text-left font-medium hover:underline"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+          >
+            {row.label}
+          </button>
           <span className="block text-xs text-muted-foreground">
             Day {row.dayIndex}
             {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off
             {row.contactName ? ` · ${row.contactName}` : ""}
             {row.confirmationRef ? ` · ref ${row.confirmationRef}` : ""}
+            {documents.length > 0
+              ? ` · ${documents.length} file${documents.length === 1 ? "" : "s"}`
+              : ""}
           </span>
         </span>
         <span className="shrink-0">
@@ -1067,6 +1137,18 @@ export function ItemCard({
           />
         </span>
       </div>
+
+      {open ? (
+        <div className="mt-2 border-t pt-2">
+          <DocumentsPanel
+            target="booking"
+            targetId={row.bookingId}
+            documents={documents}
+            canEdit={canEdit}
+            emptyLabel="No paperwork filed for this booking yet."
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

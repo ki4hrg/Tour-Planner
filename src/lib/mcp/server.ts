@@ -8,6 +8,7 @@ import { registerContactTools } from "./tools/contacts";
 import { registerPresentationTools } from "./tools/presentations";
 import { registerStayTools } from "./tools/stays";
 import { registerNoteTools } from "./tools/notes";
+import { registerDocumentTools } from "./tools/documents";
 
 export function createMcpServer(user: SessionUser): McpServer {
   const server = new McpServer({
@@ -23,6 +24,7 @@ export function createMcpServer(user: SessionUser): McpServer {
   registerPresentationTools(server, user);
   registerStayTools(server, user);
   registerNoteTools(server, user);
+  registerDocumentTools(server, user);
 
   return server;
 }

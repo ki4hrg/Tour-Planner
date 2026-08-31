@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
+import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +116,24 @@ export default async function BookingDashboardPage({
       })
     : [];
 
+  // Paperwork filed against this trip's bookings, indexed by booking so each row
+  // can show its own contracts and invoices without a query per row.
+  const bookingDocuments = await prisma.document.findMany({
+    where: {
+      booking: {
+        OR: [{ tripId: trip.id }, { scheduleItem: { day: { tripId: trip.id } } }],
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { ...DOCUMENT_SELECT, bookingId: true },
+  });
+  const documentsByBooking: Record<string, ReturnType<typeof serializeDocument>[]> =
+    {};
+  for (const doc of bookingDocuments) {
+    if (!doc.bookingId) continue;
+    (documentsByBooking[doc.bookingId] ??= []).push(serializeDocument(doc));
+  }
+
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
@@ -155,6 +174,7 @@ export default async function BookingDashboardPage({
             itemRows={itemRows}
             contacts={contacts}
             currencies={trip.currencies}
+            documentsByBooking={documentsByBooking}
           />
         </CardContent>
       </Card>

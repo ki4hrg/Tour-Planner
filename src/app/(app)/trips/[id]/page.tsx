@@ -24,6 +24,12 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { rollUpCosts } from "@/lib/costs";
+import {
+  DOCUMENT_SELECT,
+  documentHref,
+  formatFileSize,
+  serializeDocument,
+} from "@/lib/documents";
 import { rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import {
@@ -39,6 +45,7 @@ import { ShareManager } from "../share-manager";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 import { TemplateChip } from "../template-chip";
 import { TripTodoistPanel } from "../trip-todoist-panel";
+import { DocumentsPanel } from "../../documents/documents-panel";
 import {
   updateTrip,
   deleteTrip,
@@ -92,6 +99,8 @@ export default async function TripOverviewPage({
           plannedLocations: PLANNED_LOCATIONS_INCLUDE,
         },
       },
+      // Trip-level files: participant itineraries, rosters, insurance.
+      documents: { orderBy: { createdAt: "desc" }, select: DOCUMENT_SELECT },
     },
   });
   if (!trip) notFound();
@@ -147,6 +156,36 @@ export default async function TripOverviewPage({
       location: { select: { id: true, name: true } },
     },
   });
+
+  // Files filed against this trip's bookings rather than the trip itself —
+  // contracts and invoices live on the engagement, but the trip page is where
+  // you go looking for "what paperwork does this trip have?". Stay files aren't
+  // listed here; each stay shows its own in the Lodging panel below.
+  const bookingDocuments = await prisma.document.findMany({
+    where: {
+      booking: {
+        OR: [{ tripId: id }, { scheduleItem: { day: { tripId: id } } }],
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      ...DOCUMENT_SELECT,
+      booking: { select: { label: true, location: { select: { name: true } } } },
+    },
+  });
+
+  // Stay-specific paperwork, indexed for the Lodging panel.
+  const stayDocuments = await prisma.document.findMany({
+    where: { stay: { tripId: id } },
+    orderBy: { createdAt: "desc" },
+    select: { ...DOCUMENT_SELECT, stayId: true },
+  });
+  const documentsByStay: Record<string, ReturnType<typeof serializeDocument>[]> =
+    {};
+  for (const doc of stayDocuments) {
+    if (!doc.stayId) continue;
+    (documentsByStay[doc.stayId] ??= []).push(serializeDocument(doc));
+  }
 
   // Venue-engagement bookings for this trip, indexed by location, so a stay can
   // reflect the single booking covering its lodging venue.
@@ -788,7 +827,56 @@ export default async function TripOverviewPage({
                 stays={stays.map((s) =>
                   serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
                 )}
+                documentsByStay={documentsByStay}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <DocumentsPanel
+                target="trip"
+                targetId={trip.id}
+                documents={trip.documents.map(serializeDocument)}
+                canEdit={canEdit}
+                emptyLabel="No trip-level files yet — printable itineraries and rosters go here."
+              />
+
+              {bookingDocuments.length > 0 ? (
+                <div className="space-y-1 border-t pt-3">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Filed on this trip&apos;s bookings
+                  </p>
+                  <ul className="space-y-1 text-sm">
+                    {bookingDocuments.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex items-baseline justify-between gap-2"
+                      >
+                        <a
+                          href={documentHref(doc.id)}
+                          className="truncate hover:underline"
+                        >
+                          {doc.title}
+                        </a>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {doc.booking?.location?.name ?? doc.booking?.label}{" "}
+                          · {formatFileSize(doc.size)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href={`/trips/${trip.id}/booking`}
+                    className="text-xs text-muted-foreground hover:underline"
+                  >
+                    Manage on the booking dashboard →
+                  </Link>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
