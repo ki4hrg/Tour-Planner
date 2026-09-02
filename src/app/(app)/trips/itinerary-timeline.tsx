@@ -84,7 +84,7 @@ export function TimelineGroups({
   return (
     <div className="space-y-5">
       {runs.map((run, i) => (
-        <div key={i}>
+        <div key={i} className="break-inside-avoid-page">
           <RunHeader
             run={run}
             linkVenues={linkVenues}
@@ -170,7 +170,7 @@ function RunHeader({
 }) {
   if (run.venues.length === 0) return null;
   return (
-    <h4 className="mb-2 text-base font-semibold tracking-tight text-foreground">
+    <h4 className="mb-2 break-after-avoid-page text-base font-semibold tracking-tight text-foreground">
       {run.venues.map((v, i) => {
         const maps = showVenueContacts ? mapHref(v) : null;
         return (
@@ -262,7 +262,7 @@ function TimelineRow({
     return (
       <li
         id={`item-${item.id}`}
-        className="grid scroll-mt-20 grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[5.25rem_7rem_1fr]"
+        className="grid scroll-mt-20 grid-cols-[3.5rem_1fr] items-baseline gap-x-2 break-inside-avoid-page sm:grid-cols-[5.25rem_7rem_1fr]"
       >
         <time className="font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
           {time}
