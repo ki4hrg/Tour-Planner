@@ -2,14 +2,35 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
-import { serializeDay, summarizeDayLodging, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
+import {
+  PLANNED_LOCATIONS_INCLUDE,
+  serializeDay,
+  summarizeDayLodging,
+  TRAVEL_LEG_INCLUDE,
+  type SerializedDay,
+} from "@/lib/trips";
 import { TimelineGroups } from "../../itinerary-timeline";
 import { PrintActions } from "./print-actions";
 
 export const dynamic = "force-dynamic";
 
+// Rough-plan locations (GH #9) not already visited by a timed item — a day may
+// carry these instead of, or alongside, its timed schedule. Mirrors the
+// itinerary overview's "Planned:" line so the printout doesn't silently drop
+// a day whose plan is still just a loose location cluster.
+function unscheduledLocations(day: SerializedDay): string[] {
+  const visited = new Set(
+    day.items.flatMap((item) => item.sites.map((s) => s.location.name)),
+  );
+  return (day.plannedLocations ?? [])
+    .filter((p) => !visited.has(p.name))
+    .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
+}
+
 // A print-friendly, fully-expanded itinerary. The app nav (print:hidden) and the
-// on-screen controls drop out of the printout; each day starts on a fresh page.
+// on-screen controls drop out of the printout. Days flow across pages instead of
+// each forcing a fresh one — short days share a page, long ones spill over — while
+// break-inside-avoid on headings/runs/rows keeps individual pieces from splitting.
 export default async function TripPrintPage({
   params,
 }: {
@@ -48,6 +69,7 @@ export default async function TripPrintPage({
               },
             },
           },
+          plannedLocations: PLANNED_LOCATIONS_INCLUDE,
         },
       },
     },
@@ -81,41 +103,50 @@ export default async function TripPrintPage({
       {days.length === 0 ? (
         <p className="text-sm text-muted-foreground">No days scheduled.</p>
       ) : (
-        days.map((day, i) => (
-          <section
-            key={day.id}
-            className={i > 0 ? "break-before-page pt-2" : ""}
-          >
-            <h2 className="mb-1 text-xl font-semibold">
-              Day {day.dayIndex}
-              {day.title ? ` — ${day.title}` : ""}
-              {day.date ? (
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  · {formatDate(day.date)}
-                </span>
+        days.map((day, i) => {
+          const planned = unscheduledLocations(day);
+          return (
+            <section
+              key={day.id}
+              className={i > 0 ? "border-t pt-4" : ""}
+            >
+              <h2 className="mb-1 break-after-avoid-page text-xl font-semibold">
+                Day {day.dayIndex}
+                {day.title ? ` — ${day.title}` : ""}
+                {day.date ? (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · {formatDate(day.date)}
+                  </span>
+                ) : null}
+              </h2>
+              {day.logisticalNotes ? (
+                <p className="mb-2 break-inside-avoid-page whitespace-pre-wrap text-sm text-muted-foreground">
+                  {day.logisticalNotes}
+                </p>
               ) : null}
-            </h2>
-            {day.logisticalNotes ? (
-              <p className="mb-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                {day.logisticalNotes}
-              </p>
-            ) : null}
-            {day.participantNotes ? (
-              <p className="mb-2 whitespace-pre-wrap text-sm italic text-muted-foreground">
-                {day.participantNotes}
-              </p>
-            ) : null}
-            {day.items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
-            ) : (
-              <TimelineGroups
-                items={day.items}
-                lodging={lodgingByDay[day.id] ?? null}
-              />
-            )}
-          </section>
-        ))
+              {day.participantNotes ? (
+                <p className="mb-2 break-inside-avoid-page whitespace-pre-wrap text-sm italic text-muted-foreground">
+                  {day.participantNotes}
+                </p>
+              ) : null}
+              {day.items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
+              ) : (
+                <TimelineGroups
+                  items={day.items}
+                  lodging={lodgingByDay[day.id] ?? null}
+                />
+              )}
+              {planned.length > 0 ? (
+                <p className="mt-2 break-inside-avoid-page text-xs text-muted-foreground">
+                  <span className="font-medium">Planned:</span>{" "}
+                  {planned.join(" · ")}
+                </p>
+              ) : null}
+            </section>
+          );
+        })
       )}
     </div>
   );
