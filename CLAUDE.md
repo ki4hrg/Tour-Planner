@@ -370,6 +370,100 @@ Production applies migrations via `migrate deploy` on container boot.
    (even Server Components). Extract to a plain helper (see `isCostStale` in
    `src/lib/money.ts`, `todayUtc` in `src/lib/dates.ts`).
 
+## WP Export API
+
+Read-only JSON export API for server-to-server access (WordPress plugin, third-party integrations).
+Authenticated via single shared API key; NOT per-trip share links. Admin UI at `/admin/api-keys`.
+
+### Key management
+
+Keys are opaque `tpk_*` tokens (32 random bytes base64url-encoded). Staff see only the prefix
+(first 8 chars after `tpk_`) and a SHA-256 hash (stored in DB). Keys can be:
+- **Scoped** by trip type (empty scope = all types)
+- **Revoked** (logical delete; read-only archive of key usage)
+- **Rotated** via creation + revocation (never hardcoded)
+
+Admin actions:
+- Create: returns full key once; display to user immediately; save/copy before leaving
+- Revoke: mark inactive; preserves `lastUsedAt` history for audit
+- List: shows prefix, scope, created/used dates, status
+
+### Endpoints
+
+- `GET /api/export/v1/trips?tripType=<id|name>&includeArchived=1`
+  - List trips accessible to the key, filtered by trip type and status.
+  - Query params: `tripType` (comma-separated ID or name filters), `includeArchived` (0/1)
+  - Returns: array `[{id, name, tripType:{id, name}, startDate, endDate, status, updatedAt}]`
+  - Excludes: templates, CANCELLED (and ARCHIVED unless includeArchived=1)
+  - Filtered to key scope: if key scoped to specific trip types, only those are returned
+
+- `GET /api/export/v1/trips/[id]/itinerary`
+  - Full itinerary + location catalog + region hierarchy for one trip.
+  - Returns: `{schemaVersion:1, trip:{...}, days:[...], locations:{...}, regions:{...}}`
+  - ETag support: `If-None-Match` → 304 if unchanged; ETag computed over JSON body only
+  - Cache-Control: `private, no-cache` (private to authenticated consumer; no browser cache)
+  - Missing/invalid/revoked/out-of-scope key or unknown trip → plain 404
+
+### Payload schema (version 1)
+
+```typescript
+{
+  schemaVersion: 1,
+  trip: {
+    id, name, startDate, endDate, status ("ACTIVE"|"ARCHIVED"|"CANCELLED"),
+    isTemplate, updatedAt (ISO 8601)
+  },
+  days: [{
+    id, dayIndex, date (ISO), title, participantNotes, cityRegionId,
+    stops: [{
+      locationId, source ("schedule"|"planned"), startTime (HH:MM), endTime,
+      category, itemTitle (null if matches location name)
+    }],
+    overnight: {locationId} | null
+  }],
+  locations: {[id]: {
+    id, name, regionId, address, description, website, mapHref (computed from
+    name/address or mapUrl), providesLodging (HostSite.providesLodging or false),
+    archived (archivedAt != null), updatedAt (ISO)
+  }},
+  regions: {[id]: {
+    id, name, parentId, path (full ancestry "England › London › Soho")
+  }}
+}
+```
+
+### Redaction (WP-safe)
+
+NEVER emitted: `logisticalNotes`, notes (day/stay/location/item), contacts, costs,
+bookings, payments, raw `mapUrl`, `HostSite` fields, `provideMeals` / `provideMeetingSpace`,
+staff-only site extras (phone, internal notes). Locations dict includes only sites
+referenced by stops/overnights/day primaryLocations. Regions dict includes every
+referenced region plus full ancestor chain (e.g. if an item is in "London", both
+London and England are included, with correct `parentId` links).
+
+### Stop deduping & ordering
+
+Per day: schedule items by `order` → item sites by `order` → skip travel legs →
+append planned locations not already present. Stops deduped by `locationId` (first
+occurrence wins). Travel legs are completely omitted (no locationId, no representation).
+
+### Overnight resolution
+
+Per day: highest-priority covering stay (ties broken by shortest span). Respects both
+calendar dates (dated trips) and day indices (templates). Null when no stay covers the night.
+
+### City region fallback (for day cityRegionId)
+
+1. Day's primaryLocation.regionId
+2. Overnight lodging location.regionId
+3. First stop's location.regionId
+4. null
+
+### Test fixture
+
+`tests/fixtures/tp-itinerary.json`: realistic Wesley-pilgrimage example (11 days,
+Salisbury→Epworth→Oxford→Bristol→London) matching the schema exactly.
+
 ## Deploy
 
 Repo `git@github.com:ki4hrg/Tour-Planner.git` (owner `ki4hrg`). Push to `main` →

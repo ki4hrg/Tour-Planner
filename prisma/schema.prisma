@@ -89,6 +89,20 @@ model User {
   uploadedDocuments    Document[]            @relation("UploadedDocuments")
 }
 
+// API key for server-to-server export access. Keys are opaque tpk_* tokens;
+// staff only sees the prefix (first 8 chars) and the hash. Scoped to trip types
+// (empty = all). Supports key rotation via revocation without deleting history.
+model ApiKey {
+  id           String    @id @default(cuid())
+  name         String    // Human-readable label (e.g. "WordPress plugin v2")
+  prefix       String    // First 8 chars of the key, shown in UI for identification
+  keyHash      String    @unique // SHA-256 hex digest of the full key
+  tripTypeIds  String[] // Empty = all trip types; non-empty = scoped to these IDs
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime? // Tracked for key rotation monitoring
+  revokedAt    DateTime? // Non-null = key is revoked; null = active
+}
+
 enum TodoistAuthType {
   PERSONAL_TOKEN
   OAUTH
