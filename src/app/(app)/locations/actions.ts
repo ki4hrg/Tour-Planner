@@ -10,6 +10,12 @@ import { costSchema, type CostInput } from "@/lib/validators/cost";
 import { hostSiteSchema } from "@/lib/validators/hostSite";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import type { PaymentScheduleInputData } from "../trips/actions";
+import {
+  MergeError,
+  mergeLocations,
+  previewLocationMerge,
+  type LocationMergePreview,
+} from "@/lib/location-merge";
 
 function parseLocation(formData: FormData) {
   return locationSchema.safeParse({
@@ -352,4 +358,36 @@ export async function setLocationPaymentSchedule(
   revalidatePath("/locations");
   revalidatePath(`/locations/${locationId}`);
   return { ok: true, message: "Payment terms saved." };
+}
+
+// --- Merge a duplicate into another location ---
+
+// What folding `sourceId` into `targetId` would move — shown in the confirm step.
+export async function previewMergeLocation(
+  sourceId: string,
+  targetId: string,
+): Promise<{ preview?: LocationMergePreview; error?: string }> {
+  await assertRole("PLANNER");
+  try {
+    return { preview: await previewLocationMerge(sourceId, targetId) };
+  } catch (err) {
+    if (err instanceof MergeError) return { error: err.message };
+    throw err;
+  }
+}
+
+export async function mergeLocation(
+  sourceId: string,
+  targetId: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  try {
+    const { source, target } = await mergeLocations(sourceId, targetId);
+    // The merge repoints trips, bookings, stays and notes app-wide.
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Merged “${source.name}” into “${target.name}”.` };
+  } catch (err) {
+    if (err instanceof MergeError) return { error: err.message };
+    throw err;
+  }
 }
