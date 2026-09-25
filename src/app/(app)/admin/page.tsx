@@ -30,6 +30,11 @@ const SECTIONS = [
     title: "Users",
     desc: "People with access and their roles (Admin / Planner / Viewer).",
   },
+  {
+    href: "/admin/api-keys",
+    title: "API Keys",
+    desc: "Server-to-server keys for exporting trip data to the WordPress plugin.",
+  },
 ];
 
 export default async function AdminPage() {
