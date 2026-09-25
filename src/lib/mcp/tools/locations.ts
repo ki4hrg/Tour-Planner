@@ -7,6 +7,11 @@ import { hasRole } from "@/lib/authz";
 import { parseDateInput } from "@/lib/dates";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
+import {
+  MergeError,
+  mergeLocations,
+  previewLocationMerge,
+} from "@/lib/location-merge";
 
 export function registerLocationTools(server: McpServer, user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
@@ -845,6 +850,68 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── merge-locations (PLANNER+) ─────────────────────────────────────────
+  server.registerTool(
+    "merge-locations",
+    {
+      title: "Merge Locations",
+      description:
+        "Merge a duplicate location (sourceLocationId) into the one to keep (targetLocationId), then DELETE the source. Every reference moves to the target: schedule items, rough-plan days, bookings, stays, notes, documents, costs, contacts, trip-type tags, travel legs/stops, share links. The target's values win; the source only fills empty fields (long text is concatenated). If both venues are engaged on the same trip, the two bookings fold into the target's (payments/notes/documents move over; the further-along status is kept). Use search-locations to find both IDs. Pass dryRun: true first to see what would move without changing anything. Returns counts of what was (or would be) moved.",
+      inputSchema: {
+        sourceLocationId: z.string(),
+        targetLocationId: z.string(),
+        dryRun: z.boolean().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ sourceLocationId, targetLocationId, dryRun }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        const result = dryRun
+          ? await previewLocationMerge(sourceLocationId, targetLocationId)
+          : await mergeLocations(sourceLocationId, targetLocationId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { success: true, dryRun: dryRun ?? false, ...result },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${err instanceof MergeError ? err.message : String(err)}`,
+            },
+          ],
           isError: true,
         };
       }

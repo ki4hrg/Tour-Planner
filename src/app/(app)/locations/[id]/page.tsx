@@ -29,6 +29,7 @@ import { LocationPaymentTerms } from "../location-payment-terms";
 import { LocationContactsManager } from "../location-contacts-manager";
 import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
 import { HostSitePanel } from "../host-site-panel";
+import { MergeLocationPanel } from "../merge-location-panel";
 import { NotesThread } from "../../notes/notes-thread";
 import { DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
@@ -91,6 +92,18 @@ export default async function LocationDetailPage({
       select: { id: true, name: true, parentId: true, dialCode: true },
     }),
   ]);
+
+  // Merge targets: every other location, archived ones included (a duplicate
+  // may well be merged into the archived original).
+  const mergeCandidates = canEdit
+    ? (
+        await prisma.location.findMany({
+          where: { id: { not: id } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, region: { select: { name: true } } },
+        })
+      ).map((l) => ({ id: l.id, name: l.name, region: l.region?.name ?? null }))
+    : [];
 
   // Default dial code for new contact phones: the region chain's, else +1.
   const defaultDialCode = effectiveDialCode(
@@ -622,7 +635,7 @@ export default async function LocationDetailPage({
               Danger zone
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-4">
             {location.archivedAt ? (
               <form action={unarchiveLocation}>
                 <input type="hidden" name="id" value={location.id} />
@@ -643,6 +656,13 @@ export default async function LocationDetailPage({
                 </p>
               </form>
             )}
+            <div className="border-t pt-4">
+              <MergeLocationPanel
+                locationId={location.id}
+                locationName={location.name}
+                candidates={mergeCandidates}
+              />
+            </div>
           </CardContent>
         </Card>
       ) : null}

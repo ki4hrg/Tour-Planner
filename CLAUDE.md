@@ -33,7 +33,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-48 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+49 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -63,7 +63,8 @@ payment terms + host site), `list-regions` (V, resolves `regionId`), `list-trip-
 `set-primary-contact` (P, links the contact + marks it primary, or clears the
 designation), `add-location-cost` (P), `update-location-cost` (P),
 `set-location-payment-schedule` (P, REPLACE the venue's standing terms that seed new
-engagements — GH #86).
+engagements — GH #86), `merge-locations` (P, destructive: folds a duplicate into the
+kept location + deletes it; `dryRun` previews — see Location merge below).
 
 **contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P).
 Passing `locationIds` on a write REPLACES the linked-location set.
@@ -294,6 +295,17 @@ npm test                          # vitest
   `anchor`/`offsetValue`/`offsetUnit` shape (+ `location_payment_schedule_anchor`
   CHECK); a `BOOKING`/`NONE` term resolves per engagement once seeded onto a real
   booking, and like booking schedules a term is "unscheduled" until it lands on one.
+- **Location merge**: `src/lib/location-merge.ts` folds a duplicate SOURCE into
+  the kept TARGET in one txn and deletes the source — web "Merge into…" in the
+  Location page's danger zone (`MergeLocationPanel`) + `merge-locations` MCP tool,
+  both preview first (`previewLocationMerge`). Target wins; source fills empty
+  fields, long text concatenates (pure `merge*Fields`, unit-tested). Unique
+  collisions are resolved, not failed: item/day already at the target drops the
+  source row; same-trip engagements fold into the target's booking (payments/
+  notes/docs move, further-along status kept, source schedule only if target has
+  none); host sites OR together; standing terms adopted only if target has none.
+  **When adding a new FK to `Location`, repoint it in `mergeLocations`** or the
+  cascade on delete will silently drop that data.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
   **exactly one of** Location / Booking / Trip / Stay (DB CHECK
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
