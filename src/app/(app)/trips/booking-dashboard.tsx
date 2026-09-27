@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { SquareKanban, Table2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,6 @@ export function BookingDashboard({
   currencies,
   documentsByBooking,
   focusLocationId = null,
-  initialView = "table",
 }: {
   tripId: string;
   canEdit: boolean;
@@ -71,21 +70,20 @@ export function BookingDashboard({
   // Deep link (`?venue=<locationId>`) from the trip page: start with every row
   // visible and that venue expanded + scrolled into view.
   focusLocationId?: string | null;
-  // `?view=board` — the kanban board instead of the attention-filtered table.
-  initialView?: DashboardView;
 }) {
-  const router = useRouter();
+  // The view lives in the URL (`?view=board`) so a reload or shared link opens
+  // the same one. history.replaceState keeps useSearchParams in sync without a
+  // server round trip (router.replace would re-run the whole page's queries).
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [view, setView] = useState<DashboardView>(initialView);
-  // Keep the choice in the URL so a reload or shared link opens the same view.
+  const view: DashboardView =
+    searchParams.get("view") === "board" ? "board" : "table";
   const switchView = (next: DashboardView) => {
-    setView(next);
     const params = new URLSearchParams(searchParams.toString());
     if (next === "board") params.set("view", "board");
     else params.delete("view");
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
   const docsFor = (bookingId: string | null) =>
     (bookingId && documentsByBooking[bookingId]) || [];
@@ -131,7 +129,7 @@ export function BookingDashboard({
 
   const viewToggle = (
     <div
-      role="radiogroup"
+      role="group"
       aria-label="View"
       className="inline-flex rounded-md border p-0.5 text-xs"
     >
@@ -144,8 +142,7 @@ export function BookingDashboard({
         <button
           key={value}
           type="button"
-          role="radio"
-          aria-checked={view === value}
+          aria-pressed={view === value}
           onClick={() => switchView(value)}
           className={cn(
             "flex items-center gap-1 rounded px-2 py-1",

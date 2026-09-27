@@ -38,6 +38,9 @@ type BoardCard =
 
 const DRAG_TYPE = "application/x-tour-booking";
 
+// DOM id of a card ("board-v-<locationId>" / "board-i-<bookingId>").
+const cardDomId = (key: string) => `board-${key.replace(":", "-")}`;
+
 // Kanban view of the booking dashboard: one column per status, a card per
 // bookable venue engagement or site-less item booking. Moving a card (drag, or
 // the status control on the card for touch/keyboard) sets its status through
@@ -95,6 +98,9 @@ export function BookingBoard({
       if (res.error) toast.error(res.error);
       else if (res.message) toast.success(res.message);
     });
+    // The card remounts in its new column, dropping keyboard focus with it —
+    // put focus back on the card once it has moved.
+    requestAnimationFrame(() => document.getElementById(cardDomId(key))?.focus());
   };
 
   useEffect(() => {
@@ -200,20 +206,20 @@ export function BookingBoard({
       <Dialog open={openCard != null} onOpenChange={(o) => !o && setOpenKey(null)}>
         {openCard ? (
           <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle className="flex flex-wrap items-center gap-2">
+            <DialogHeader className="flex-row flex-wrap items-center gap-2">
+              <DialogTitle>
                 {openCard.kind === "venue"
                   ? openCard.row.locationName
                   : openCard.row.label}
-                <StatusControl
-                  status={statuses.get(openCard.key) ?? openCard.row.status}
-                  canEdit={canEdit}
-                  onSet={async (s) => {
-                    move(openCard.key, s);
-                    return {};
-                  }}
-                />
               </DialogTitle>
+              <StatusControl
+                status={statuses.get(openCard.key) ?? openCard.row.status}
+                canEdit={canEdit}
+                onSet={async (s) => {
+                  move(openCard.key, s);
+                  return {};
+                }}
+              />
             </DialogHeader>
             {openCard.kind === "venue" ? (
               <VenueDetails
@@ -273,12 +279,13 @@ function BoardCardView({
 
   return (
     <article
-      id={venue ? `board-v-${venue.locationId}` : undefined}
+      id={cardDomId(card.key)}
+      tabIndex={-1}
       draggable={canEdit}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        "space-y-1.5 rounded-md border bg-background p-2.5 text-sm shadow-xs",
+        "space-y-1.5 rounded-md border bg-background p-2.5 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
         canEdit && "cursor-grab active:cursor-grabbing",
         dragging && "opacity-50",
         venue?.needsInfo && "border-amber-300 dark:border-amber-800",

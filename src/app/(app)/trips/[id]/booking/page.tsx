@@ -15,12 +15,12 @@ export default async function BookingDashboardPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ venue?: string; view?: string }>;
+  searchParams: Promise<{ venue?: string }>;
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
   const { id } = await params;
-  const { venue, view } = await searchParams;
+  const { venue } = await searchParams;
 
   const trip = await prisma.trip.findUnique({
     where: { id },
@@ -188,7 +188,6 @@ export default async function BookingDashboardPage({
             currencies={trip.currencies}
             documentsByBooking={documentsByBooking}
             focusLocationId={venue ?? null}
-            initialView={view === "board" ? "board" : "table"}
           />
         </CardContent>
       </Card>
