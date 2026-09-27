@@ -365,6 +365,10 @@ function revalidateTrip(tripId: string) {
   revalidatePath(`/trips/${tripId}`);
   revalidatePath(`/trips/${tripId}/itinerary`);
   revalidatePath(`/trips/${tripId}/booking`);
+  // Cross-trip surfaces that roll bookings up: the Bookings page and the
+  // dashboard's "needs action" card.
+  revalidatePath("/bookings");
+  revalidatePath("/");
 }
 
 // --- ItineraryDay CRUD + reorder ---
