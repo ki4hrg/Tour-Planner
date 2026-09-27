@@ -56,12 +56,25 @@ export function serializeInstallment(
 }
 
 // Shift a date by a signed value in the given unit. MONTH/WEEK add calendar-aware
-// (UTC); month overflow follows JS Date semantics (e.g. Jan 31 + 1mo → Mar 3).
-function addUnits(date: Date, value: number, unit: PaymentOffsetUnit): Date {
+// (UTC). A MONTH shift clamps to the last day of the target month rather than
+// overflowing into the next one: "1 month before May 31" is Apr 30 (not May 1),
+// and Jan 31 + 1mo is Feb 28/29 (not Mar 3). Exported for tests.
+export function addUnits(
+  date: Date,
+  value: number,
+  unit: PaymentOffsetUnit,
+): Date {
   if (unit === "WEEK") return addDays(date, value * 7);
   if (unit === "MONTH") {
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth() + value;
+    // Day 0 of the following month = last day of the target month.
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
     const d = new Date(date);
-    d.setUTCMonth(d.getUTCMonth() + value);
+    // Park on day 1 so the year/month change can't overflow; keeps time-of-day (a
+    // BOOKING anchor may fall back to a timestamped createdAt).
+    d.setUTCDate(1);
+    d.setUTCFullYear(y, m, Math.min(date.getUTCDate(), lastDay));
     return d;
   }
   return addDays(date, value);

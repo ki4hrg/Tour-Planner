@@ -12,6 +12,7 @@ import {
   tripLifecycleWhere,
 } from "@/lib/trips";
 import type { TripStatus } from "@prisma/client";
+import { applyStartDateChange } from "@/lib/trip-mutations";
 
 // z.enum needs tuple types; the arrays are non-empty by construction.
 const lifecycleEnum = z.enum(
@@ -247,7 +248,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Trip",
       description:
-        "Update an existing trip's details. Only include fields you want to change. Status is a manual override only (ACTIVE = lifecycle follows the dates; ARCHIVED; CANCELLED) — Planning/In progress/Complete cannot be set directly, they derive from startDate/endDate. Passing currencies REPLACES the trip's currency vocabulary (3-letter codes).",
+        "Update an existing trip's details. Only include fields you want to change. Status is a manual override only (ACTIVE = lifecycle follows the dates; ARCHIVED; CANCELLED) — Planning/In progress/Complete cannot be set directly, they derive from startDate/endDate. Passing currencies REPLACES the trip's currency vocabulary (3-letter codes). Changing startDate (YYYY-MM-DD) recomputes every itinerary day's date and shifts dated stays by the same number of days so lodging stays on the same trip nights.",
       inputSchema: {
         tripId: z.string(),
         name: z.string().optional(),
@@ -303,9 +304,27 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           data.participantCount = participantCount;
         if (notes !== undefined) data.notes = notes;
 
-        const trip = await prisma.trip.update({
-          where: { id: tripId },
-          data,
+        // Mirror web updateTrip: a startDate change re-derives every day's
+        // date and moves dated stays by the same delta, atomically with the
+        // trip write. The trip row is locked so a concurrent add/delete-day
+        // can't renumber between the read and the recompute.
+        const trip = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT 1 FROM "Trip" WHERE "id" = ${tripId} FOR UPDATE`;
+          const before = await tx.trip.findUnique({
+            where: { id: tripId },
+            select: { startDate: true },
+          });
+          if (!before) throw new Error("Trip not found.");
+          const updated = await tx.trip.update({ where: { id: tripId }, data });
+          if (startDate !== undefined) {
+            await applyStartDateChange(
+              tx,
+              tripId,
+              before.startDate,
+              updated.startDate,
+            );
+          }
+          return updated;
         });
 
         return {

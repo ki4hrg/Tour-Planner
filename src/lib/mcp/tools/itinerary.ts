@@ -7,6 +7,7 @@ import { toDateInput, computeDayDate } from "@/lib/dates";
 import { timedInsertIndex } from "@/lib/schedule-order";
 import { travelLegCreateData } from "@/lib/travel";
 import { TRAVEL_LEG_INCLUDE } from "@/lib/trips";
+import { deleteItineraryDay } from "@/lib/trip-mutations";
 
 // A travel span (GH #80) on add/update-schedule-item. Setting it makes the item
 // a travel leg: origin → destination by a method, item start/end = depart/arrive.
@@ -590,7 +591,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Delete Itinerary Day",
       description:
-        "Delete a day from a trip's itinerary. This also deletes the day's schedule items. Remaining days are renumbered and their dates recomputed. Use get-itinerary to find the day id.",
+        "Delete a day from a trip's itinerary. This also deletes the day's schedule items. Remaining days are renumbered and their dates recomputed, and stays after the deleted day shift back by one night to follow them. A stay that covered ONLY the deleted night is left untouched and counted in the result's collapsedStays (with a warning) so you can fix it via update-stay. Use get-itinerary to find the day id.",
       inputSchema: { dayId: z.string() },
       annotations: {
         readOnlyHint: false,
@@ -608,40 +609,35 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           };
         }
 
-        const day = await prisma.itineraryDay.findUnique({
-          where: { id: dayId },
-          select: { tripId: true, trip: { select: { startDate: true } } },
-        });
-        if (!day) {
+        // Locks the trip row and reads the day inside the txn, renumbers +
+        // redates the rest, and pulls stays along (shared with web deleteDay).
+        const res = await deleteItineraryDay(dayId);
+        if ("error" in res) {
           return {
-            content: [{ type: "text" as const, text: "Error: Day not found" }],
+            content: [{ type: "text" as const, text: `Error: ${res.error}` }],
             isError: true,
           };
         }
-
-        await prisma.$transaction(async (tx) => {
-          await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to items
-          const remaining = await tx.itineraryDay.findMany({
-            where: { tripId: day.tripId },
-            orderBy: { dayIndex: "asc" },
-            select: { id: true },
-          });
-          for (let i = 0; i < remaining.length; i++) {
-            await tx.itineraryDay.update({
-              where: { id: remaining[i].id },
-              data: {
-                dayIndex: i + 1,
-                date: computeDayDate(day.trip.startDate, i + 1),
-              },
-            });
-          }
-        });
+        const collapsed = res.collapsedStays;
 
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ success: true, id: dayId }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  id: dayId,
+                  collapsedStays: collapsed,
+                  ...(collapsed
+                    ? {
+                        warning: `${collapsed} stay${collapsed === 1 ? "" : "s"} covered only the deleted night and ${collapsed === 1 ? "was" : "were"} left unchanged — review with list-stays.`,
+                      }
+                    : {}),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };

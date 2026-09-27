@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Moon } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -83,7 +83,7 @@ export function ItineraryOverview({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <CardTitle className="text-base">Itinerary</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {days.length > 0 ? (
@@ -100,9 +100,6 @@ export function ItineraryOverview({
             <Link href={`/trips/${tripId}/print`}>Print</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
-            <Link href={`/trips/${tripId}/booking`}>Booking</Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
             <Link href={`/trips/${tripId}/itinerary`}>
               {canEdit ? "Edit itinerary" : "View itinerary"}
             </Link>
@@ -117,13 +114,15 @@ export function ItineraryOverview({
           </p>
         ) : (
           <ol className="divide-y">
-            {days.map((day) => (
+            {days.map((day, i) => (
               <DayRow
                 key={day.id}
                 day={day}
                 open={open.has(day.id)}
                 onToggle={() => toggleDay(day.id)}
                 lodging={lodgingByDay?.[day.id] ?? null}
+                // The last day is departure — it has no night to cover.
+                hasNight={lodgingByDay != null && i < days.length - 1}
               />
             ))}
           </ol>
@@ -138,11 +137,13 @@ function DayRow({
   open,
   onToggle,
   lodging,
+  hasNight,
 }: {
   day: SerializedDay;
   open: boolean;
   onToggle: () => void;
   lodging: DayLodgingSummary | null;
+  hasNight: boolean;
 }) {
   const allSites = daySites(day);
   const { head, overflow } = siteRollup(allSites);
@@ -173,6 +174,19 @@ function DayRow({
               {day.title ? ` — ${day.title}` : ""}
               {day.date ? (
                 <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
+              ) : null}
+              {/* Where the group sleeps, visible without expanding the day —
+                  and a loud gap when a night has no stay. */}
+              {lodging ? (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Moon className="size-3 shrink-0" />
+                  {lodging.locationName}
+                </span>
+              ) : hasNight ? (
+                <span className="flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-400">
+                  <Moon className="size-3 shrink-0" />
+                  No lodging
+                </span>
               ) : null}
             </span>
             {allSites.length > 0 ? (

@@ -34,10 +34,16 @@ describe("shareableDocumentWhere", () => {
     });
   });
 
-  it("treats an unscoped host-site link like any whole-trip link", () => {
-    expect(shareableDocumentWhere("t1", "HOST_SITE", null)).toEqual(
-      shareableDocumentWhere("t1", "PARTICIPANT", null),
-    );
+  it("fails closed for a host-site link whose venue was deleted", () => {
+    // locationId goes NULL on venue delete (FK SET NULL) — that must never widen
+    // to the whole trip.
+    expect(shareableDocumentWhere("t1", "HOST_SITE", null)).toEqual({
+      id: { in: [] },
+    });
+    expect(
+      shareDocumentWhere({ tripId: "t1", audience: "HOST_SITE", locationId: null })
+        .AND,
+    ).toContainEqual({ id: { in: [] } });
   });
 });
 

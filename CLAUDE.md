@@ -37,13 +37,13 @@ the reply asynchronously) would tear the stream down before the response is sent
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
-`create-trip` (P), `update-trip` (P).
+`create-trip` (P), `update-trip` (P, a `startDate` change redates days + shifts dated stays in a txn).
 
 **itinerary.ts** — `list-schedule-categories` (V, resolves `categoryId`),
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
 `plannedLocations`), `add-day` (P),
 `update-day` (P, title + logistical/participant notes), `delete-day` (P, renumbers +
-recomputes dates in a txn), `add-schedule-item` (P), `update-schedule-item` (P),
+recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
 (P, rough day→location assignment with no times — GH #9; idempotent per
 `(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
@@ -52,7 +52,8 @@ schedule item, then drops it).
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
 incl. agreed price + paid total), `add-booking` (P, upserts the `(trip, location)`
-engagement; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
+engagement — refuses not-bookable venues, seeds standing terms on create; item target
+only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
 `update-booking` (P, incl. `bookedOn`), `list-payments` (V, the payment log +
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 

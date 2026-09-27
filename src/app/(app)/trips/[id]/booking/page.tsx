@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
@@ -12,12 +11,15 @@ export const dynamic = "force-dynamic";
 
 export default async function BookingDashboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ venue?: string }>;
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
   const { id } = await params;
+  const { venue } = await searchParams;
 
   const trip = await prisma.trip.findUnique({
     where: { id },
@@ -86,7 +88,13 @@ export default async function BookingDashboardPage({
         },
       },
       stays: {
-        select: { locationId: true, checkIn: true, checkOut: true },
+        select: {
+          locationId: true,
+          checkIn: true,
+          checkOut: true,
+          checkInDayIndex: true,
+          checkOutDayIndex: true,
+        },
       },
     },
   });
@@ -149,18 +157,6 @@ export default async function BookingDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Booking dashboard</h1>
-          <p className="text-sm text-muted-foreground">{trip.name}</p>
-        </div>
-        <Link
-          href={`/trips/${trip.id}`}
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← Overview
-        </Link>
-      </div>
 
       <Card>
         <CardHeader>
@@ -168,6 +164,9 @@ export default async function BookingDashboardPage({
         </CardHeader>
         <CardContent>
           <BookingDashboard
+            // Remount per deep-linked venue: the expanded row and cleared
+            // filters are initial state, set only on mount.
+            key={venue ?? ""}
             tripId={trip.id}
             canEdit={canEdit}
             venueRows={venueRows}
@@ -175,6 +174,7 @@ export default async function BookingDashboardPage({
             contacts={contacts}
             currencies={trip.currencies}
             documentsByBooking={documentsByBooking}
+            focusLocationId={venue ?? null}
           />
         </CardContent>
       </Card>

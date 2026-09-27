@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   contentDisposition,
+  bookingDashboardHref,
+  defaultKindForTarget,
   documentTarget,
   fileExtension,
   filterDocumentsForShare,
@@ -8,6 +10,9 @@ import {
   isInlineViewable,
   resolveContentType,
   sanitizeFilename,
+  shareAudienceOptions,
+  shareBadgeLabel,
+  stayHref,
   visibleToShareAudience,
   type DocumentTargetRow,
 } from "./documents";
@@ -171,7 +176,25 @@ describe("documentTarget", () => {
     ).toEqual({ label: "Melk Abbey", href: "/locations/loc1" });
   });
 
-  it("points a venue-engagement document at the trip's booking dashboard", () => {
+  it("points a venue-engagement document at its row on the booking dashboard", () => {
+    expect(
+      documentTarget({
+        ...empty,
+        booking: {
+          label: null,
+          locationId: "loc1",
+          location: { name: "Melk Abbey" },
+          trip: { id: "t1", name: "Wesley 2027" },
+          scheduleItem: null,
+        },
+      }),
+    ).toEqual({
+      label: "Melk Abbey — Wesley 2027",
+      href: "/trips/t1/booking?venue=loc1",
+    });
+  });
+
+  it("falls back to the plain dashboard when the venue id wasn't selected", () => {
     expect(
       documentTarget({
         ...empty,
@@ -181,11 +204,8 @@ describe("documentTarget", () => {
           trip: { id: "t1", name: "Wesley 2027" },
           scheduleItem: null,
         },
-      }),
-    ).toEqual({
-      label: "Melk Abbey — Wesley 2027",
-      href: "/trips/t1/booking",
-    });
+      }).href,
+    ).toBe("/trips/t1/booking");
   });
 
   it("resolves a site-less item booking through its schedule item", () => {
@@ -202,7 +222,7 @@ describe("documentTarget", () => {
     ).toEqual({ label: "Coach hire — Wesley 2028", href: "/trips/t2/booking" });
   });
 
-  it("points trip and stay documents at the trip page", () => {
+  it("points trip documents at the trip page and stays at their anchor", () => {
     expect(
       documentTarget({ ...empty, trip: { id: "t3", name: "Wesley 2029" } }),
     ).toEqual({ label: "Wesley 2029", href: "/trips/t3" });
@@ -210,10 +230,97 @@ describe("documentTarget", () => {
       documentTarget({
         ...empty,
         stay: {
+          id: "s1",
           trip: { id: "t4", name: "Wesley 2030" },
           location: { name: "Hotel Post" },
         },
       }),
-    ).toEqual({ label: "Hotel Post — Wesley 2030", href: "/trips/t4" });
+    ).toEqual({ label: "Hotel Post — Wesley 2030", href: "/trips/t4#stay-s1" });
+    expect(
+      documentTarget({
+        ...empty,
+        stay: {
+          trip: { id: "t4", name: "Wesley 2030" },
+          location: { name: "Hotel Post" },
+        },
+      }).href,
+    ).toBe("/trips/t4");
+  });
+});
+
+describe("booking / stay hrefs", () => {
+  it("encodes the venue and anchors the stay", () => {
+    expect(bookingDashboardHref("t1")).toBe("/trips/t1/booking");
+    expect(bookingDashboardHref("t1", null)).toBe("/trips/t1/booking");
+    expect(bookingDashboardHref("t1", "a b")).toBe("/trips/t1/booking?venue=a%20b");
+    expect(stayHref("t1", "s9")).toBe("/trips/t1#stay-s9");
+  });
+});
+
+describe("defaultKindForTarget", () => {
+  it("pre-sets the kind that usually belongs on each target", () => {
+    expect(defaultKindForTarget("booking")).toBe("CONTRACT");
+    expect(defaultKindForTarget("trip")).toBe("ITINERARY");
+    expect(defaultKindForTarget("stay")).toBe("ROSTER");
+    expect(defaultKindForTarget("location")).toBe("OTHER");
+  });
+});
+
+describe("shareAudienceOptions", () => {
+  const audiences = (ctx: Parameters<typeof shareAudienceOptions>[0]) =>
+    shareAudienceOptions(ctx).map((o) => o.audience);
+
+  it("never offers Participant on a venue file (participant links can't reach it)", () => {
+    expect(audiences({ target: "location", venueName: "Melk" })).toEqual([
+      "HOST_SITE",
+    ]);
+  });
+
+  it("offers no host-site release on a site-less item booking", () => {
+    expect(audiences({ target: "booking", venueName: null })).toEqual([
+      "PARTICIPANT",
+    ]);
+  });
+
+  it("offers both on trip, engagement and stay files", () => {
+    expect(audiences({ target: "trip" })).toEqual(["PARTICIPANT", "HOST_SITE"]);
+    expect(audiences({ target: "booking", venueName: "Melk" })).toEqual([
+      "PARTICIPANT",
+      "HOST_SITE",
+    ]);
+    expect(audiences({ target: "booking" })).toEqual(["PARTICIPANT", "HOST_SITE"]);
+    expect(audiences({ target: "stay", venueName: "Hotel Post" })).toEqual([
+      "PARTICIPANT",
+      "HOST_SITE",
+    ]);
+  });
+
+  it("says a trip file's host-site release reaches every venue", () => {
+    const host = shareAudienceOptions({ target: "trip" }).find(
+      (o) => o.audience === "HOST_SITE",
+    );
+    expect(host?.label).toBe("All host sites");
+    expect(host?.hint).toMatch(/every venue/);
+  });
+});
+
+describe("shareBadgeLabel", () => {
+  it("is staff only with nothing released", () => {
+    expect(shareBadgeLabel([], { target: "trip" })).toBe("Staff only");
+  });
+
+  it("names every audience that the release reaches", () => {
+    expect(shareBadgeLabel(["PARTICIPANT"], { target: "trip" })).toBe(
+      "Participants",
+    );
+    expect(
+      shareBadgeLabel(["PARTICIPANT", "HOST_SITE"], { target: "stay" }),
+    ).toBe("Participants + Host sites");
+  });
+
+  it("ignores a release that can't reach the file", () => {
+    expect(shareBadgeLabel(["PARTICIPANT"], { target: "location" })).toBe(
+      "Staff only",
+    );
   });
 });

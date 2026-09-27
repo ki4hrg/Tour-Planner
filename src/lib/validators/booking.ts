@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { calendarDate } from "./date";
 import { BOOKING_STATUSES } from "../trips";
 
 const optionalId = z.preprocess(
@@ -23,7 +24,7 @@ export const bookingSchema = z.object({
   // When the engagement was booked — anchors BOOKING-relative installments.
   bookedOn: z.preprocess(
     (v) => (v === "" || v == null ? undefined : v),
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use yyyy-mm-dd.").optional(),
+    calendarDate("Use a real yyyy-mm-dd date.").optional(),
   ),
   // The negotiated engagement price (asking price lives in the cost catalog).
   agreedAmount: optionalMoney,
@@ -43,7 +44,7 @@ export const paymentSchema = z.object({
   ),
   currency: z.string().trim().min(1),
   // "yyyy-mm-dd"
-  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use yyyy-mm-dd."),
+  paidOn: calendarDate("Use a real yyyy-mm-dd date."),
   method: z.string().trim().optional(),
   note: z.string().trim().optional(),
 });

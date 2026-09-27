@@ -20,7 +20,11 @@ import {
 import { mapHref } from "@/lib/maps";
 import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
-import { serializeDocument, DOCUMENT_SELECT } from "@/lib/documents";
+import {
+  serializeDocument,
+  DOCUMENT_SELECT,
+  bookingDashboardHref,
+} from "@/lib/documents";
 import { todayUtc, toDateInput, formatDate, addDays, isOngoing } from "@/lib/dates";
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
@@ -31,7 +35,7 @@ import { LocationTripsPanel, type LocationTripRow } from "../location-trips-pane
 import { HostSitePanel } from "../host-site-panel";
 import { MergeLocationPanel } from "../merge-location-panel";
 import { NotesThread } from "../../notes/notes-thread";
-import { DocumentsPanel } from "../../documents/documents-panel";
+import { DocumentRow, DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -280,6 +284,43 @@ export default async function LocationDetailPage({
     })
     .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0));
 
+  // Contracts by trip: paperwork filed on each trip's engagement with this
+  // venue (not the venue's own library above), grouped by trip, newest first.
+  const engagementDocRows = await prisma.document.findMany({
+    where: { booking: { locationId: id, tripId: { not: null } } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      ...DOCUMENT_SELECT,
+      booking: {
+        select: { trip: { select: { id: true, name: true, startDate: true } } },
+      },
+    },
+  });
+  const contractsByTrip = new Map<
+    string,
+    {
+      tripId: string;
+      tripName: string;
+      startDate: Date | null;
+      documents: ReturnType<typeof serializeDocument>[];
+    }
+  >();
+  for (const doc of engagementDocRows) {
+    const trip = doc.booking?.trip;
+    if (!trip) continue;
+    const entry = contractsByTrip.get(trip.id) ?? {
+      tripId: trip.id,
+      tripName: trip.name,
+      startDate: trip.startDate,
+      documents: [],
+    };
+    entry.documents.push(serializeDocument(doc));
+    contractsByTrip.set(trip.id, entry);
+  }
+  const contractGroups = [...contractsByTrip.values()].sort(
+    (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
+  );
+
   const hostSiteSummary = location.hostSite
     ? [
         location.hostSite.providesLodging ? "lodging" : null,
@@ -338,12 +379,53 @@ export default async function LocationDetailPage({
           <DocumentsPanel
             target="location"
             targetId={location.id}
+            venueName={location.name}
             documents={location.documents.map(serializeDocument)}
             canEdit={canEdit}
             emptyLabel="No files for this venue yet."
           />
         </CardContent>
       </Card>
+
+      {contractGroups.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contracts by trip</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Filed on each trip&apos;s booking with this venue. Manage them on
+              that trip&apos;s booking dashboard.
+            </p>
+            {contractGroups.map((g) => (
+              <section key={g.tripId} className="space-y-2">
+                <h4 className="text-sm font-medium">
+                  <Link
+                    href={bookingDashboardHref(g.tripId, location.id)}
+                    className="hover:underline"
+                  >
+                    {g.tripName}
+                  </Link>{" "}
+                  <span className="font-normal text-muted-foreground">
+                    · {g.startDate ? formatDate(g.startDate) : "—"} ·{" "}
+                    {g.documents.length} file{g.documents.length === 1 ? "" : "s"}
+                  </span>
+                </h4>
+                <ul className="space-y-2">
+                  {g.documents.map((doc) => (
+                    <DocumentRow
+                      key={doc.id}
+                      doc={doc}
+                      shareContext={{ target: "booking", venueName: location.name }}
+                      canEdit={false}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -389,7 +471,7 @@ export default async function LocationDetailPage({
                 >
                   <span className="min-w-0">
                     <Link
-                      href={`/trips/${e.tripId}/booking`}
+                      href={bookingDashboardHref(e.tripId, location.id)}
                       className="font-medium hover:underline"
                     >
                       {e.tripName}

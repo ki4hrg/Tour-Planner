@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCalendarDate } from "./date";
 import { TRIP_STATUSES } from "../trips";
 
 // Empty string → undefined, then coerce to a positive int (headcount/capacity).
@@ -16,7 +17,7 @@ const optionalDate = z.preprocess(
   (v) => (v === "" || v == null ? undefined : v),
   z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date.")
+    .refine(isCalendarDate, "Enter a valid date.")
     .optional(),
 );
 

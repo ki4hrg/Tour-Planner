@@ -8,6 +8,7 @@ import { todayUtc, parseDateInput } from "@/lib/dates";
 import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
+import { assertBookable, seedScheduleFromLocation } from "@/lib/trip-mutations";
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
   // ── list-bookings (VIEWER+) ──────────────────────────────────────────
@@ -144,7 +145,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach, tied to one item). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -233,17 +234,62 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           agreedCurrency: agreedCurrency || "USD",
           agreedUnit: agreedUnit ?? null,
         };
-        const booking = isVenue
-          ? await prisma.booking.upsert({
-              where: {
-                tripId_locationId: { tripId: tripId!, locationId: locationId! },
-              },
-              create: { tripId, ...scalars },
-              update: scalars,
-            })
-          : await prisma.booking.create({
-              data: { scheduleItemId, ...scalars },
-            });
+        let booking: { id: string };
+        if (isVenue) {
+          // Same guards as the web upsertVenueBooking: never book a walk-by
+          // stop, and seed a NEW engagement's installment schedule from the
+          // venue's standing payment terms (GH #86). The nested create only
+          // fires on the create branch — an existing engagement keeps its
+          // schedule. Unlike the web details form, re-adding here DOES write
+          // status on update (documented tool behaviour).
+          const notBookable = await assertBookable(locationId!);
+          if (notBookable) {
+            return {
+              content: [{ type: "text" as const, text: `Error: ${notBookable}` }],
+              isError: true,
+            };
+          }
+          const schedule = await seedScheduleFromLocation(locationId!);
+          booking = await prisma.booking.upsert({
+            where: {
+              tripId_locationId: { tripId: tripId!, locationId: locationId! },
+            },
+            create: {
+              tripId,
+              ...scalars,
+              ...(schedule ? { paymentSchedule: schedule } : {}),
+            },
+            update: scalars,
+          });
+        } else {
+          // Item bookings are for SITE-LESS items only (a coach, a label-only
+          // reservation, a travel leg). A venue item is covered by its
+          // (trip, location) engagement — mirrors web addBooking.
+          const item = await prisma.scheduleItem.findUnique({
+            where: { id: scheduleItemId! },
+            select: { _count: { select: { sites: true } } },
+          });
+          if (!item) {
+            return {
+              content: [{ type: "text" as const, text: "Error: Schedule item not found." }],
+              isError: true,
+            };
+          }
+          if (item._count.sites > 0) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: This item is at a venue — book the venue engagement instead (add-booking with tripId + locationId), not per item.",
+                },
+              ],
+              isError: true,
+            };
+          }
+          booking = await prisma.booking.create({
+            data: { scheduleItemId, ...scalars },
+          });
+        }
 
         return {
           content: [

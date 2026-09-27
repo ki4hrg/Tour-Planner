@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   audienceView,
+  isOrphanedScopedLink,
   isShareLinkActive,
   redactDaysForShare,
   scopeDaysToLocation,
@@ -191,5 +192,17 @@ describe("redactDaysForShare", () => {
       "sarum",
       null,
     ]);
+  });
+});
+
+describe("isOrphanedScopedLink", () => {
+  it("flags a host-site link whose venue is gone", () => {
+    expect(isOrphanedScopedLink("HOST_SITE", null)).toBe(true);
+    expect(isOrphanedScopedLink("HOST_SITE", "loc1")).toBe(false);
+  });
+
+  it("never flags whole-trip audiences", () => {
+    expect(isOrphanedScopedLink("STAFF", null)).toBe(false);
+    expect(isOrphanedScopedLink("PARTICIPANT", null)).toBe(false);
   });
 });

@@ -157,6 +157,12 @@ describe("buildShareFeedEvents", () => {
     expect(stay?.summary).toBe("Lodging: Sarum College");
   });
 
+  it("HOST_SITE feed whose venue was deleted fails closed (no events)", () => {
+    // ShareLink.locationId is SET NULL on venue delete — that must never read as
+    // "unscoped, whole trip".
+    expect(buildShareFeedEvents("HOST_SITE", loadedTrip(), null)).toEqual([]);
+  });
+
   it("HOST_SITE feed drops lodging at other sites", () => {
     const t = loadedTrip();
     const events = buildShareFeedEvents("HOST_SITE", t, "cathedral");

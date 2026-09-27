@@ -19,6 +19,7 @@ import { signOutAction } from "@/lib/auth-actions";
 const LINKS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/", label: "Dashboard" },
   { href: "/trips", label: "Trips" },
+  { href: "/bookings", label: "Bookings" },
   { href: "/locations", label: "Locations" },
   { href: "/contacts", label: "Contacts" },
   { href: "/presentations", label: "Presentations" },

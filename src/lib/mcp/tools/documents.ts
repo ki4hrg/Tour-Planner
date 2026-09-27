@@ -38,6 +38,7 @@ const TARGET_SELECT = {
   booking: {
     select: {
       label: true,
+      locationId: true,
       location: { select: { name: true } },
       trip: { select: { id: true, name: true } },
       scheduleItem: {
@@ -50,6 +51,7 @@ const TARGET_SELECT = {
   trip: { select: { id: true, name: true } },
   stay: {
     select: {
+      id: true,
       trip: { select: { id: true, name: true } },
       location: { select: { name: true } },
     },

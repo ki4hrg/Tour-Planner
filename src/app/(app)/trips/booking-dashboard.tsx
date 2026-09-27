@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { SquareKanban, Table2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -13,6 +16,9 @@ import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
 import { isBookingSecured } from "@/lib/booking";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
+import { BookingBoard } from "./booking-board";
+
+export type DashboardView = "table" | "board";
 
 type ContactOption = { id: string; name: string };
 
@@ -49,6 +55,7 @@ export function BookingDashboard({
   contacts,
   currencies,
   documentsByBooking,
+  focusLocationId = null,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -60,15 +67,44 @@ export function BookingDashboard({
   // Files filed against each booking, keyed by booking id. A venue with no
   // engagement yet has no id and so no files — it gets an empty list.
   documentsByBooking: Record<string, SerializedDocument[]>;
+  // Deep link (`?venue=<locationId>`) from the trip page: start with every row
+  // visible and that venue expanded + scrolled into view.
+  focusLocationId?: string | null;
 }) {
+  // The view lives in the URL (`?view=board`) so a reload or shared link opens
+  // the same one. history.replaceState keeps useSearchParams in sync without a
+  // server round trip (router.replace would re-run the whole page's queries).
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const view: DashboardView =
+    searchParams.get("view") === "board" ? "board" : "table";
+  const switchView = (next: DashboardView) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "board") params.set("view", "board");
+    else params.delete("view");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+  };
   const docsFor = (bookingId: string | null) =>
     (bookingId && documentsByBooking[bookingId]) || [];
+  const focused = focusLocationId != null &&
+    venueRows.some((r) => r.locationId === focusLocationId);
   const [filters, setFilters] = useState<Filters>({
-    windowOpen: true,
-    missingPrice: true,
-    unconfirmed: true,
-    paymentOverdue: true,
+    windowOpen: !focused,
+    missingPrice: !focused,
+    unconfirmed: !focused,
+    paymentOverdue: !focused,
   });
+
+  useEffect(() => {
+    if (!focused) return;
+    // Table on desktop, card below sm — scroll whichever one is visible.
+    const el = [
+      document.getElementById(`venue-${focusLocationId}`),
+      document.getElementById(`venue-card-${focusLocationId}`),
+    ].find((e) => e && e.offsetParent !== null);
+    el?.scrollIntoView({ block: "start" });
+  }, [focused, focusLocationId]);
   const anyFilter = Object.values(filters).some(Boolean);
 
   // No filter checked = show everything; otherwise show rows matching any filter.
@@ -91,9 +127,65 @@ export function BookingDashboard({
     );
   }
 
+  const viewToggle = (
+    <div
+      role="group"
+      aria-label="View"
+      className="inline-flex rounded-md border p-0.5 text-xs"
+    >
+      {(
+        [
+          ["table", "Table", Table2],
+          ["board", "Board", SquareKanban],
+        ] as const
+      ).map(([value, label, Icon]) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={view === value}
+          onClick={() => switchView(value)}
+          className={cn(
+            "flex items-center gap-1 rounded px-2 py-1",
+            view === value
+              ? "bg-muted font-medium text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Icon className="size-3.5" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === "board") {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-xs text-muted-foreground">
+            Drag a card to another column (or use its status menu) to change
+            its status. Open a card for price, payments and files.
+          </span>
+          {viewToggle}
+        </div>
+        <BookingBoard
+          tripId={tripId}
+          canEdit={canEdit}
+          venueRows={venueRows}
+          itemRows={itemRows}
+          contacts={contacts}
+          currencies={currencies}
+          docsFor={docsFor}
+          focusLocationId={focused ? focusLocationId : null}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        {viewToggle}
         <span className="text-muted-foreground">Show:</span>
         {FILTER_LABELS.map(({ key, label }) => (
           <label key={key} className="flex items-center gap-1.5">
@@ -141,6 +233,7 @@ export function BookingDashboard({
                     contacts={contacts}
                     currencies={currencies}
                     documents={docsFor(row.bookingId)}
+                    defaultOpen={row.locationId === focusLocationId}
                   />
                 ))}
                 {shownItems.map((row) => (
@@ -165,6 +258,7 @@ export function BookingDashboard({
                 contacts={contacts}
                 currencies={currencies}
                 documents={docsFor(row.bookingId)}
+                defaultOpen={row.locationId === focusLocationId}
               />
             ))}
             {shownItems.map((row) => (

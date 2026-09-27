@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { toDateInput, todayUtc } from "@/lib/dates";
 import { serializeDay, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
-import { isShareLinkActive } from "@/lib/share";
+import { isOrphanedScopedLink, isShareLinkActive } from "@/lib/share";
 import { buildShareFeedEvents, type ShareFeedStay } from "@/lib/share-feed";
 import { buildIcsCalendar, formatIcsUtcStamp } from "@/lib/ics";
 
@@ -56,7 +56,13 @@ export async function GET(
 
   // Same gate as the share page + staff feed: unknown/disabled/expired → 404. The
   // token is the only capability, so never distinguish "wrong" from "disabled".
-  if (!link || !isShareLinkActive(link, todayUtc())) {
+  // A host-site link whose venue was deleted is dead too (fail closed — never
+  // fall back to the whole trip).
+  if (
+    !link ||
+    !isShareLinkActive(link, todayUtc()) ||
+    isOrphanedScopedLink(link.audience, link.locationId)
+  ) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -104,8 +110,10 @@ export async function GET(
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": `inline; filename="tour-planner-${link.audience.toLowerCase()}.ics"`,
-      // Subscribers poll periodically; a short cache smooths bursts.
-      "Cache-Control": "public, max-age=3600",
+      // Subscribers poll periodically; a short cache smooths bursts. PRIVATE:
+      // the body is capability-gated trip data, so no shared/CDN cache may hold
+      // it (it would outlive a disabled link and could be served to others).
+      "Cache-Control": "private, max-age=3600",
     },
   });
 }

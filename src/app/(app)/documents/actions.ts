@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { zodErrorMessage, type FormState } from "@/lib/forms";
 import { formatFileSize, resolveContentType, sanitizeFilename } from "@/lib/documents";
+import { ensureVenueEngagement } from "@/lib/trip-mutations";
 import {
   documentMetaSchema,
   MAX_DOCUMENT_BYTES,
@@ -72,22 +73,19 @@ async function revalidateAfterMutation(doc: {
   if (doc.stayId) return revalidateForTarget("stay", doc.stayId);
 }
 
-/**
- * Store an uploaded file against a trip / booking / location / stay.
- *
- * Takes FormData (not a typed arg) because a File only survives the Server
- * Action boundary inside one. The bytes ride through the action body, so
- * `serverActions.bodySizeLimit` in next.config.ts caps the request a little
- * above MAX_DOCUMENT_BYTES; we re-check the real length here because that limit
- * covers the whole multipart envelope, not the file.
- */
-export async function uploadDocument(
-  target: DocumentTarget,
-  targetId: string,
-  formData: FormData,
-): Promise<FormState> {
-  const user = await assertRole("PLANNER");
+// A validated upload, ready to store. Parsing is split from storing so a caller
+// that must create the target first (a venue engagement) can reject a bad file
+// before touching anything.
+type ParsedUpload = {
+  meta: DocumentMetaInput;
+  filename: string;
+  contentType: string;
+  bytes: Buffer<ArrayBuffer>;
+};
 
+async function parseUpload(
+  formData: FormData,
+): Promise<{ upload: ParsedUpload } | { error: string }> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Choose a file to upload." };
@@ -121,23 +119,83 @@ export async function uploadDocument(
   if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
     return { error: "That file is too large." };
   }
+  return { upload: { meta: parsed.data, filename, contentType, bytes } };
+}
 
+async function storeUpload(
+  target: DocumentTarget,
+  targetId: string,
+  upload: ParsedUpload,
+  userId: string,
+): Promise<FormState> {
+  const { meta, filename, contentType, bytes } = upload;
   await prisma.document.create({
     data: {
-      ...parsed.data,
-      description: parsed.data.description ?? null,
+      ...meta,
+      description: meta.description ?? null,
       filename,
       contentType,
       size: bytes.byteLength,
       checksum: createHash("sha256").update(bytes).digest("hex"),
       [targetColumn(target)]: targetId,
-      uploadedById: user.id,
+      uploadedById: userId,
       blob: { create: { bytes } },
     },
   });
 
   await revalidateForTarget(target, targetId);
   return { ok: true, message: `Uploaded ${filename}.` };
+}
+
+/**
+ * Store an uploaded file against a trip / booking / location / stay.
+ *
+ * Takes FormData (not a typed arg) because a File only survives the Server
+ * Action boundary inside one. The bytes ride through the action body, so
+ * `serverActions.bodySizeLimit` in next.config.ts caps the request a little
+ * above MAX_DOCUMENT_BYTES; we re-check the real length here because that limit
+ * covers the whole multipart envelope, not the file.
+ */
+export async function uploadDocument(
+  target: DocumentTarget,
+  targetId: string,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const res = await parseUpload(formData);
+  if ("error" in res) return { error: res.error };
+  return storeUpload(target, targetId, res.upload, user.id);
+}
+
+/**
+ * File a document against a trip's engagement with a venue, creating the
+ * `(trip, location)` booking first if the trip hasn't got one yet — so a
+ * contract can be attached before anyone has touched the booking dashboard.
+ *
+ * Creation goes through `ensureVenueEngagement` rather than a bare
+ * `prisma.booking.create`, so the new engagement gets the same bookable check
+ * and standing-payment-terms seeding (GH #86) as the dashboard's own create
+ * path, refuses a missing trip or an archived location, and tolerates a
+ * concurrent first create (P2002 → re-read). It is create-only, so it never
+ * touches an existing booking.
+ */
+export async function uploadVenueEngagementDocument(
+  tripId: string,
+  locationId: string,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  // Validate the file before creating anything, so a rejected upload never
+  // leaves an empty engagement behind.
+  const res = await parseUpload(formData);
+  if ("error" in res) return { error: res.error };
+
+  const booking = await ensureVenueEngagement(tripId, locationId);
+  if ("error" in booking) return booking;
+
+  // A booking target revalidates the trip page, its booking dashboard and the
+  // library.
+  return storeUpload("booking", booking.bookingId, res.upload, user.id);
 }
 
 /** Edit a document's metadata. The bytes are immutable — re-upload to replace. */

@@ -13,7 +13,12 @@
  */
 
 import type { ShareAudience } from "@prisma/client";
-import { audienceView, redactDaysForShare, scopeDaysToLocation } from "./share";
+import {
+  audienceView,
+  isOrphanedScopedLink,
+  redactDaysForShare,
+  scopeDaysToLocation,
+} from "./share";
 import { buildTripEvents, type FeedStay } from "./calendar-feed";
 import type { SerializedDay } from "./trips";
 import type { IcsEvent } from "./ics";
@@ -42,7 +47,9 @@ export interface ShareFeedTrip {
  *  - non-STAFF: strip bookings (via `redactDaysForShare`) and every layer of
  *    staff logistics — day logistical notes, trip-level notes, and stay notes.
  *
- * STAFF share feeds are full-detail (same as the staff CalendarFeed).
+ * STAFF share feeds are full-detail (same as the staff CalendarFeed). A
+ * HOST_SITE link whose venue was deleted (null `locationId`) yields NO events —
+ * fail closed rather than widening to the whole trip.
  */
 export function buildShareFeedEvents(
   audience: ShareAudience,
@@ -50,6 +57,7 @@ export function buildShareFeedEvents(
   locationId: string | null,
 ): IcsEvent[] {
   const view = audienceView(audience);
+  if (isOrphanedScopedLink(audience, locationId)) return [];
 
   let days = trip.days;
   if (view.scopeToLocation && locationId) {
