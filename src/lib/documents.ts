@@ -2,6 +2,7 @@ import type { DocumentKind, ShareAudience } from "@prisma/client";
 import {
   ALLOWED_CONTENT_TYPES,
   EXTENSION_CONTENT_TYPES,
+  type DocumentKindValue,
   type DocumentShareAudience,
 } from "./validators/document";
 
@@ -168,12 +169,19 @@ export type DocumentTargetRow = {
   location: { id: string; name: string } | null;
   booking: {
     label: string | null;
+    // `locationId` lets an engagement document deep-link to its venue row on
+    // the booking dashboard; optional so a caller that doesn't select it still
+    // gets the plain dashboard link.
+    locationId?: string | null;
     location: { name: string } | null;
     trip: { id: string; name: string } | null;
     scheduleItem: { day: { trip: { id: string; name: string } } } | null;
   } | null;
   trip: { id: string; name: string } | null;
   stay: {
+    // Optional for the same reason — without it the link lands on the trip page
+    // rather than the stay's anchor in the Lodging panel.
+    id?: string;
     trip: { id: string; name: string };
     location: { name: string };
   } | null;
@@ -183,7 +191,8 @@ export type DocumentTargetRow = {
  * Where a document "lives": a human label plus the page that shows it. A
  * document targets exactly one of location / booking / trip / stay (DB CHECK),
  * so the first match wins. Mirrors `noteTarget` — booking documents land on the
- * trip's booking dashboard, stay documents on the trip page's Lodging panel.
+ * trip's booking dashboard (scrolled to the venue for an engagement), stay
+ * documents on the stay's anchor in the trip page's Lodging panel.
  */
 export function documentTarget(doc: DocumentTargetRow): {
   label: string;
@@ -195,9 +204,10 @@ export function documentTarget(doc: DocumentTargetRow): {
   if (doc.booking) {
     const trip = doc.booking.trip ?? doc.booking.scheduleItem?.day.trip ?? null;
     const what = doc.booking.location?.name ?? doc.booking.label ?? "Booking";
+    const venue = doc.booking.trip ? doc.booking.locationId : null;
     return {
       label: trip ? `${what} — ${trip.name}` : what,
-      href: trip ? `/trips/${trip.id}/booking` : "/trips",
+      href: trip ? bookingDashboardHref(trip.id, venue) : "/trips",
     };
   }
   if (doc.trip) {
@@ -206,10 +216,153 @@ export function documentTarget(doc: DocumentTargetRow): {
   if (doc.stay) {
     return {
       label: `${doc.stay.location.name} — ${doc.stay.trip.name}`,
-      href: `/trips/${doc.stay.trip.id}`,
+      href: doc.stay.id
+        ? stayHref(doc.stay.trip.id, doc.stay.id)
+        : `/trips/${doc.stay.trip.id}`,
     };
   }
   return { label: "Document", href: "/" };
+}
+
+/** The booking dashboard, optionally focused on one venue engagement's row. */
+export function bookingDashboardHref(
+  tripId: string,
+  venueLocationId?: string | null,
+): string {
+  return venueLocationId
+    ? `/trips/${tripId}/booking?venue=${encodeURIComponent(venueLocationId)}`
+    : `/trips/${tripId}/booking`;
+}
+
+/** A stay's anchor in the trip page's Lodging panel. */
+export function stayHref(tripId: string, stayId: string): string {
+  return `/trips/${tripId}#stay-${stayId}`;
+}
+
+// --- Where a file belongs, and who a release actually reaches ---------------
+
+/**
+ * What an upload is being filed against, as far as the UI needs to know. The
+ * venue name distinguishes a venue engagement (named) from a site-less item
+ * booking (`null`); `undefined` means the caller didn't say, and the copy falls
+ * back to wording that is true of both.
+ */
+export type DocumentShareContext =
+  | { target: "trip" }
+  | { target: "location"; venueName?: string }
+  | { target: "booking"; venueName?: string | null }
+  | { target: "stay"; venueName?: string };
+
+/** The kind a new upload starts as, by target — the planner can still change it. */
+export function defaultKindForTarget(
+  target: DocumentShareContext["target"],
+): DocumentKindValue {
+  switch (target) {
+    case "booking":
+      return "CONTRACT";
+    case "trip":
+      return "ITINERARY";
+    case "stay":
+      // Rooming lists and arrival sheets; the hotel's confirmation belongs on
+      // the venue engagement, since a stay has no booking of its own.
+      return "ROSTER";
+    case "location":
+      return "OTHER";
+  }
+}
+
+/** One line on what belongs on each target — shown under the "Attach to…" picker. */
+export const DOCUMENT_TARGET_HELP: Record<DocumentShareContext["target"], string> = {
+  trip: "Participant itineraries, rosters and anything about the whole trip.",
+  booking:
+    "Contracts, invoices, receipts and confirmations for this engagement — including lodging, whose paperwork lives on the venue's booking.",
+  stay: "Stay-specific sheets: rooming lists, arrival instructions.",
+  location:
+    "Venue paperwork that outlives any one trip — floor plans, risk assessments, standing terms.",
+};
+
+export type ShareAudienceOption = {
+  audience: DocumentShareAudience;
+  label: string;
+  // Who the release actually reaches — worded from `shareDocumentWhere`.
+  hint: string;
+};
+
+/**
+ * The release checkboxes that mean something for a target, labelled with who
+ * they really reach. Mirrors the scope rules in `src/lib/share-documents.ts`:
+ *
+ *  - Participant links reach trip, booking and stay files on their trip, but
+ *    never venue (location) files — those are global across trips.
+ *  - A host-site link is scoped to one venue: it reaches that venue's own files
+ *    (on any trip's link for it), the engagement + stays there, and EVERY
+ *    trip-level file. It never reaches a site-less item booking.
+ */
+export function shareAudienceOptions(
+  ctx: DocumentShareContext,
+): ShareAudienceOption[] {
+  const participants: ShareAudienceOption = {
+    audience: "PARTICIPANT",
+    label: "Participants",
+    hint: "Every participant link for this trip.",
+  };
+  switch (ctx.target) {
+    case "trip":
+      return [
+        participants,
+        {
+          audience: "HOST_SITE",
+          label: "All host sites",
+          hint: "Every host-site link on this trip — every venue, not just one.",
+        },
+      ];
+    case "location":
+      return [
+        {
+          audience: "HOST_SITE",
+          label: "This venue's host site",
+          hint: `Host-site links for ${ctx.venueName ?? "this venue"} on any trip. Participant links never see venue files.`,
+        },
+      ];
+    case "booking":
+      if (ctx.venueName === null) return [participants];
+      return [
+        participants,
+        {
+          audience: "HOST_SITE",
+          label: "This venue's host site",
+          hint: ctx.venueName
+            ? `The host-site link for ${ctx.venueName} on this trip.`
+            : "The host-site link for this booking's venue on this trip (site-less bookings have none).",
+        },
+      ];
+    case "stay":
+      return [
+        participants,
+        {
+          audience: "HOST_SITE",
+          label: "This venue's host site",
+          hint: `The host-site link for ${ctx.venueName ?? "the lodging venue"} on this trip.`,
+        },
+      ];
+  }
+}
+
+/**
+ * The compact per-row release badge. Only audiences that actually reach the file
+ * count — a stale Participant tick on a venue file shows as "Staff only",
+ * because that is what it is.
+ */
+export function shareBadgeLabel(
+  audiences: readonly DocumentShareAudience[],
+  ctx: DocumentShareContext,
+): string {
+  const reachable = new Set(shareAudienceOptions(ctx).map((o) => o.audience));
+  const effective = audiences.filter((a) => reachable.has(a));
+  if (effective.length === 0) return "Staff only";
+  return effective
+    .map((a) => (a === "PARTICIPANT" ? "Participants" : "Host sites"))
+    .join(" + ");
 }
 
 /**

@@ -393,6 +393,7 @@ function VenueDetails({
             documents={documents}
             canEdit={canEdit}
             emptyLabel="No contracts or invoices filed for this venue yet."
+            venueName={row.locationName}
           />
         </div>
       ) : null}
@@ -1099,6 +1100,7 @@ export function ItemRow({
             documents={documents}
             canEdit={canEdit}
             emptyLabel="No paperwork filed for this booking yet."
+            venueName={null}
           />
         </TableCell>
       </TableRow>
@@ -1160,6 +1162,7 @@ export function ItemCard({
             documents={documents}
             canEdit={canEdit}
             emptyLabel="No paperwork filed for this booking yet."
+            venueName={null}
           />
         </div>
       ) : null}

@@ -1210,6 +1210,27 @@ export async function setVenueBookingStatus(
   return { ok: true, message: "Status updated." };
 }
 
+// Make sure a (trip, location) engagement exists — e.g. so a contract can be
+// filed before the venue has been given a status — and return its id. Create-
+// only: an engagement that already exists (even one created a moment ago) is
+// left exactly as it is.
+export async function ensureVenueBooking(
+  tripId: string,
+  locationId: string,
+): Promise<{ error: string } | { bookingId: string }> {
+  await assertRole("PLANNER");
+  const notBookable = await assertBookable(locationId);
+  if (notBookable) return { error: notBookable };
+  const schedule = await seedScheduleFromLocation(locationId);
+  const booking = await prisma.booking.upsert({
+    where: { tripId_locationId: { tripId, locationId } },
+    create: { tripId, locationId, ...(schedule ? { paymentSchedule: schedule } : {}) },
+    update: {},
+    select: { id: true },
+  });
+  return { bookingId: booking.id };
+}
+
 // Quick status set for an existing booking by id (the dashboard's one-click control
 // on a site-less item booking, which always already exists).
 export async function setBookingStatus(

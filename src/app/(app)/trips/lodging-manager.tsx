@@ -318,6 +318,7 @@ function StayRow({
                 documents={documents}
                 canEdit={canEdit}
                 emptyLabel="No files for this stay. The lodging contract belongs on the venue booking."
+                venueName={stay.location.name}
               />
             </div>
           ) : null}
