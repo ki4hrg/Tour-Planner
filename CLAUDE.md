@@ -191,7 +191,10 @@ npm test                          # vitest
   Design rationale belongs in code comments, never in the rendered UI. Never
   instruct ("— set a primary contact", "add one in Admin"): if the page can take
   the user straight there, render that as a verb-labelled link/button; otherwise
-  state the fact only.
+  state the fact only. Terse must not mean ambiguous: avoid clipped passive
+  fragments ("Shown once — copy it now", "Unticked = staff only") that blur fact
+  and instruction. Write a plain sentence for the fact and make the action the
+  control ("This key will only be shown once. Click to copy." on a clickable key).
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.

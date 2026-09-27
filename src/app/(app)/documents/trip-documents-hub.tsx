@@ -188,7 +188,7 @@ export async function TripDocumentsHub({
         : { kind: "venue", tripId: trip.id, locationId: venue.id },
       note: booking
         ? undefined
-        : "Creates a booking.",
+        : "Uploading here creates a booking.",
     });
   }
 

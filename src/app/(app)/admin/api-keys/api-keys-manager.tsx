@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,20 +83,22 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
           <div className="space-y-3">
             <div className="bg-amber-50 border border-amber-200 rounded p-3">
               <p className="text-xs text-amber-900 mb-2">
-                <strong>Shown once — copy it now.</strong>
+                This key will only be shown once.{" "}
+                {copiedKey ? "Copied." : "Click to copy."}
               </p>
-              <div className="font-mono text-sm break-all bg-white border rounded p-2">
-                {state.key}
-              </div>
-              <Button
+              <button
                 type="button"
                 onClick={copyToClipboard}
-                variant="outline"
-                size="sm"
-                className="mt-2"
+                aria-label="Copy key"
+                className="flex w-full items-start gap-2 text-left font-mono text-sm break-all bg-white border rounded p-2 hover:bg-amber-100"
               >
-                {copiedKey ? "Copied" : "Copy key"}
-              </Button>
+                <span className="min-w-0 flex-1">{state.key}</span>
+                {copiedKey ? (
+                  <Check className="size-4 shrink-0 text-green-700" />
+                ) : (
+                  <Copy className="size-4 shrink-0 text-muted-foreground" />
+                )}
+              </button>
             </div>
           </div>
         ) : (

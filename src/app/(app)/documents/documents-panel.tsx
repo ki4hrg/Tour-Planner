@@ -402,8 +402,8 @@ function ShareReleaseFields({
       </div>
       <p className="text-xs text-muted-foreground">
         {venueFile
-          ? "Unticked = staff only. Not in trip-wide links."
-          : "Unticked = staff only."}
+          ? "Staff always see this file. Trip-wide links never do."
+          : "Staff always see this file."}
       </p>
     </div>
   );
