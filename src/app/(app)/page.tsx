@@ -10,10 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { addDays, formatDate, isOngoing, toDateInput, todayUtc } from "@/lib/dates";
-import { bookingWindow } from "@/lib/booking";
-import { formatMoney } from "@/lib/money";
-import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
+import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
 import { noteTarget } from "@/lib/notes";
 import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
 import { cn } from "@/lib/utils";
@@ -25,6 +22,7 @@ import {
   TRAVEL_LEG_INCLUDE,
 } from "@/lib/trips";
 import { TimelineGroups } from "./trips/itinerary-timeline";
+import { BookingActionsCard } from "./booking-actions-card";
 
 export const dynamic = "force-dynamic";
 
@@ -71,8 +69,6 @@ export default async function Home({
   const [
     ongoingCandidates,
     activeTrips,
-    engagementBookings,
-    scheduledBookings,
     followUpNotes,
   ] = await Promise.all([
     // Trips underway right now, with just today's day + its schedule loaded so we
@@ -115,49 +111,6 @@ export default async function Home({
         endDate: true,
         tripType: { select: { name: true } },
         _count: { select: { days: true } },
-      },
-    }),
-    // Unbooked/requested venue-engagement bookings. The window is keyed off the
-    // trip start date here (a coarse heads-up); the booking dashboard refines it to
-    // the earliest covered date per venue.
-    prisma.booking.findMany({
-      where: {
-        status: { in: ["NOT_BOOKED", "REQUESTED", "TENTATIVELY_CONFIRMED"] },
-        tripId: { not: null },
-        location: { is: { bookingOpensLeadDays: { not: null } } },
-        trip: {
-          is: { isTemplate: false, status: "ACTIVE", startDate: { not: null } },
-        },
-      },
-      select: {
-        id: true,
-        label: true,
-        location: { select: { name: true, bookingOpensLeadDays: true } },
-        trip: { select: { id: true, name: true, startDate: true } },
-      },
-    }),
-    // Bookings carrying a payment schedule (GH #51) on dated, active trips —
-    // resolved below into overdue / soon-due installments. An ACTIVE past trip
-    // still surfaces here: an unpaid installment stays owed after the trip runs.
-    prisma.booking.findMany({
-      where: {
-        paymentSchedule: { some: {} },
-        tripId: { not: null },
-        trip: {
-          is: { isTemplate: false, status: "ACTIVE", startDate: { not: null } },
-        },
-      },
-      select: {
-        id: true,
-        label: true,
-        bookedOn: true,
-        createdAt: true,
-        agreedAmount: true,
-        agreedCurrency: true,
-        location: { select: { name: true } },
-        trip: { select: { id: true, name: true, startDate: true } },
-        payments: { select: { amount: true } },
-        paymentSchedule: true,
       },
     }),
     // Open follow-ups (everyone's by default; ?followups=mine narrows). Due-dated
@@ -226,67 +179,6 @@ export default async function Home({
       tripTypeName: t.tripType.name,
       currentDay: t.days[0] ? serializeDay(t.days[0]) : null,
     }));
-
-  const alerts = engagementBookings
-    .map((b) => {
-      const trip = b.trip!;
-      const win = bookingWindow(
-        trip.startDate,
-        b.location?.bookingOpensLeadDays ?? null,
-      );
-      return {
-        id: b.id,
-        locationName: b.label ?? b.location?.name ?? "Booking",
-        tripId: trip.id,
-        tripName: trip.name,
-        earliest: win.earliest,
-        open: win.open,
-      };
-    })
-    .filter((a) => a.open)
-    .sort((a, b) => (a.earliest?.getTime() ?? 0) - (b.earliest?.getTime() ?? 0))
-    .slice(0, 8);
-
-  // Overdue installments plus anything coming due in the next 60 days,
-  // overdue first, then soonest.
-  const dueHorizon = toDateInput(addDays(today, 60));
-  const paymentsDue = scheduledBookings
-    .flatMap((b) => {
-      const agreedAmount = b.agreedAmount == null ? null : Number(b.agreedAmount);
-      const paidTotal = b.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-      const resolved = resolveSchedule(
-        b.paymentSchedule.map(serializeInstallment),
-        {
-          agreedAmount,
-          paidTotal,
-          tripStartDate: b.trip!.startDate,
-          bookingDate: b.bookedOn ?? b.createdAt,
-          today,
-        },
-      );
-      return resolved
-        .filter(
-          (i) =>
-            i.state === "overdue" ||
-            (i.state === "upcoming" && i.dueDate != null && i.dueDate <= dueHorizon),
-        )
-        .map((i) => ({
-          id: i.id,
-          venueName: b.label ?? b.location?.name ?? "Booking",
-          tripId: b.trip!.id,
-          tripName: b.trip!.name,
-          installmentLabel: i.label,
-          amount: i.outstanding ?? 0,
-          currency: b.agreedCurrency,
-          dueDate: i.dueDate!,
-          overdue: i.state === "overdue",
-        }));
-    })
-    .sort(
-      (a, b) =>
-        Number(b.overdue) - Number(a.overdue) || a.dueDate.localeCompare(b.dueDate),
-    )
-    .slice(0, 8);
 
   return (
     <div className="space-y-6">
@@ -360,6 +252,8 @@ export default async function Home({
         </Card>
       ) : null}
 
+      <BookingActionsCard today={today} />
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">
@@ -428,105 +322,6 @@ export default async function Home({
                     {f.dueDate
                       ? `${f.overdue ? "Overdue · " : "Due "}${formatDate(f.dueDate)}`
                       : "No due date"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
-            Booking windows open
-            {alerts.length ? (
-              <Badge variant="secondary" className="ml-2 align-middle">
-                {alerts.length}
-              </Badge>
-            ) : null}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm">
-          {alerts.length === 0 ? (
-            <p className="text-muted-foreground">
-              Nothing to book right now — no open windows on unbooked items.
-            </p>
-          ) : (
-            <ul className="divide-y">
-              {alerts.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 py-2"
-                >
-                  <span>
-                    <span className="font-medium">{a.locationName}</span>
-                    <span className="text-muted-foreground"> — {a.tripName}</span>
-                  </span>
-                  <Link
-                    href={`/trips/${a.tripId}/booking`}
-                    className="text-sm text-muted-foreground hover:underline"
-                  >
-                    Book →
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
-            Payments due
-            {paymentsDue.length ? (
-              <Badge variant="secondary" className="ml-2 align-middle">
-                {paymentsDue.length}
-              </Badge>
-            ) : null}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm">
-          {paymentsDue.length === 0 ? (
-            <p className="text-muted-foreground">
-              Nothing owed soon — no overdue or upcoming installments.
-            </p>
-          ) : (
-            <ul className="divide-y">
-              {paymentsDue.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between gap-3 py-2"
-                >
-                  <span className="min-w-0">
-                    <span className="font-medium">{p.venueName}</span>
-                    <span className="text-muted-foreground"> — {p.tripName}</span>
-                    {p.installmentLabel ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {p.installmentLabel}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-3">
-                    <span
-                      className={cn(
-                        "text-xs",
-                        p.overdue
-                          ? "font-medium text-red-600 dark:text-red-400"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {formatMoney(p.amount, p.currency)} ·{" "}
-                      {p.overdue ? "Overdue · " : "Due "}
-                      {formatDate(p.dueDate)}
-                    </span>
-                    <Link
-                      href={`/trips/${p.tripId}/booking`}
-                      className="text-sm text-muted-foreground hover:underline"
-                    >
-                      Pay →
-                    </Link>
                   </span>
                 </li>
               ))}
