@@ -103,9 +103,7 @@ export default async function ContactDetailPage({
               ))}
             </ul>
           ) : (
-            <p className="text-muted-foreground">
-              Not linked to any locations. Link from a location&apos;s page.
-            </p>
+            <p className="text-muted-foreground">No locations.</p>
           )}
         </CardContent>
       </Card>

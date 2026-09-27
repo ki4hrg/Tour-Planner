@@ -129,7 +129,7 @@ export default async function PresentationDetailPage({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No default presenters assigned.
+              No default presenters.
             </p>
           )}
         </CardContent>
@@ -155,9 +155,6 @@ export default async function PresentationDetailPage({
                 <CardTitle className="text-base">Archived</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="mb-3 text-sm text-muted-foreground">
-                  This presentation is archived. Unarchive it to make it available for new schedules.
-                </p>
                 <form action={unarchivePresentation}>
                   <input type="hidden" name="id" value={presentation.id} />
                   <Button type="submit" variant="outline">
@@ -176,8 +173,8 @@ export default async function PresentationDetailPage({
             <CardContent>
               <p className="mb-3 text-sm text-muted-foreground">
                 {presentation._count.items > 0
-                  ? "This presentation is used in trips. Deleting will archive it instead to preserve history."
-                  : "Delete this presentation permanently."}
+                  ? `Used by ${presentation._count.items} item(s); archives instead of deleting.`
+                  : "Permanently deletes."}
               </p>
               <form action={deletePresentation}>
                 <input type="hidden" name="id" value={presentation.id} />

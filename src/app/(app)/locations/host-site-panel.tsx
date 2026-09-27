@@ -66,10 +66,7 @@ export function HostSitePanel({
   if (!hostSite) {
     return (
       <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Not a host site. Mark it as one to record lodging/meals capability and
-          staff logistics.
-        </p>
+        <p className="text-sm text-muted-foreground">Not a host site.</p>
         <Button
           variant="outline"
           size="sm"
@@ -115,7 +112,6 @@ export function HostSitePanel({
             rows={3}
             value={staffNotes}
             onChange={(e) => setStaffNotes(e.target.value)}
-            placeholder="Internal notes for staff…"
           />
         </div>
 
@@ -125,7 +121,7 @@ export function HostSitePanel({
             rows={3}
             value={logisticsNotes}
             onChange={(e) => setLogisticsNotes(e.target.value)}
-            placeholder="Special requirements, access info, etc…"
+            placeholder="Gate code 1234; coach parks on Mill Lane"
           />
         </div>
 

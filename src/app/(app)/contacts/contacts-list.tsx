@@ -68,7 +68,7 @@ function ContactRow({
 export function ContactsList({ contacts, isGrouped }: ContactsListProps) {
   if (contacts.length === 0) {
     return (
-      <p className="py-3 text-sm text-muted-foreground">No contacts yet.</p>
+      <p className="py-3 text-sm text-muted-foreground">No contacts.</p>
     );
   }
 

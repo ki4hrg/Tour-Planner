@@ -28,12 +28,7 @@ export default async function PresentationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Presentations</h1>
-          <p className="text-sm text-muted-foreground">
-            A reusable catalog of talks and sessions. Each presentation can be scheduled in multiple trips.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold">Presentations</h1>
         {canEdit ? (
           <Button asChild>
             <Link href="/presentations/new">New presentation</Link>
@@ -78,7 +73,7 @@ export default async function PresentationsPage() {
           ))}
           {presentations.length === 0 ? (
             <p className="py-3 text-sm text-muted-foreground">
-              No presentations yet.
+              No presentations.
             </p>
           ) : null}
         </CardContent>

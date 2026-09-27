@@ -60,12 +60,7 @@ export default async function LocationsPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Locations</h1>
-          <p className="text-sm text-muted-foreground">
-            The global location library. Filter by trip type.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold">Locations</h1>
         {canEdit ? (
           <Button asChild>
             <Link href="/locations/new">New location</Link>
@@ -160,7 +155,7 @@ export default async function LocationsPage({
         ))}
         {locations.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {showArchived ? "No archived locations." : "No locations yet."}
+            {showArchived ? "No archived locations." : "No locations."}
           </p>
         ) : null}
       </div>

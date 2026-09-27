@@ -133,7 +133,7 @@ export function PresentationForm({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No contacts yet — create one first to assign as a presenter.
+            No contacts.
           </p>
         )}
       </div>

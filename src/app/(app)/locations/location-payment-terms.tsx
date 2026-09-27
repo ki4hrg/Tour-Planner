@@ -142,8 +142,7 @@ export function LocationPaymentTerms({
       {!editing ? (
         terms.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No standing terms. Add the venue&apos;s usual deposit/balance cadence
-            and new bookings here will pre-fill from it.
+            No standing terms.
           </p>
         ) : (
           <ul className="space-y-0.5 text-sm">
