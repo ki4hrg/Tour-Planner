@@ -123,10 +123,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         {total === 0 ? (
-          <p className="text-muted-foreground">
-            Nothing to chase — no overdue payments, open booking windows or
-            installments due in the next {DUE_SOON_DAYS} days.
-          </p>
+          <p className="text-muted-foreground">Nothing due.</p>
         ) : (
           <>
             <Section title="Overdue payments" lines={overdue} />

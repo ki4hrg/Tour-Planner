@@ -85,8 +85,7 @@ export function CrossTripBookings({
     return (
       <Card>
         <CardContent className="text-sm text-muted-foreground">
-          No venues to book on these trips yet. Add locations to a trip&apos;s
-          itinerary or lodging and they&apos;ll appear here.
+          No venues to book.
         </CardContent>
       </Card>
     );
@@ -156,7 +155,7 @@ export function CrossTripBookings({
         <p className="text-sm text-muted-foreground">
           {q
             ? "No venue matches that search."
-            : "Nothing matches these filters — everything's handled."}
+            : "Nothing matches these filters."}
         </p>
       ) : (
         shown.map((g) => (
@@ -400,9 +399,6 @@ function OtherBookings({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Other bookings</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          One-off bookings not tied to a venue (coaches, reservations).
-        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {trips.map(({ trip, itemRows }) => (
