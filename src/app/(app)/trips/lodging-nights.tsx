@@ -55,7 +55,7 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
         {unconfirmed > 0 ? (
           <span className="text-muted-foreground">
             {" "}
-            · {unconfirmed} not yet confirmed
+            · {unconfirmed} unconfirmed
           </span>
         ) : null}
       </p>
@@ -80,10 +80,7 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
                     {BOOKING_STATUS_LABELS[n.status ?? "NOT_BOOKED"]}
                   </span>
                   {n.covering > 1 ? (
-                    <span
-                      className="block text-[10px] text-muted-foreground"
-                      title="More than one stay covers this night — the higher-priority one is shown."
-                    >
+                    <span className="block text-[10px] text-muted-foreground">
                       +{n.covering - 1} overlapping stay
                     </span>
                   ) : null}

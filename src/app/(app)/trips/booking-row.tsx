@@ -126,7 +126,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
           {isCostStale(c.confirmedAt) ? (
             <span
               className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-              title="Price not confirmed in over a year"
+              title="Unconfirmed for 1+ year"
             >
               stale
             </span>
@@ -167,7 +167,7 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
         {formatMoney(row.unpaidBalance ?? 0, row.agreedCurrency)} unpaid
       </span>
     );
-  return <span className="text-xs text-muted-foreground">Nothing paid yet</span>;
+  return <span className="text-xs text-muted-foreground">Unpaid</span>;
 }
 
 export function coverageLine(row: VenueBookingRow): string {
@@ -296,9 +296,6 @@ export function VenueDetails({
               onChange={(e) => setBookedOn(e.target.value)}
               className="w-40"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Anchors any &quot;after booking&quot; payment installments.
-            </p>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Agreed price</Label>
@@ -392,7 +389,7 @@ export function VenueDetails({
             targetId={row.bookingId}
             documents={documents}
             canEdit={canEdit}
-            emptyLabel="No contracts or invoices filed for this venue yet."
+            emptyLabel="No documents."
             venueName={row.locationName}
           />
         </div>
@@ -410,7 +407,7 @@ const INSTALLMENT_STATE_STYLES: Record<ResolvedInstallment["state"], string> = {
 
 // The right-hand state chip text for one resolved installment.
 function installmentStateText(i: ResolvedInstallment): string {
-  if (i.state === "unscheduled") return "needs agreed price / dates";
+  if (i.state === "unscheduled") return "needs price / date";
   if (i.state === "paid") return "paid";
   if (i.state === "overdue")
     return `overdue${i.dueDate ? ` ${formatDate(i.dueDate)}` : ""}`;
@@ -511,7 +508,7 @@ function PaymentSchedule({
       {!editing ? (
         row.schedule.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No schedule — payments are free-form against the agreed price.
+            No schedule.
           </p>
         ) : (
           <ul className="space-y-0.5 text-sm">
@@ -876,7 +873,7 @@ export function VenueRow({
               {coverage ? (
                 <span className="block text-xs text-muted-foreground">
                   {coverage}
-                  {row.isMissingTime ? " · some sessions missing a time" : ""}
+                  {row.isMissingTime ? " · missing times" : ""}
                 </span>
               ) : null}
             </span>
@@ -981,7 +978,7 @@ export function VenueCard({
             {coverage ? (
               <span className="block text-xs text-muted-foreground">
                 {coverage}
-                {row.isMissingTime ? " · some sessions missing a time" : ""}
+                {row.isMissingTime ? " · missing times" : ""}
               </span>
             ) : null}
           </span>
@@ -1099,7 +1096,7 @@ export function ItemRow({
             targetId={row.bookingId}
             documents={documents}
             canEdit={canEdit}
-            emptyLabel="No paperwork filed for this booking yet."
+            emptyLabel="No documents."
             venueName={null}
           />
         </TableCell>
@@ -1161,7 +1158,7 @@ export function ItemCard({
             targetId={row.bookingId}
             documents={documents}
             canEdit={canEdit}
-            emptyLabel="No paperwork filed for this booking yet."
+            emptyLabel="No documents."
             venueName={null}
           />
         </div>

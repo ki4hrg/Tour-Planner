@@ -66,13 +66,6 @@ import {
 
 const NONE = "__none__";
 
-// Hints shown when a self-describing built-in category is chosen, clarifying the
-// distinction between similar kinds. Falls back to a generic note.
-const SYSTEM_CATEGORY_HINTS: Record<string, string> = {
-  Break: "A short on-site pause — refreshments or a stretch. Just set the time.",
-  "Free time": "Unstructured time for participants to explore on their own.",
-};
-
 type Location = {
   id: string;
   name: string;
@@ -226,8 +219,7 @@ export function ItineraryEditor({
     <div className="space-y-4">
       {!hasStartDate && !isTemplate ? (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          This trip has no start date, so day dates aren&apos;t shown. Set a
-          start date on the overview to date the itinerary.
+          No start date — days are undated.
         </p>
       ) : null}
 
@@ -250,7 +242,7 @@ export function ItineraryEditor({
       ))}
 
       {days.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No days yet.</p>
+        <p className="text-sm text-muted-foreground">No days.</p>
       ) : null}
 
       {canEdit ? (
@@ -391,12 +383,7 @@ function DayCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">
-              Participant notes{" "}
-              <span className="text-muted-foreground">
-                (theme, scripture, walk notes — participant-facing)
-              </span>
-            </Label>
+            <Label className="text-xs">Participant notes</Label>
             <Textarea
               rows={2}
               value={participantNotes}
@@ -405,12 +392,7 @@ function DayCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">
-              Primary location{" "}
-              <span className="text-muted-foreground">
-                (pre-fills new items&rsquo; location)
-              </span>
-            </Label>
+            <Label className="text-xs">Primary location</Label>
             <Select value={primaryLocationId} onValueChange={setPrimaryLocationId}>
               <SelectTrigger size="sm">
                 <SelectValue />
@@ -468,7 +450,7 @@ function DayCard({
           get the grouped venue-run layout (location once per run). */}
       <div className="px-4 py-3">
         {day.items.length === 0 ? (
-          <p className="py-1 text-sm text-muted-foreground">No items yet.</p>
+          <p className="py-1 text-sm text-muted-foreground">No items.</p>
         ) : canEdit ? (
           <ol className="relative ml-2 space-y-1.5 border-l-2 border-border/60">
             {day.items.map((item, si) => (
@@ -595,8 +577,7 @@ function PlannedLocations({
   return (
     <div className="space-y-2 border-b px-4 py-3">
       <p className="text-xs font-medium text-muted-foreground">
-        Planned locations{" "}
-        <span className="font-normal">(rough — no times yet)</span>
+        Planned locations
       </p>
 
       {planned.length > 0 ? (
@@ -637,10 +618,6 @@ function PlannedLocations({
             </li>
           ))}
         </ul>
-      ) : canEdit ? (
-        <p className="text-sm text-muted-foreground">
-          None yet — rough out the day&rsquo;s venues before setting times.
-        </p>
       ) : null}
 
       {canEdit ? (
@@ -1137,9 +1114,7 @@ function ItemFields({
             <Label className="text-xs">
               Title{" "}
               <span className="text-muted-foreground">
-                {locationIds.length === 0
-                  ? "(required without a location)"
-                  : "(optional)"}
+                {locationIds.length === 0 ? "(required)" : "(optional)"}
               </span>
             </Label>
             <Input
@@ -1176,7 +1151,7 @@ function ItemFields({
 
       {timesInvalid ? (
         <p className="text-xs text-destructive">
-          End time can&rsquo;t be before start time.
+          End is before start.
         </p>
       ) : null}
 
@@ -1187,21 +1162,8 @@ function ItemFields({
             checked={cascade}
             onCheckedChange={(v) => setCascade(v === true)}
           />
-          <span>
-            Shift later items to match
-            <span className="block text-xs text-muted-foreground">
-              Moves everything after this by the same amount, keeping the day&rsquo;s
-              spacing. Uncheck to leave later items where they are.
-            </span>
-          </span>
+          <span>Shift later items</span>
         </label>
-      ) : null}
-
-      {selfDescribing && selectedCategory ? (
-        <p className="text-xs text-muted-foreground">
-          {SYSTEM_CATEGORY_HINTS[selectedCategory.name] ??
-            "Just set a time (and any notes) — no title or location."}
-        </p>
       ) : null}
 
       {selfDescribing ? null : (
@@ -1241,7 +1203,7 @@ function ItemFields({
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No locations — this is an informational line (give it a title).
+            No locations.
           </p>
         )}
 
@@ -1297,7 +1259,7 @@ function ItemFields({
             checked={isBlock}
             onCheckedChange={(v) => setIsBlock(v === true)}
           />
-          Free-choice block (subgroups pick among the locations)
+          Free-choice block
         </label>
       </div>
       )}
@@ -1389,10 +1351,10 @@ function ItemFields({
             ) : (
               <p className="text-xs text-muted-foreground">
                 {selectedTalk && selectedTalk.defaultPresenters.length
-                  ? `Using talk defaults: ${selectedTalk.defaultPresenters
+                  ? `Talk default: ${selectedTalk.defaultPresenters
                       .map((p) => p.name)
                       .join(", ")}`
-                  : "None — leave empty to use the talk's defaults."}
+                  : "None."}
               </p>
             )}
             <Select value={addPresenter} onValueChange={pickPresenter}>
@@ -1627,7 +1589,7 @@ function TravelFields({
         <Input
           value={freeText}
           onChange={(e) => setFreeText(e.target.value)}
-          placeholder="or type a place (e.g. Bristol)"
+          placeholder="e.g. Bristol"
         />
       ) : null}
     </div>
@@ -1681,7 +1643,7 @@ function TravelFields({
 
       {timesInvalid ? (
         <p className="text-xs text-destructive">
-          Arrival can&rsquo;t be before departure.
+          Arrive is before depart.
         </p>
       ) : null}
 
@@ -1692,13 +1654,7 @@ function TravelFields({
             checked={cascade}
             onCheckedChange={(v) => setCascade(v === true)}
           />
-          <span>
-            Shift later items to match
-            <span className="block text-xs text-muted-foreground">
-              Moves everything after this by the same amount, keeping the
-              day&rsquo;s spacing. Uncheck to leave later items where they are.
-            </span>
-          </span>
+          <span>Shift later items</span>
         </label>
       ) : null}
 
@@ -1707,7 +1663,7 @@ function TravelFields({
         <Label className="text-xs">En-route stops</Label>
         {stops.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            None — add a comfort or photo stop if the leg makes one.
+            None.
           </p>
         ) : (
           stops.map((s) => (
@@ -1829,8 +1785,7 @@ function VenueEngagementNote({
               href={`/trips/${tripId}/booking?venue=${encodeURIComponent(s.locationId)}`}
               className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
             >
-              {many ? `${s.location.name} booking` : "Booking"}: managed on the
-              venue engagement →
+              {many ? `${s.location.name} booking` : "Venue booking"} →
             </Link>
           </li>
         ))}
@@ -1881,7 +1836,7 @@ function BookingsPanel({
 
       {item.bookings.length === 0 && !adding ? (
         <p className="text-xs text-muted-foreground">
-          No bookings — leave empty for informational items.
+          No bookings.
         </p>
       ) : null}
 
@@ -1924,7 +1879,7 @@ function BookingsPanel({
                 onClick={() => {
                   if (
                     window.confirm(
-                      "Delete this booking? Its payments, payment schedule, documents and notes are deleted with it.",
+                      "Delete booking with its payments, schedule, documents and notes?",
                     )
                   )
                     run(() => deleteBooking(b.id));
@@ -2028,11 +1983,12 @@ function BookingFields({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">
-            Label{" "}
-            <span className="text-muted-foreground">(e.g. coach, lunch)</span>
-          </Label>
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+          <Label className="text-xs">Label</Label>
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. Coach"
+          />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Status</Label>

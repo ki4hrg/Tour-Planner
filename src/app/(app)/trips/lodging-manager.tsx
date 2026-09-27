@@ -88,7 +88,7 @@ export function LodgingManager({
   return (
     <div className="space-y-3">
       {stays.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No stays yet.</p>
+        <p className="text-sm text-muted-foreground">No stays.</p>
       ) : (
         <div className="space-y-2">
           {stays.map((stay) => (
@@ -110,19 +110,20 @@ export function LodgingManager({
       {canEdit ? (
         isTemplate && dayCount === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Add itinerary days first — template lodging anchors to day numbers.
+            No days.{" "}
+            <Link href={`/trips/${tripId}/itinerary`} className="underline">
+              Add days
+            </Link>
           </p>
         ) : adding ? (
           <div className="rounded-md border border-dashed p-3">
             <p className="mb-2 text-sm font-medium">Add a stay</p>
             {locations.length === 0 ? (
               <p className="mb-2 text-xs text-muted-foreground">
-                No lodging venues yet. Only locations whose host-site profile
-                is marked &ldquo;provides lodging&rdquo; can be picked —{" "}
+                No lodging venues.{" "}
                 <Link href="/locations" className="underline">
-                  set one up in Locations
+                  Set up lodging venue
                 </Link>
-                .
               </p>
             ) : null}
             <StayFields
@@ -148,7 +149,7 @@ export function LodgingManager({
             disabled={pending}
             onClick={() => setAdding(true)}
           >
-            {suggestedSpan ? "+ Add stay for the uncovered nights" : "+ Add stay"}
+            + Add stay
           </Button>
         )
       ) : null}
@@ -264,7 +265,7 @@ function StayRow({
                   href={`/trips/${tripId}/booking?venue=${stay.locationId}`}
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
                 >
-                  Price, payments &amp; contract →
+                  Booking →
                 </Link>
                 {canEdit || documents.length > 0 ? (
                   <button
@@ -298,7 +299,7 @@ function StayRow({
                   onClick={() => {
                     if (
                       window.confirm(
-                        `Delete stay at ${stay.location.name}? Its files and notes are deleted too; the venue booking is kept.`,
+                        `Delete stay at ${stay.location.name}? Deletes its files and notes.`,
                       )
                     )
                       run(() => deleteStay(stay.id));
@@ -317,7 +318,7 @@ function StayRow({
                 targetId={stay.id}
                 documents={documents}
                 canEdit={canEdit}
-                emptyLabel="No files for this stay. The lodging contract belongs on the venue booking."
+                emptyLabel="No documents."
                 venueName={stay.location.name}
               />
             </div>
@@ -525,7 +526,7 @@ function StayFields({
             value={headcount}
             onChange={(e) => setHeadcount(e.target.value)}
             min="0"
-            placeholder="Number of people"
+            placeholder="e.g. 24"
           />
         </div>
 

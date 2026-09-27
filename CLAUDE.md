@@ -188,7 +188,10 @@ npm test                          # vitest
   short verbs, headings are nouns, toasts are short facts ("Saved."). Convey state
   with design cues (icons, badges, color, disabled states, `aria-label`) instead of
   prose. Destructive confirmations may keep one line stating the consequence.
-  Design rationale belongs in code comments, never in the rendered UI.
+  Design rationale belongs in code comments, never in the rendered UI. Never
+  instruct ("— set a primary contact", "add one in Admin"): if the page can take
+  the user straight there, render that as a verb-labelled link/button; otherwise
+  state the fact only.
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.

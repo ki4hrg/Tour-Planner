@@ -108,10 +108,7 @@ export function ItineraryOverview({
       </CardHeader>
       <CardContent className="text-sm">
         {days.length === 0 ? (
-          <p className="text-muted-foreground">
-            No days yet.{" "}
-            {canEdit ? "Open the itinerary editor to add days." : ""}
-          </p>
+          <p className="text-muted-foreground">No days.</p>
         ) : (
           <ol className="divide-y">
             {days.map((day, i) => (

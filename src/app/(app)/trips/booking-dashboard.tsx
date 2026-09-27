@@ -121,8 +121,7 @@ export function BookingDashboard({
   if (total === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No venues yet. Add locations to the itinerary and they&apos;ll appear here
-        to book.
+        No venues.
       </p>
     );
   }
@@ -161,11 +160,7 @@ export function BookingDashboard({
   if (view === "board") {
     return (
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span className="text-xs text-muted-foreground">
-            Drag a card to another column (or use its status menu) to change
-            its status. Open a card for price, payments and files.
-          </span>
+        <div className="flex justify-end">
           {viewToggle}
         </div>
         <BookingBoard
@@ -207,7 +202,7 @@ export function BookingDashboard({
 
       {shown === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing matches these filters — everything&apos;s handled.
+          No matches.
         </p>
       ) : (
         <>

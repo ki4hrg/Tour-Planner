@@ -84,16 +84,9 @@ export default async function TripsPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {showTemplates ? "Templates" : "Trips"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {showTemplates
-              ? "Reusable trip blueprints."
-              : "Plan itineraries day by day."}
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold">
+          {showTemplates ? "Templates" : "Trips"}
+        </h1>
         {canEdit ? (
           <Button asChild>
             <Link href={showTemplates ? "/trips/new?template=1" : "/trips/new"}>
@@ -191,7 +184,7 @@ export default async function TripsPage({
         ))}
         {trips.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {showTemplates ? "No templates yet." : "No trips yet."}
+            {showTemplates ? "No templates." : "No trips."}
           </p>
         ) : null}
       </div>
