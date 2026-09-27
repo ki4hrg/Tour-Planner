@@ -58,7 +58,7 @@ export async function createRegion(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "A region with that name already exists here." };
+      return { error: "That name is already used here." };
     }
     throw e;
   }
@@ -81,7 +81,7 @@ export async function updateRegion(
 
   const { name, parentId, tripTypeIds, dialCode } = parsed.data;
   if (parentId && (await wouldCycle(id, parentId))) {
-    return { error: "A region can't sit under itself or its own descendant." };
+    return { error: "A region can't be its own parent or descendant." };
   }
 
   try {
@@ -98,7 +98,7 @@ export async function updateRegion(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "A region with that name already exists here." };
+      return { error: "That name is already used here." };
     }
     throw e;
   }

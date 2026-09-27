@@ -85,8 +85,7 @@ export function CrossTripBookings({
     return (
       <Card>
         <CardContent className="text-sm text-muted-foreground">
-          No venues to book on these trips yet. Add locations to a trip&apos;s
-          itinerary or lodging and they&apos;ll appear here.
+          No venues to book.
         </CardContent>
       </Card>
     );
@@ -141,22 +140,20 @@ export function CrossTripBookings({
               variant="ghost"
               onClick={() => setFilters(ALL_ATTENTION_FILTERS)}
             >
-              Only what needs work
+              Needs work
             </Button>
           )}
           <span className="ml-auto text-xs text-muted-foreground">
             {allShown
               ? `All ${groups.length} venues`
-              : `${shown.length} of ${groups.length} venues shown`}
+              : `${shown.length} of ${groups.length} venues`}
           </span>
         </div>
       </div>
 
       {shown.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {q
-            ? "No venue matches that search."
-            : "Nothing matches these filters — everything's handled."}
+          No matches.
         </p>
       ) : (
         shown.map((g) => (
@@ -228,8 +225,8 @@ function VenueCardGroup({
                 href={email.href}
                 title={
                   email.to.length
-                    ? `Draft an email to ${email.to.join(", ")}`
-                    : "No contact email on file — add the recipient in your mail app"
+                    ? `Email ${email.to.join(", ")}`
+                    : "No contact email"
                 }
               >
                 <Mail className="size-4" />
@@ -256,14 +253,13 @@ function VenueCardGroup({
           </ul>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No contact on file —{" "}
+            No contact ·{" "}
             <Link
-              href={`/locations/${group.locationId}`}
+              href={`/locations/${group.locationId}#contacts`}
               className="underline-offset-2 hover:underline"
             >
-              set a primary contact
+              Set primary contact
             </Link>
-            .
           </p>
         )}
       </CardHeader>
@@ -362,7 +358,7 @@ function TripCell({ entry: { trip, row } }: { entry: VenueTripRow }) {
       <span className="block text-xs text-muted-foreground">
         {formatTripDates(trip)}
         {coverage ? ` · ${coverage}` : ""}
-        {row.isMissingTime ? " · some sessions missing a time" : ""}
+        {row.isMissingTime ? " · missing times" : ""}
         {row.confirmationRef ? ` · ref ${row.confirmationRef}` : ""}
       </span>
     </div>
@@ -400,9 +396,6 @@ function OtherBookings({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Other bookings</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          One-off bookings not tied to a venue (coaches, reservations).
-        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {trips.map(({ trip, itemRows }) => (

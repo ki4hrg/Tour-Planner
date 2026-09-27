@@ -106,7 +106,7 @@ export function LocationForm({
           </Select>
           {regions.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No regions yet — add them in Admin → Regions.
+              No regions.
             </p>
           ) : null}
         </div>
@@ -156,7 +156,7 @@ export function LocationForm({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No trip types yet — create one first to tag locations.
+            No trip types.
           </p>
         )}
       </div>
@@ -169,9 +169,6 @@ export function LocationForm({
             onCheckedChange={(checked) => setBookable(checked === true)}
           />
           Bookable
-          <span className="text-muted-foreground">
-            — uncheck for walk-by stops that never need a reservation
-          </span>
         </label>
         {bookable ? (
           <div className="space-y-1.5 sm:col-span-2">
@@ -220,8 +217,7 @@ export function LocationForm({
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">
-            Internal notes{" "}
-            <span className="text-muted-foreground">(staff only)</span>
+            Internal notes
           </Label>
           <Textarea
             id="notes"

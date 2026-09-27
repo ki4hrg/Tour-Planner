@@ -87,7 +87,7 @@ export default async function SharePage({
   }
   if (!isShareLinkActive(link, todayUtc())) {
     return (
-      <Unavailable message="This link has been disabled or has expired. Ask the trip organiser for a current link." />
+      <Unavailable message="This link is disabled or expired." />
     );
   }
 
@@ -95,7 +95,7 @@ export default async function SharePage({
   // closed — a null scope would otherwise read as "whole trip".
   if (isOrphanedScopedLink(link.audience, link.locationId)) {
     return (
-      <Unavailable message="The venue this link was for no longer exists. Ask the trip organiser for a current link." />
+      <Unavailable message="This venue no longer exists." />
     );
   }
 
@@ -159,11 +159,6 @@ export default async function SharePage({
               }`
             : ""}
         </p>
-        {scopeName ? (
-          <p className="text-sm text-muted-foreground">
-            Showing only the schedule items at {scopeName}.
-          </p>
-        ) : null}
       </header>
 
       {documents.length > 0 ? (
@@ -199,9 +194,7 @@ export default async function SharePage({
       ) : null}
 
       {days.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Nothing scheduled here yet.
-        </p>
+        <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
       ) : (
         days.map((day, i) => (
           <section

@@ -100,7 +100,7 @@ export function MultiYearGrid({
   if (venues.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No venues across these trips yet.
+        No venues.
       </p>
     );
   }

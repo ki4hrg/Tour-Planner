@@ -45,7 +45,7 @@ function renderForm(params: {
 <body>
   <div class="card">
     <h1>Tour Planner</h1>
-    <p class="sub">${params.clientName ? `Authorize <strong>${esc(params.clientName)}</strong>` : "Sign in to authorize access"}</p>
+    <p class="sub">${params.clientName ? `Authorize <strong>${esc(params.clientName)}</strong>` : "Authorize access"}</p>
     ${errorHtml}
     <form method="POST">
       <input type="hidden" name="client_id" value="${esc(params.clientId)}">
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
     return html(
       renderForm({
         clientName: client.clientName,
-        error: "Please enter a valid email and password.",
+        error: "Enter a valid email and password.",
         clientId,
         redirectUri,
         codeChallenge,

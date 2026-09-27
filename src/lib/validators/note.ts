@@ -29,7 +29,7 @@ export const noteSchema = z.object({
   body: z.string().trim().min(1, "Note can't be empty."),
   method: z.enum(NOTE_METHODS),
   contactId: optionalId,
-  contactedOn: z.string().min(1, "Pick the date you made contact."),
+  contactedOn: z.string().min(1, "Pick a contact date."),
   followUp: z.boolean().default(false),
   dueDate: optionalDate,
   // Explicit Todoist destination for a follow-up on a location-only note

@@ -75,9 +75,7 @@ export function MergeLocationPanel({
       <div className="space-y-3 text-sm">
         <p>
           Merge <strong>{p.source.name}</strong> into{" "}
-          <strong>{p.target.name}</strong>? {p.source.name} will be deleted.{" "}
-          {p.target.name}&rsquo;s details win; empty fields are filled from{" "}
-          {p.source.name}.
+          <strong>{p.target.name}</strong>? Deletes {p.source.name}.
         </p>
         {moving.length ? (
           <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
@@ -96,15 +94,13 @@ export function MergeLocationPanel({
         )}
         {p.bookingConflicts.length ? (
           <p className="text-amber-700 dark:text-amber-300">
-            Both are booked on{" "}
-            {p.bookingConflicts.map((c) => c.tripName).join(", ")} — those
-            bookings will be combined into one.
+            Combines bookings on{" "}
+            {p.bookingConflicts.map((c) => c.tripName).join(", ")}.
           </p>
         ) : null}
         {p.paymentTerms === "dropped" ? (
           <p className="text-amber-700 dark:text-amber-300">
-            {p.source.name}&rsquo;s standing payment terms will be discarded (
-            {p.target.name} already has its own).
+            Discards {p.source.name}&rsquo;s payment terms.
           </p>
         ) : null}
         <div className="flex gap-2">
@@ -125,12 +121,9 @@ export function MergeLocationPanel({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">
-        Duplicate of another location? Merge {locationName} into it — every
-        trip, booking, note and file moves over and this one is deleted.
-      </p>
+      <p className="text-sm font-medium">Merge {locationName} into…</p>
       <Input
-        placeholder="Search for the location to keep…"
+        placeholder="Location to keep…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         className="max-w-sm"

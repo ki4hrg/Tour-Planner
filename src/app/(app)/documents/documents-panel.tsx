@@ -71,7 +71,7 @@ export function DocumentsPanel({
   targetId,
   documents,
   canEdit,
-  emptyLabel = "No documents yet.",
+  emptyLabel = "No documents.",
   uploadLabel = "+ Upload file",
   venueName,
 }: {
@@ -184,7 +184,7 @@ export function DocumentList({
               // Hard delete — there is no archive or undo for a file.
               if (
                 !window.confirm(
-                  `Delete "${doc.title}"? The file is removed for good and can't be recovered.`,
+                  `Delete "${doc.title}"? This can't be undone.`,
                 )
               ) {
                 return;
@@ -245,11 +245,6 @@ export function DocumentRow({
                   ? "border text-muted-foreground"
                   : "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
               )}
-              title={
-                staffOnly
-                  ? "Not released to any outside share link."
-                  : "Released to these share-link audiences."
-              }
             >
               {badge}
             </span>
@@ -358,7 +353,7 @@ function MetaFields({
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Optional — e.g. countersigned copy returned 12 March."
+          placeholder="e.g. Countersigned copy, 12 March"
         />
       </div>
 
@@ -407,8 +402,8 @@ function ShareReleaseFields({
       </div>
       <p className="text-xs text-muted-foreground">
         {venueFile
-          ? "Unticked = signed-in staff only. Trip-wide share links (staff or participant) never include venue files."
-          : "Unticked = staff only. Staff share links always see every file on their trip."}
+          ? "Staff always see this file. Trip-wide links never do."
+          : "Staff always see this file."}
       </p>
     </div>
   );
@@ -455,13 +450,13 @@ export function DocumentUploadForm({
   const submit = () => {
     const file = fileRef.current?.files?.[0];
     if (!file) {
-      toast.error("Choose a file to upload.");
+      toast.error("No file chosen.");
       return;
     }
     if (file.size > MAX_DOCUMENT_BYTES) {
       // Caught server-side too; failing here saves a pointless 25MB round trip.
       toast.error(
-        `That file is ${formatFileSize(file.size)} — the limit is ${formatFileSize(MAX_DOCUMENT_BYTES)}.`,
+        `File too large (${formatFileSize(file.size)}; max ${formatFileSize(MAX_DOCUMENT_BYTES)}).`,
       );
       return;
     }
@@ -500,8 +495,7 @@ export function DocumentUploadForm({
           }}
         />
         <p className="text-xs text-muted-foreground">
-          PDFs, images, office documents and text files up to{" "}
-          {formatFileSize(MAX_DOCUMENT_BYTES)}.
+          PDF, image, Office or text · max {formatFileSize(MAX_DOCUMENT_BYTES)}
         </p>
       </div>
 
@@ -519,7 +513,7 @@ export function DocumentUploadForm({
           )
         }
         shareContext={shareContext}
-        titlePlaceholder={filename || "Defaults to the filename"}
+        titlePlaceholder={filename || "Filename"}
       />
 
       <div className="flex items-center gap-2">
@@ -560,8 +554,7 @@ function DocumentMetaForm({
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <p className="text-xs text-muted-foreground">
-        {initial.filename} · {formatFileSize(initial.size)} — the file itself
-        can&apos;t be edited; upload a new one to replace it.
+        {initial.filename} · {formatFileSize(initial.size)}
       </p>
 
       <MetaFields

@@ -182,12 +182,7 @@ export default async function Home({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Upcoming trips and bookings that need attention.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
 
       {ongoing.length > 0 ? (
         <Card>
@@ -243,7 +238,7 @@ export default async function Home({
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Nothing scheduled for today.
+                    Nothing scheduled today.
                   </p>
                 )}
               </div>
@@ -288,9 +283,7 @@ export default async function Home({
         <CardContent className="text-sm">
           {followUps.length === 0 ? (
             <p className="text-muted-foreground">
-              {onlyMine
-                ? "No open follow-ups of yours."
-                : "No open follow-ups — log one from a note."}
+              No open follow-ups.
             </p>
           ) : (
             <ul className="divide-y">
@@ -341,14 +334,13 @@ export default async function Home({
           {upcomingTrips.length === 0 ? (
             <p className="text-muted-foreground">
               {ongoing.length > 0 ? (
-                "No upcoming trips beyond what's happening now."
+                "No other upcoming trips."
               ) : (
                 <>
                   No upcoming trips.{" "}
                   <Link href="/trips/new" className="underline">
-                    Create one
+                    New trip
                   </Link>
-                  .
                 </>
               )}
             </p>

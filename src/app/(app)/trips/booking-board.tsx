@@ -113,7 +113,7 @@ export function BookingBoard({
   if (cards.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nothing to book yet — only walk-by stops so far.
+        Nothing to book.
       </p>
     );
   }
@@ -198,8 +198,7 @@ export function BookingBoard({
       </div>
       {walkBys > 0 ? (
         <p className="text-xs text-muted-foreground">
-          {walkBys} walk-by stop{walkBys === 1 ? "" : "s"} (no booking needed)
-          not shown — see the table view.
+          {walkBys} walk-by stop{walkBys === 1 ? "" : "s"} hidden.
         </p>
       ) : null}
 
@@ -236,7 +235,7 @@ export function BookingBoard({
                 targetId={openCard.row.bookingId}
                 documents={docsFor(openCard.row.bookingId)}
                 canEdit={canEdit}
-                emptyLabel="No paperwork filed for this booking yet."
+                emptyLabel="No documents."
                 venueName={null}
               />
             )}
@@ -306,7 +305,7 @@ function BoardCardView({
           <p className="text-xs text-muted-foreground">
             {[coverageLine(venue), venue.contactName, files]
               .filter(Boolean)
-              .join(" · ") || "No sessions or nights"}
+              .join(" · ") || "—"}
           </p>
           <div className="text-xs">
             <PriceCell row={venue} />

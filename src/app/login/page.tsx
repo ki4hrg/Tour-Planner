@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -29,7 +28,6 @@ export default async function LoginPage({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Tour Planner</CardTitle>
-          <CardDescription>Sign in to plan and manage trips.</CardDescription>
         </CardHeader>
         <CardContent>
           <LoginForm callbackUrl={callbackUrl ?? "/"} />

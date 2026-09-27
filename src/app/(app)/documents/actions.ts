@@ -88,11 +88,11 @@ async function parseUpload(
 ): Promise<{ upload: ParsedUpload } | { error: string }> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a file to upload." };
+    return { error: "No file chosen." };
   }
   if (file.size > MAX_DOCUMENT_BYTES) {
     return {
-      error: `That file is ${formatFileSize(file.size)} — the limit is ${formatFileSize(MAX_DOCUMENT_BYTES)}.`,
+      error: `File too large (${formatFileSize(file.size)}; max ${formatFileSize(MAX_DOCUMENT_BYTES)}).`,
     };
   }
 
@@ -100,8 +100,7 @@ async function parseUpload(
   const contentType = resolveContentType(file.type, filename);
   if (!contentType) {
     return {
-      error:
-        "That file type isn't accepted. Upload a PDF, image, office document, or plain text file.",
+      error: "File type not allowed. Use PDF, image, Office or text.",
     };
   }
 
@@ -117,7 +116,7 @@ async function parseUpload(
 
   const bytes = Buffer.from(await file.arrayBuffer());
   if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
-    return { error: "That file is too large." };
+    return { error: "File too large." };
   }
   return { upload: { meta: parsed.data, filename, contentType, bytes } };
 }

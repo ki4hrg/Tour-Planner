@@ -18,13 +18,7 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Users</h1>
-        <p className="text-sm text-muted-foreground">
-          Create accounts and reset passwords. No self-service email reset in
-          v1 — passwords are set here.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Users</h1>
       <UsersManager
         users={users.map((u) => ({
           ...u,

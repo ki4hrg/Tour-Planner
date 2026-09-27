@@ -61,22 +61,13 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Personal integrations — these apply to your account only.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Settings</h1>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Calendar feed — all trips</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">
-            One subscribable calendar covering every trip. Add it to iOS, Google,
-            or Outlook and it stays in sync as plans change.
-          </p>
           <CalendarFeedManager
             scope="ALL"
             canEdit={canManageFeeds}
@@ -90,14 +81,6 @@ export default async function SettingsPage() {
           <CardTitle className="text-base">Todoist</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Flagging a note as needing follow-up creates a Todoist task (with the
-            <span className="mx-1 rounded bg-muted px-1 py-0.5 font-mono text-xs">
-              tour-planner
-            </span>
-            label and a link back). Completing the task in Todoist clears the
-            follow-up here.
-          </p>
           {auth ? (
             <TodoistManager
               tokenHint={tokenHint}

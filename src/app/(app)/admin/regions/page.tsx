@@ -52,13 +52,7 @@ export default async function RegionsAdminPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Regions</h1>
-          <p className="text-sm text-muted-foreground">
-            A hierarchical place catalog (e.g. England → London). Tag each region
-            with the trip types it applies to; locations pick one.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold">Regions</h1>
         <Link
           href="/admin"
           className="text-sm text-muted-foreground hover:underline"
@@ -69,7 +63,7 @@ export default async function RegionsAdminPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Add a region</CardTitle>
+          <CardTitle className="text-base">Add region</CardTitle>
         </CardHeader>
         <CardContent>
           <RegionForm

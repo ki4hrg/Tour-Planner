@@ -148,7 +148,7 @@ export async function TripDocumentsHub({
   groups.push({
     key: "trip",
     heading: "Trip",
-    sublabel: "Itineraries, rosters",
+    sublabel: "",
     href: null,
     shareContext: { target: "trip" },
     documents: trip.documents.map(serializeDocument),
@@ -172,7 +172,7 @@ export async function TripDocumentsHub({
     groups.push({
       key: value,
       heading: `${venue.name} booking`,
-      sublabel: booking ? "Contracts, invoices, confirmations" : "No booking yet",
+      sublabel: booking ? "" : "No booking",
       href: bookingDashboardHref(trip.id, venue.id),
       shareContext,
       documents: (booking?.documents ?? []).map(serializeDocument),
@@ -188,7 +188,7 @@ export async function TripDocumentsHub({
         : { kind: "venue", tripId: trip.id, locationId: venue.id },
       note: booking
         ? undefined
-        : "No booking yet — uploading creates one (Not booked), pre-filled with the venue's standing payment terms.",
+        : "Uploading here creates a booking.",
     });
   }
 

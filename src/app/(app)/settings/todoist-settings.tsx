@@ -58,13 +58,16 @@ export function TodoistConnectForm() {
           name="token"
           type="password"
           autoComplete="off"
-          placeholder="Paste your personal API token"
           required
         />
-        <p className="text-xs text-muted-foreground">
-          Todoist → Settings → Integrations → Developer. The token is verified,
-          then stored encrypted; it is never shown again.
-        </p>
+        <a
+          href="https://app.todoist.com/app/settings/integrations/developer"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-fit text-xs text-muted-foreground underline hover:text-foreground"
+        >
+          Get token
+        </a>
       </div>
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "Verifying…" : "Connect Todoist"}
@@ -131,8 +134,7 @@ export function TodoistManager({
 
       {projects == null ? (
         <p className="text-sm text-muted-foreground">
-          Couldn&apos;t reach Todoist just now — project pickers are disabled.
-          Reload to retry.
+          Todoist unreachable.
         </p>
       ) : null}
 
@@ -141,9 +143,6 @@ export function TodoistManager({
         {projectSelect(defaultProjectId, (projectId) =>
           run(() => setDefaultTodoistProject(projectId)),
         )}
-        <p className="text-xs text-muted-foreground">
-          Used when nothing more specific matches (no trip or trip-type link).
-        </p>
       </div>
 
       <div className="space-y-2">
@@ -158,13 +157,9 @@ export function TodoistManager({
             </li>
           ))}
           {tripTypes.length === 0 ? (
-            <li className="text-sm text-muted-foreground">No trip types yet.</li>
+            <li className="text-sm text-muted-foreground">No trip types.</li>
           ) : null}
         </ul>
-        <p className="text-xs text-muted-foreground">
-          A trip&apos;s follow-ups go to its own linked project (set on the trip
-          page), else its trip type&apos;s, else the default above, else Inbox.
-        </p>
       </div>
     </div>
   );

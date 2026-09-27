@@ -1,6 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { signIn } from "@/lib/auth";
@@ -34,7 +35,7 @@ export async function createFirstAdmin(
   });
 
   if (!created) {
-    return { error: "Setup has already been completed. Please sign in." };
+    return { error: "Setup already done." };
   }
 
   // Sign the new admin straight in.
@@ -44,7 +45,7 @@ export async function createFirstAdmin(
   } catch (error) {
     if (error instanceof AuthError) {
       // Account exists but auto-login failed — send them to sign in manually.
-      return { error: "Admin created. Please sign in." };
+      redirect("/login");
     }
     throw error; // re-throw the NEXT_REDIRECT on success
   }

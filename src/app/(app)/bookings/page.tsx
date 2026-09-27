@@ -45,16 +45,10 @@ export default async function CrossTripBookingsPage({
       "rounded-full border px-3 py-1 text-sm",
       active ? "bg-muted font-medium" : "text-muted-foreground",
     );
-  const n = data.trips.length;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Bookings</h1>
-        <p className="text-sm text-muted-foreground">
-          {`Every venue across ${n} ${includePast ? "" : "upcoming "}trip${n === 1 ? "" : "s"} — contact a site once about all the groups it's hosting.`}
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Bookings</h1>
 
       <div className="flex flex-wrap items-center gap-2">
         <Link href={qs({ past: includePast })} className={chip(!type)}>

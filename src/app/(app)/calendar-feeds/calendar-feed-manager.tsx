@@ -70,12 +70,7 @@ export function CalendarFeedManager({
   return (
     <div className="space-y-4 text-sm">
       {feeds.length === 0 ? (
-        <p className="text-muted-foreground">
-          No calendar feeds yet.
-          {canEdit
-            ? " Create one to subscribe from iOS, Google, or Outlook — it stays in sync as the plan changes."
-            : ""}
-        </p>
+        <p className="text-muted-foreground">No calendar feeds.</p>
       ) : (
         <ul className="space-y-2">
           {feeds.map((feed) => (
@@ -199,9 +194,7 @@ function CreateForm({
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Staff-detail feed: itinerary items, times, locations, and day notes
-        (incl. logistical). Anyone with the URL can read it — treat it like a
-        share link.
+        Includes staff notes. Anyone with the URL can read it.
       </p>
       <Button type="button" size="sm" disabled={pending} onClick={submit}>
         Create feed

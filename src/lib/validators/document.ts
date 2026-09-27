@@ -102,7 +102,7 @@ export const EXTENSION_CONTENT_TYPES: Record<string, string> = {
 
 // The editable metadata of a document — everything about a file except its bytes.
 export const documentMetaSchema = z.object({
-  title: z.string().trim().min(1, "Give the document a title."),
+  title: z.string().trim().min(1, "Title is required."),
   // An omitted, null, or blank description all mean "no description" — the
   // upload form sends a FormData field that may be any of the three.
   description: z.preprocess(

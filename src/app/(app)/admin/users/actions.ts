@@ -35,7 +35,7 @@ export async function createUser(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "A user with that email already exists." };
+      return { error: "Email already in use." };
     }
     throw e;
   }
@@ -80,7 +80,7 @@ export async function updateUserRole(
 
   // Don't let an admin demote themselves (avoid locking out the last admin).
   if (parsed.data.userId === current.id && parsed.data.role !== "ADMIN") {
-    return { error: "You cannot change your own admin role." };
+    return { error: "You can't change your own role." };
   }
 
   await prisma.user.update({
@@ -101,7 +101,7 @@ export async function deleteUser(
   if (!userId) return { error: "Missing user." };
 
   if (userId === current.id) {
-    return { error: "You cannot delete your own account." };
+    return { error: "You can't delete yourself." };
   }
 
   await prisma.user.delete({ where: { id: userId } });

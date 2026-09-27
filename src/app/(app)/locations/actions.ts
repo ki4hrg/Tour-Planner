@@ -326,7 +326,7 @@ export async function unmarkHostSite(locationId: string): Promise<FormState> {
 
   revalidatePath("/locations");
   revalidatePath(`/locations/${locationId}`);
-  return { ok: true, message: "Host site status removed." };
+  return { ok: true, message: "Host site removed." };
 }
 
 // --- Standing payment terms (GH #86): the venue's default schedule ---

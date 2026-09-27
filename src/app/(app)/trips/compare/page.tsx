@@ -157,8 +157,7 @@ export default async function CompareYearsPage({
         <div>
           <h1 className="text-2xl font-semibold">{tripType.name} — all years</h1>
           <p className="text-sm text-muted-foreground">
-            {trips.length} trip{trips.length === 1 ? "" : "s"} · book each venue
-            across years side by side
+            {trips.length} trip{trips.length === 1 ? "" : "s"}
           </p>
         </div>
         <Link
@@ -174,13 +173,13 @@ export default async function CompareYearsPage({
           <CardTitle className="text-base">
             {totalNeedsInfo > 0
               ? `${totalNeedsInfo} booking${totalNeedsInfo === 1 ? "" : "s"} need attention`
-              : "Nothing needs booking right now"}
+              : "Nothing to book"}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {trips.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No trips of this type yet.
+              No trips.
             </p>
           ) : (
             <MultiYearGrid columns={columns} venues={venues} canEdit={canEdit} />

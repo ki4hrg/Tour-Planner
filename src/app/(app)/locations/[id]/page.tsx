@@ -382,7 +382,7 @@ export default async function LocationDetailPage({
             venueName={location.name}
             documents={location.documents.map(serializeDocument)}
             canEdit={canEdit}
-            emptyLabel="No files for this venue yet."
+            emptyLabel="No files."
           />
         </CardContent>
       </Card>
@@ -393,10 +393,6 @@ export default async function LocationDetailPage({
             <CardTitle className="text-base">Contracts by trip</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Filed on each trip&apos;s booking with this venue. Manage them on
-              that trip&apos;s booking dashboard.
-            </p>
             {contractGroups.map((g) => (
               <section key={g.tripId} className="space-y-2">
                 <h4 className="text-sm font-medium">
@@ -434,7 +430,7 @@ export default async function LocationDetailPage({
         <CardContent>
           {visits.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Not used by any trip yet.
+              No visits.
             </p>
           ) : (
             <ul className="space-y-1 text-sm">
@@ -640,7 +636,7 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="contacts" className="scroll-mt-20">
         <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
         </CardHeader>
@@ -733,8 +729,8 @@ export default async function LocationDetailPage({
                 </Button>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {referenced
-                    ? `Used by ${location._count.scheduleItems} itinerary item(s), so it will be archived (hidden from pickers) rather than deleted.`
-                    : "Not used by any itinerary, so it will be permanently deleted."}
+                    ? `Used by ${location._count.scheduleItems} item(s); archives instead of deleting.`
+                    : "Permanently deletes."}
                 </p>
               </form>
             )}

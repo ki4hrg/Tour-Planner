@@ -175,7 +175,7 @@ function CostRow({
           {cost.confirmedAt
             ? `Confirmed ${cost.confirmedAt.slice(0, 10)}`
             : "Price not confirmed"}
-          {cost.stale ? " · ⚠ may be stale" : ""}
+          {cost.stale ? " · ⚠ stale" : ""}
           {cost.notes ? ` · ${cost.notes}` : ""}
         </div>
       </div>
@@ -223,7 +223,7 @@ export function CostsManager({
           />
         ))}
         {costs.length === 0 ? (
-          <p className="py-2 text-sm text-muted-foreground">No costs yet.</p>
+          <p className="py-2 text-sm text-muted-foreground">No costs.</p>
         ) : null}
       </div>
       {canEdit ? (

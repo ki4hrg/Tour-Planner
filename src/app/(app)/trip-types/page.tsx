@@ -24,18 +24,12 @@ export default async function TripTypesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Trip Types</h1>
-        <p className="text-sm text-muted-foreground">
-          Categories like &ldquo;Wesley Pilgrimage.&rdquo; Each sets a default
-          currency and groups its locations and templates.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Trip Types</h1>
 
       {canManage ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add a trip type</CardTitle>
+            <CardTitle className="text-base">Add trip type</CardTitle>
           </CardHeader>
           <CardContent>
             <TripTypeForm action={createTripType} submitLabel="Create" />
@@ -75,7 +69,7 @@ export default async function TripTypesPage() {
           </Card>
         ))}
         {tripTypes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No trip types yet.</p>
+          <p className="text-sm text-muted-foreground">No trip types.</p>
         ) : null}
       </div>
     </div>

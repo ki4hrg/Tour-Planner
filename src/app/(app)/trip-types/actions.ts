@@ -37,7 +37,7 @@ export async function createTripType(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "A trip type with that name already exists." };
+      return { error: "Name already in use." };
     }
     throw e;
   }
@@ -70,7 +70,7 @@ export async function updateTripType(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "A trip type with that name already exists." };
+      return { error: "Name already in use." };
     }
     throw e;
   }
@@ -89,7 +89,7 @@ export async function deleteTripType(formData: FormData): Promise<void> {
   if (tripCount > 0) {
     // Trips require a trip type — block deletion while any reference it.
     throw new Error(
-      `Cannot delete: ${tripCount} trip(s) use this type. Reassign or delete them first.`,
+      `Cannot delete: in use by ${tripCount} trip(s).`,
     );
   }
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
@@ -530,8 +531,7 @@ export default async function TripOverviewPage({
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">
-                  The trip ended {formatDate(trip.endDate)} but hasn&apos;t been
-                  archived yet. Loose ends:
+                  Ended {formatDate(trip.endDate)}.
                 </p>
 
                 {wrapUp.followUps.length > 0 ? (
@@ -583,7 +583,7 @@ export default async function TripOverviewPage({
                 {wrapUp.staleCostLocations.length > 0 ? (
                   <div>
                     <p className="mb-1 text-xs font-medium text-muted-foreground">
-                      Prices to re-confirm while it&apos;s fresh
+                      Prices to re-confirm
                     </p>
                     <ul className="space-y-0.5">
                       {wrapUp.staleCostLocations.map((l) => (
@@ -604,7 +604,7 @@ export default async function TripOverviewPage({
                 wrapUp.openEngagements.length === 0 &&
                 wrapUp.staleCostLocations.length === 0 ? (
                   <p className="text-muted-foreground">
-                    Nothing outstanding — ready to close.
+                    Nothing outstanding.
                   </p>
                 ) : null}
 
@@ -719,15 +719,13 @@ export default async function TripOverviewPage({
             <CardContent className="space-y-2 text-sm">
               {estimate.length === 0 ? (
                 <p className="text-muted-foreground">
-                  No costs to estimate — add costs to the locations this trip
-                  visits, or lodging below.
+                  No costs.
                 </p>
               ) : (
                 <>
                   {estimateHeadcount == null ? (
                     <p className="text-muted-foreground">
-                      Set a {trip.isTemplate ? "capacity" : "participant count or capacity"} to include
-                      per-person costs. Showing per-group costs only.
+                      Per-group costs only (no {trip.isTemplate ? "capacity" : "headcount"}).
                     </p>
                   ) : (
                     <p className="text-muted-foreground">
@@ -762,15 +760,11 @@ export default async function TripOverviewPage({
                     ))}
                   </dl>
                   {hasStaleCost ? (
-                    <p className="text-xs text-muted-foreground">
-                      ⚠ Some prices are unconfirmed or over a year old — verify
-                      before relying on this estimate.
+                    <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+                      <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                      Includes stale or unconfirmed prices.
                     </p>
                   ) : null}
-                  <p className="text-xs text-muted-foreground">
-                    Estimate only. Counts each visited location once; lodging is
-                    summed per stay.
-                  </p>
                 </>
               )}
             </CardContent>
@@ -791,7 +785,7 @@ export default async function TripOverviewPage({
                   href={`/trips/${trip.id}/booking`}
                   className="text-xs text-muted-foreground hover:underline"
                 >
-                  Booking dashboard →
+                  Bookings →
                 </Link>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -817,7 +811,7 @@ export default async function TripOverviewPage({
                   </dl>
                 ) : (
                   <p className="text-muted-foreground">
-                    No agreed prices logged yet.
+                    No agreed prices.
                   </p>
                 )}
 
@@ -930,7 +924,7 @@ export default async function TripOverviewPage({
                     Delete trip
                   </Button>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Permanently deletes this trip and all of its days and items.
+                    Deletes all days and items.
                   </p>
                 </form>
               </CardContent>

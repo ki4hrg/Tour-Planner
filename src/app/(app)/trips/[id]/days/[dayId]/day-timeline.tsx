@@ -93,7 +93,7 @@ function DayShiftControl({
   const apply = (sign: 1 | -1) => {
     const delta = sign * Math.abs(Math.trunc(minutes));
     if (!delta) {
-      toast.error("Enter a non-zero number of minutes.");
+      toast.error("Minutes must be non-zero.");
       return;
     }
     run(
@@ -116,13 +116,7 @@ function DayShiftControl({
 
   return (
     <div className="space-y-2.5 rounded-md border border-dashed p-3">
-      <div className="space-y-0.5">
-        <p className="text-sm font-medium">Slide timing</p>
-        <p className="text-xs text-muted-foreground">
-          Moves the selected run by a fixed amount, keeping each item&rsquo;s
-          length. Later items move too — it won&rsquo;t hold a fixed end time.
-        </p>
-      </div>
+      <p className="text-sm font-medium">Slide times</p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
           <Label className="text-xs" htmlFor={`shift-min-${dayId}`}>
@@ -175,9 +169,6 @@ function DayShiftControl({
             </option>
           ))}
         </select>
-        <p className="text-xs text-muted-foreground">
-          Shifts this item and everything after it. Untimed items stay put.
-        </p>
       </div>
       <button
         type="button"
@@ -296,7 +287,7 @@ function QuickEdit({
 
       {timesInvalid ? (
         <p className="text-xs text-destructive">
-          End time can&rsquo;t be before start time.
+          End is before start.
         </p>
       ) : null}
 
@@ -307,13 +298,7 @@ function QuickEdit({
             checked={cascade}
             onCheckedChange={(v) => setCascade(v === true)}
           />
-          <span>
-            Shift later items to match
-            <span className="block text-xs text-muted-foreground">
-              Keeps the rest of the day&rsquo;s spacing. Uncheck to leave later
-              items alone.
-            </span>
-          </span>
+          <span>Shift later items</span>
         </label>
       ) : null}
       <div className="space-y-1">
@@ -324,7 +309,7 @@ function QuickEdit({
           id={`qe-title-${item.id}`}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Leave blank to use the talk / category label"
+          placeholder="Optional"
         />
       </div>
       <div className="space-y-1">

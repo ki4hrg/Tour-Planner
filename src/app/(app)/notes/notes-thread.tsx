@@ -75,7 +75,7 @@ export function NotesThread({
   return (
     <div className="space-y-3">
       {notes.length === 0 && !adding ? (
-        <p className="text-sm text-muted-foreground">No notes yet.</p>
+        <p className="text-sm text-muted-foreground">No notes.</p>
       ) : null}
 
       <ul className="space-y-2">

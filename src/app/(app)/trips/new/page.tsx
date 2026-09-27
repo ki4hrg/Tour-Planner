@@ -63,11 +63,10 @@ export default async function NewTripPage({
             />
           ) : (
             <p className="text-sm text-muted-foreground">
-              Create a{" "}
+              No trip types.{" "}
               <Link href="/trip-types" className="underline">
-                trip type
-              </Link>{" "}
-              first — every trip needs one.
+                Add trip type
+              </Link>
             </p>
           )}
         </CardContent>

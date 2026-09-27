@@ -26,7 +26,7 @@ export function RegionsManager({
   if (regions.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No regions yet — add one above (e.g. England, then London under it).
+        No regions.
       </p>
     );
   }

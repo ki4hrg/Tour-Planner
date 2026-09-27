@@ -112,10 +112,7 @@ export default async function TripTypeDetailPage({
         </CardHeader>
         <CardContent className="text-sm">
           {templates.length === 0 ? (
-            <p className="text-muted-foreground">
-              No templates for this type yet. Create one, then new trips of this
-              type can start from it.
-            </p>
+            <p className="text-muted-foreground">No templates.</p>
           ) : (
             <ul className="divide-y">
               {templates.map((t) => (
@@ -166,18 +163,12 @@ export default async function TripTypeDetailPage({
               type="submit"
               variant="destructive"
               disabled={tripType._count.trips > 0}
-              title={
-                tripType._count.trips > 0
-                  ? "Reassign or delete this type's trips first"
-                  : undefined
-              }
             >
               Delete trip type
             </Button>
             {tripType._count.trips > 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
-                {tripType._count.trips} trip(s) use this type. Reassign or
-                delete them before deleting the type.
+                In use by {tripType._count.trips} trip(s).
               </p>
             ) : null}
           </form>

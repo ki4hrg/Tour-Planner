@@ -441,7 +441,7 @@ export async function deleteDay(dayId: string): Promise<FormState> {
   return {
     ok: true,
     message: collapsed
-      ? `Day removed. ${collapsed} stay${collapsed === 1 ? "" : "s"} covered only that night — check Lodging.`
+      ? `Day removed. ${collapsed} stay${collapsed === 1 ? "" : "s"} now empty.`
       : "Day removed.",
   };
 }
@@ -465,7 +465,7 @@ export async function reorderDays(
     new Set(orderedDayIds).size !== orderedDayIds.length ||
     !orderedDayIds.every((id) => own.has(id))
   ) {
-    return { error: "Day list is out of date — reload and try again." };
+    return { error: "Day list out of date." };
   }
 
   // Stays are left where they are: a drag-reorder has no unambiguous mapping
@@ -610,7 +610,7 @@ async function identityError(
     : false;
   return selfDescribing
     ? null
-    : "Pick at least one location or give the item a title.";
+    : "Location or title required.";
 }
 
 function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
@@ -858,7 +858,7 @@ export async function shiftDaySchedule(
 ): Promise<FormState> {
   await assertRole("PLANNER");
   if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
-    return { error: "Enter a non-zero number of minutes." };
+    return { error: "Minutes must be non-zero." };
   }
 
   const items = await prisma.scheduleItem.findMany({
@@ -943,7 +943,7 @@ export async function addBooking(
   if (item._count.sites > 0) {
     return {
       error:
-        "This item is at a venue — book it on the venue engagement (Bookings page), not per item.",
+        "Venue items are booked per venue.",
     };
   }
 
@@ -1116,7 +1116,7 @@ export async function createTripTodoistProject(
 ): Promise<FormState> {
   const user = await assertRole("PLANNER");
   const auth = await getTodoistAuth(user.id);
-  if (!auth) return { error: "Connect Todoist in Settings first." };
+  if (!auth) return { error: "Todoist not connected." };
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -1140,7 +1140,7 @@ export async function createTripTodoistProject(
       },
     });
   } catch {
-    return { error: "Todoist could not be reached — try again." };
+    return { error: "Todoist unreachable." };
   }
 
   revalidatePath(`/trips/${tripId}`);
@@ -1395,9 +1395,9 @@ function anchorModeError(
 ): string | null {
   const dayRelative = data.checkInDayIndex != null;
   if (isTemplate && !dayRelative)
-    return "Templates use day numbers for lodging, not calendar dates.";
+    return "Templates need day numbers, not dates.";
   if (!isTemplate && dayRelative)
-    return "This trip has dates — use calendar dates for lodging, not day numbers.";
+    return "Dated trips need dates, not day numbers.";
   return null;
 }
 
@@ -1490,7 +1490,7 @@ export async function createShareLink(input: {
   let locationId: string | null = null;
   if (input.audience === "HOST_SITE") {
     if (!input.locationId) {
-      return { error: "Pick a host site for a host-site link." };
+      return { error: "Host site required." };
     }
     const host = await prisma.location.findFirst({
       where: { id: input.locationId, hostSite: { isNot: null } },

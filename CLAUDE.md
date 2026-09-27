@@ -182,6 +182,19 @@ npm test                          # vitest
   (see `trip-form.tsx`); the itinerary/lodging/share editors use **direct-call**
   actions (typed args, return `FormState`) driven by a small local `useAction()`
   (`useTransition` + toast) helper.
+- **UI copy**: no narration. No page/card subtitles or taglines, no helper
+  paragraphs explaining how a feature works or why it was designed that way, no
+  chatty empty states ("No stays." + the action button is enough). Buttons are
+  short verbs, headings are nouns, toasts are short facts ("Saved."). Convey state
+  with design cues (icons, badges, color, disabled states, `aria-label`) instead of
+  prose. Destructive confirmations may keep one line stating the consequence.
+  Design rationale belongs in code comments, never in the rendered UI. Never
+  instruct ("— set a primary contact", "add one in Admin"): if the page can take
+  the user straight there, render that as a verb-labelled link/button; otherwise
+  state the fact only. Terse must not mean ambiguous: avoid clipped passive
+  fragments ("Shown once — copy it now", "Unticked = staff only") that blur fact
+  and instruction. Write a plain sentence for the fact and make the action the
+  control ("This key will only be shown once. Click to copy." on a clickable key).
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.
