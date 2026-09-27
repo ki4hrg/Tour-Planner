@@ -62,6 +62,19 @@ export function audienceView(audience: ShareAudience): AudienceView {
   }
 }
 
+/** A location-scoped link (HOST_SITE) whose venue is gone. `ShareLink.locationId`
+ * is `ON DELETE SET NULL`, so deleting the host site leaves the link pointing at
+ * nothing — and a null scope must NOT fall back to "whole trip". Every share
+ * surface (page, .ics feed, document list + download) treats such a link as dead:
+ * fail closed. `createShareLink` never mints a HOST_SITE link without a venue, so
+ * a null here only ever means the venue was deleted. */
+export function isOrphanedScopedLink(
+  audience: ShareAudience,
+  locationId: string | null,
+): boolean {
+  return audienceView(audience).scopeToLocation && !locationId;
+}
+
 /** Keep only items that visit `locationId`, dropping days left with none. Scopes
  * a HOST_SITE link to one site's schedule. */
 export function scopeDaysToLocation(

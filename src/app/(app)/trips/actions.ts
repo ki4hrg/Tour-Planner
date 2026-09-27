@@ -23,7 +23,12 @@ import {
   installmentRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
-import { parseDateInput, computeDayDate } from "@/lib/dates";
+import { parseDateInput, computeDayDate, dayIndexForDate } from "@/lib/dates";
+import {
+  shiftStayDates,
+  shiftStayIndicesForDeletedDay,
+  startDateShiftDays,
+} from "@/lib/stay-shift";
 import {
   instantiateDays,
   instantiateVenueBookings,
@@ -228,9 +233,18 @@ export async function updateTrip(
   const data = toTripData(parsed.data);
 
   await prisma.$transaction(async (tx) => {
+    const before = await tx.trip.findUnique({
+      where: { id },
+      select: { startDate: true },
+    });
     await tx.trip.update({ where: { id }, data });
     // startDate drives every derived day date — recompute on each save.
     await recomputeDayDates(tx, id, data.startDate);
+    // Dated stays are absolute, so they don't follow the days on their own:
+    // move them by the same delta so lodging stays on the same trip nights.
+    // (dated ↔ date-less transitions have no delta and leave stays alone.)
+    const delta = startDateShiftDays(before?.startDate ?? null, data.startDate);
+    if (delta !== 0) await shiftDatedStays(tx, id, delta);
   });
 
   revalidatePath("/trips");
@@ -342,6 +356,80 @@ async function recomputeDayDates(
   }
 }
 
+/** Move every dated stay on a trip by `deltaDays` (both ends). Day-indexed
+ * (template) stays are relative already and need no shift. */
+async function shiftDatedStays(tx: Tx, tripId: string, deltaDays: number) {
+  const stays = await tx.stay.findMany({
+    where: { tripId, checkIn: { not: null }, checkOut: { not: null } },
+    select: { id: true, checkIn: true, checkOut: true },
+  });
+  for (const s of stays) {
+    if (!s.checkIn || !s.checkOut) continue;
+    await tx.stay.update({
+      where: { id: s.id },
+      data: shiftStayDates({ checkIn: s.checkIn, checkOut: s.checkOut }, deltaDays),
+    });
+  }
+}
+
+/**
+ * After day `deletedIndex` is removed (and later days renumber down), pull each
+ * stay's anchors down to match. Template stays shift by day index; dated stays
+ * are measured against `startDate`, shifted the same way, and written back as
+ * dates. A stay that covered ONLY the deleted night is left untouched (never
+ * silently dropped) — the count comes back so the caller can say so.
+ */
+async function shiftStaysForDeletedDay(
+  tx: Tx,
+  tripId: string,
+  deletedIndex: number,
+  startDate: Date | null,
+): Promise<number> {
+  const stays = await tx.stay.findMany({
+    where: { tripId },
+    select: {
+      id: true,
+      checkIn: true,
+      checkOut: true,
+      checkInDayIndex: true,
+      checkOutDayIndex: true,
+    },
+  });
+  let collapsed = 0;
+  for (const s of stays) {
+    const dated = s.checkIn != null && s.checkOut != null;
+    const range = dated
+      ? {
+          checkInDayIndex: dayIndexForDate(startDate, s.checkIn),
+          checkOutDayIndex: dayIndexForDate(startDate, s.checkOut),
+        }
+      : { checkInDayIndex: s.checkInDayIndex, checkOutDayIndex: s.checkOutDayIndex };
+    if (range.checkInDayIndex == null || range.checkOutDayIndex == null) continue;
+    const next = shiftStayIndicesForDeletedDay(
+      {
+        checkInDayIndex: range.checkInDayIndex,
+        checkOutDayIndex: range.checkOutDayIndex,
+      },
+      deletedIndex,
+    );
+    if (next.kind === "collapsed") collapsed++;
+    if (next.kind !== "shift") continue;
+    await tx.stay.update({
+      where: { id: s.id },
+      data: dated
+        ? {
+            checkIn: computeDayDate(startDate, next.checkInDayIndex),
+            checkOut: computeDayDate(startDate, next.checkOutDayIndex),
+          }
+        : {
+            checkInDayIndex: next.checkInDayIndex,
+            checkOutDayIndex: next.checkOutDayIndex,
+          },
+    });
+  }
+  return collapsed;
+}
+
 async function tripIdForDay(dayId: string): Promise<string | null> {
   const day = await prisma.itineraryDay.findUnique({
     where: { id: dayId },
@@ -380,17 +468,24 @@ export async function addDay(tripId: string): Promise<FormState> {
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
-    select: { startDate: true, _count: { select: { days: true } } },
+    select: { startDate: true },
   });
   if (!trip) return { error: "Trip not found." };
 
-  const dayIndex = trip._count.days + 1;
-  await prisma.itineraryDay.create({
-    data: {
-      tripId,
-      dayIndex,
-      date: computeDayDate(trip.startDate, dayIndex),
-    },
+  // Count + create in one txn so two concurrent adds can't both claim n+1.
+  // dayIndex has no unique constraint to catch a race, so lock the trip row
+  // first: a second addDay waits here until this one commits, then counts it.
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM "Trip" WHERE "id" = ${tripId} FOR UPDATE`;
+    const count = await tx.itineraryDay.count({ where: { tripId } });
+    const dayIndex = count + 1;
+    await tx.itineraryDay.create({
+      data: {
+        tripId,
+        dayIndex,
+        date: computeDayDate(trip.startDate, dayIndex),
+      },
+    });
   });
 
   revalidateTrip(tripId);
@@ -429,17 +524,33 @@ export async function deleteDay(dayId: string): Promise<FormState> {
   await assertRole("PLANNER");
   const day = await prisma.itineraryDay.findUnique({
     where: { id: dayId },
-    select: { tripId: true, trip: { select: { startDate: true } } },
+    select: {
+      tripId: true,
+      dayIndex: true,
+      trip: { select: { startDate: true } },
+    },
   });
   if (!day) return { error: "Day not found." };
 
-  await prisma.$transaction(async (tx) => {
+  const collapsed = await prisma.$transaction(async (tx) => {
     await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to items
     await recomputeDayDates(tx, day.tripId, day.trip.startDate);
+    // Later days just renumbered/redated down by one — pull lodging along.
+    return shiftStaysForDeletedDay(
+      tx,
+      day.tripId,
+      day.dayIndex,
+      day.trip.startDate,
+    );
   });
 
   revalidateTrip(day.tripId);
-  return { ok: true, message: "Day removed." };
+  return {
+    ok: true,
+    message: collapsed
+      ? `Day removed. ${collapsed} stay${collapsed === 1 ? "" : "s"} covered only that night — check Lodging.`
+      : "Day removed.",
+  };
 }
 
 export async function reorderDays(
@@ -449,14 +560,28 @@ export async function reorderDays(
   await assertRole("PLANNER");
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
-    select: { startDate: true },
+    select: { startDate: true, days: { select: { id: true } } },
   });
   if (!trip) return { error: "Trip not found." };
 
+  // The ids must be exactly this trip's days — no foreign ids (which would
+  // renumber another trip's days), no omissions, no duplicates.
+  const own = new Set(trip.days.map((d) => d.id));
+  if (
+    orderedDayIds.length !== own.size ||
+    new Set(orderedDayIds).size !== orderedDayIds.length ||
+    !orderedDayIds.every((id) => own.has(id))
+  ) {
+    return { error: "Day list is out of date — reload and try again." };
+  }
+
+  // Stays are left where they are: a drag-reorder has no unambiguous mapping
+  // for lodging (does the hotel follow the moved day or the night?), so the
+  // planner re-anchors them in the Lodging panel if needed.
   await prisma.$transaction(
     orderedDayIds.map((id, i) =>
       prisma.itineraryDay.update({
-        where: { id },
+        where: { id, tripId },
         data: { dayIndex: i + 1, date: computeDayDate(trip.startDate, i + 1) },
       }),
     ),
@@ -914,6 +1039,21 @@ export async function addBooking(
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
+  // Item bookings are for SITE-LESS items only (a coach, a label-only
+  // reservation, a travel leg). A venue item is covered by its (trip, location)
+  // engagement — a per-item booking there would double-count the venue.
+  const item = await prisma.scheduleItem.findUnique({
+    where: { id: itemId },
+    select: { _count: { select: { sites: true } } },
+  });
+  if (!item) return { error: "Item not found." };
+  if (item._count.sites > 0) {
+    return {
+      error:
+        "This item is at a venue — book it on the venue engagement (Bookings page), not per item.",
+    };
+  }
+
   await prisma.booking.create({
     data: { scheduleItemId: itemId, ...toBookingScalars(parsed.data) },
   });
@@ -1022,14 +1162,24 @@ export async function upsertVenueBooking(
   if (notBookable) return { error: notBookable };
 
   const scalars = { ...toBookingScalars(parsed.data), locationId };
+  // Status is owned by the one-click control (setVenueBookingStatus). The
+  // details form submits the status it rendered with, which can be stale by
+  // the time it saves — so on UPDATE never write it, or a just-made quick
+  // status change would be silently reverted. On CREATE it seeds the row.
+  const { status, ...detailScalars } = scalars;
   // Nested create only fires on the create branch of the upsert (an existing
   // engagement's schedule is left untouched), so seeding the location default
   // here is safe even when this call ends up updating.
   const schedule = await seedScheduleFromLocation(locationId);
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, ...scalars, ...(schedule ? { paymentSchedule: schedule } : {}) },
-    update: scalars,
+    create: {
+      tripId,
+      ...detailScalars,
+      status,
+      ...(schedule ? { paymentSchedule: schedule } : {}),
+    },
+    update: detailScalars,
   });
 
   revalidateTrip(tripId);
@@ -1464,7 +1614,9 @@ export async function deleteStay(stayId: string): Promise<FormState> {
   const tripId = await tripIdForStay(stayId);
   if (!tripId) return { error: "Stay not found." };
 
-  await prisma.stay.delete({ where: { id: stayId } }); // cascades to its booking
+  // A stay has no booking of its own (its booking state is the venue
+  // engagement); deleting it cascades only its documents and notes.
+  await prisma.stay.delete({ where: { id: stayId } });
   revalidateTrip(tripId);
   return { ok: true, message: "Stay removed." };
 }

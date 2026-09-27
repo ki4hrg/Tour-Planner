@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCalendarDate } from "./date";
 
 const optionalTime = z.preprocess(
   (v) => (v === "" || v == null ? undefined : v),
@@ -75,7 +76,13 @@ export const staySchema = z
       return;
     }
 
-    // Absolute-date (dated trip) mode — the default.
+    // Absolute-date (dated trip) mode — the default. The dates must be real
+    // calendar days: "2026-02-31" would otherwise roll over silently and a
+    // malformed one parses to null (→ a stay_anchor_mode CHECK violation).
+    if (d.checkIn && !isCalendarDate(d.checkIn))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Check-in isn't a valid date.", path: ["checkIn"] });
+    if (d.checkOut && !isCalendarDate(d.checkOut))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Check-out isn't a valid date.", path: ["checkOut"] });
     if (!d.checkIn)
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Check-in date is required.", path: ["checkIn"] });
     if (!d.checkOut)

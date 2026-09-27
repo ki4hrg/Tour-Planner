@@ -12,14 +12,18 @@ import type { Prisma, ShareAudience } from "@prisma/client";
  *
  * A HOST_SITE link is scoped to one venue, so it narrows to that venue's own
  * documents, the engagement for it, stays there, and trip-level documents. Its
- * own venue files ARE included: they are the host's own paperwork.
+ * own venue files ARE included: they are the host's own paperwork. A HOST_SITE
+ * link with no venue (its location was deleted) reaches nothing.
  */
 export function shareableDocumentWhere(
   tripId: string,
   audience: ShareAudience,
   scopedLocationId: string | null,
 ): Prisma.DocumentWhereInput {
-  if (audience === "HOST_SITE" && scopedLocationId) {
+  if (audience === "HOST_SITE") {
+    // A host-site link whose venue was deleted (FK SET NULL) must fail closed —
+    // never widen to the whole trip. `id IN ()` matches nothing.
+    if (!scopedLocationId) return { id: { in: [] } };
     return {
       OR: [
         { locationId: scopedLocationId },

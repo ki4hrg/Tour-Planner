@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { todayUtc } from "@/lib/dates";
-import { isShareLinkActive } from "@/lib/share";
+import { isOrphanedScopedLink, isShareLinkActive } from "@/lib/share";
 import {
   documentResponse,
   isInlineViewable,
@@ -37,7 +37,11 @@ export async function GET(
       expiresAt: true,
     },
   });
-  if (!link || !isShareLinkActive(link, todayUtc())) {
+  if (
+    !link ||
+    !isShareLinkActive(link, todayUtc()) ||
+    isOrphanedScopedLink(link.audience, link.locationId)
+  ) {
     return new Response("Not found", { status: 404 });
   }
 

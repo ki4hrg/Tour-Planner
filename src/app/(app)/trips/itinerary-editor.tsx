@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -473,6 +474,7 @@ function DayCard({
             {day.items.map((item, si) => (
               <ItemRow
                 key={item.id}
+                tripId={day.tripId}
                 item={item}
                 index={si}
                 total={day.items.length}
@@ -699,6 +701,7 @@ function Marker({ item }: { item: SerializedScheduleItem }) {
 }
 
 function ItemRow({
+  tripId,
   item,
   index,
   total,
@@ -712,6 +715,7 @@ function ItemRow({
   onCreateContact,
   onCreatePresentation,
 }: {
+  tripId: string;
   item: SerializedScheduleItem;
   index: number;
   total: number;
@@ -780,7 +784,14 @@ function ItemRow({
                   onCancel={() => setEditing(false)}
                 />
               )}
-              <BookingsPanel item={item} contacts={contacts} />
+              {/* Item bookings are only for site-less items (a coach, a
+                  label-only reservation, a travel leg). A venue item is
+                  covered by its (trip, location) engagement — point there. */}
+              {item.sites.length === 0 ? (
+                <BookingsPanel item={item} contacts={contacts} />
+              ) : (
+                <VenueEngagementNote tripId={tripId} item={item} />
+              )}
             </div>
           ) : (
             <>
@@ -1798,8 +1809,49 @@ function TravelFields({
   );
 }
 
-// Booking management for a persisted item. Bookings save immediately via their
-// own actions (independent of the item's Save).
+// A venue item's booking lives on the (trip, location) engagement, not the item.
+// Link to it per member location; any legacy per-item bookings still show
+// (read-only) so old data isn't hidden.
+function VenueEngagementNote({
+  tripId,
+  item,
+}: {
+  tripId: string;
+  item: SerializedScheduleItem;
+}) {
+  const many = item.sites.length > 1;
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <ul className="space-y-1 text-xs">
+        {item.sites.map((s) => (
+          <li key={s.id}>
+            <Link
+              href={`/trips/${tripId}/booking?venue=${encodeURIComponent(s.locationId)}`}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {many ? `${s.location.name} booking` : "Booking"}: managed on the
+              venue engagement →
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {item.bookings.length > 0 ? (
+        <div className="space-y-1">
+          <Label className="text-xs">Legacy item bookings</Label>
+          {item.bookings.map((b) => (
+            <div key={b.id} className="rounded border px-2 py-1.5">
+              <BookingPill booking={b} item={item} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Booking management for a persisted SITE-LESS item (coach, label-only
+// reservation, travel leg). Bookings save immediately via their own actions
+// (independent of the item's Save).
 function BookingsPanel({
   item,
   contacts,
@@ -1869,7 +1921,14 @@ function BookingsPanel({
                 variant="ghost"
                 size="sm"
                 className="text-destructive"
-                onClick={() => run(() => deleteBooking(b.id))}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Delete this booking? Its payments, payment schedule, documents and notes are deleted with it.",
+                    )
+                  )
+                    run(() => deleteBooking(b.id));
+                }}
               >
                 Delete
               </Button>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addUnits,
   resolveSchedule,
   scheduleAttention,
   describeCadence,
@@ -195,5 +196,26 @@ describe("describeCadence", () => {
     expect(describeCadence({ anchor: "NONE", offsetValue: null, offsetUnit: null })).toBe(
       "no set deadline",
     );
+  });
+});
+
+describe("addUnits (MONTH clamps to the target month's last day)", () => {
+  it("1 month before May 31 is Apr 30, not May 1", () => {
+    expect(addUnits(utc("2026-05-31"), -1, "MONTH")).toEqual(utc("2026-04-30"));
+  });
+
+  it("Jan 31 + 1 month is the end of February (leap-aware)", () => {
+    expect(addUnits(utc("2026-01-31"), 1, "MONTH")).toEqual(utc("2026-02-28"));
+    expect(addUnits(utc("2024-01-31"), 1, "MONTH")).toEqual(utc("2024-02-29"));
+  });
+
+  it("crosses year boundaries and keeps in-range days as-is", () => {
+    expect(addUnits(utc("2026-03-15"), -3, "MONTH")).toEqual(utc("2025-12-15"));
+    expect(addUnits(utc("2026-11-30"), 3, "MONTH")).toEqual(utc("2027-02-28"));
+  });
+
+  it("keeps the time of day on a timestamped anchor", () => {
+    const at = new Date("2026-03-31T14:25:00.000Z");
+    expect(addUnits(at, -1, "MONTH")).toEqual(new Date("2026-02-28T14:25:00.000Z"));
   });
 });

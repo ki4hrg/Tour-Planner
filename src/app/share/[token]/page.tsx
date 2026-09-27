@@ -5,6 +5,7 @@ import { formatDate, todayUtc } from "@/lib/dates";
 import { serializeDay, summarizeDayLodging, TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 import {
   audienceView,
+  isOrphanedScopedLink,
   isShareLinkActive,
   redactDaysForShare,
   scopeDaysToLocation,
@@ -87,6 +88,14 @@ export default async function SharePage({
   if (!isShareLinkActive(link, todayUtc())) {
     return (
       <Unavailable message="This link has been disabled or has expired. Ask the trip organiser for a current link." />
+    );
+  }
+
+  // A host-site link whose venue was deleted (locationId SET NULL) must fail
+  // closed — a null scope would otherwise read as "whole trip".
+  if (isOrphanedScopedLink(link.audience, link.locationId)) {
+    return (
+      <Unavailable message="The venue this link was for no longer exists. Ask the trip organiser for a current link." />
     );
   }
 
