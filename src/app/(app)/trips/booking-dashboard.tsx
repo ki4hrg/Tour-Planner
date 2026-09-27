@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -49,6 +49,7 @@ export function BookingDashboard({
   contacts,
   currencies,
   documentsByBooking,
+  focusLocationId = null,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -60,15 +61,30 @@ export function BookingDashboard({
   // Files filed against each booking, keyed by booking id. A venue with no
   // engagement yet has no id and so no files — it gets an empty list.
   documentsByBooking: Record<string, SerializedDocument[]>;
+  // Deep link (`?venue=<locationId>`) from the trip page: start with every row
+  // visible and that venue expanded + scrolled into view.
+  focusLocationId?: string | null;
 }) {
   const docsFor = (bookingId: string | null) =>
     (bookingId && documentsByBooking[bookingId]) || [];
+  const focused = focusLocationId != null &&
+    venueRows.some((r) => r.locationId === focusLocationId);
   const [filters, setFilters] = useState<Filters>({
-    windowOpen: true,
-    missingPrice: true,
-    unconfirmed: true,
-    paymentOverdue: true,
+    windowOpen: !focused,
+    missingPrice: !focused,
+    unconfirmed: !focused,
+    paymentOverdue: !focused,
   });
+
+  useEffect(() => {
+    if (!focused) return;
+    // Table on desktop, card below sm — scroll whichever one is visible.
+    const el = [
+      document.getElementById(`venue-${focusLocationId}`),
+      document.getElementById(`venue-card-${focusLocationId}`),
+    ].find((e) => e && e.offsetParent !== null);
+    el?.scrollIntoView({ block: "start" });
+  }, [focused, focusLocationId]);
   const anyFilter = Object.values(filters).some(Boolean);
 
   // No filter checked = show everything; otherwise show rows matching any filter.
@@ -141,6 +157,7 @@ export function BookingDashboard({
                     contacts={contacts}
                     currencies={currencies}
                     documents={docsFor(row.bookingId)}
+                    defaultOpen={row.locationId === focusLocationId}
                   />
                 ))}
                 {shownItems.map((row) => (
@@ -165,6 +182,7 @@ export function BookingDashboard({
                 contacts={contacts}
                 currencies={currencies}
                 documents={docsFor(row.bookingId)}
+                defaultOpen={row.locationId === focusLocationId}
               />
             ))}
             {shownItems.map((row) => (

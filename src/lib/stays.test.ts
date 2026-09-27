@@ -5,6 +5,7 @@ import {
   rollUpStays,
   lodgingByNight,
   lodgingForDays,
+  lodgingCoverage,
 } from "./stays";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -25,6 +26,18 @@ describe("stayTotal", () => {
       stayTotal({
         checkIn: d("2026-07-06"),
         checkOut: d("2026-07-08"),
+        headcount: 10,
+        costPerPersonPerNight: 50,
+      }),
+    ).toBe(1000);
+  });
+  it("counts template stays by day number", () => {
+    expect(
+      stayTotal({
+        checkIn: null,
+        checkOut: null,
+        checkInDayIndex: 2,
+        checkOutDayIndex: 4,
         headcount: 10,
         costPerPersonPerNight: 50,
       }),
@@ -135,5 +148,38 @@ describe("lodgingForDays", () => {
     const days = [{ id: "d2", date: null, dayIndex: 2 }];
     const out = lodgingForDays(days, [baseStay, excursion]);
     expect(out.get("d2")?.id).toBe("exc");
+  });
+});
+
+describe("lodgingCoverage", () => {
+  it("has one entry per night (the departure day has none), flagging gaps + overlaps", () => {
+    const days = [
+      { id: "d1", date: d("2026-07-06") },
+      { id: "d2", date: d("2026-07-07") },
+      { id: "d3", date: d("2026-07-08") },
+      { id: "d4", date: d("2026-07-09") }, // departure — no night
+    ];
+    const base = { id: "base", checkIn: d("2026-07-06"), checkOut: d("2026-07-08"), priority: 0 };
+    const excursion = { id: "exc", checkIn: d("2026-07-07"), checkOut: d("2026-07-08"), priority: 0 };
+    const out = lodgingCoverage(days, [base, excursion]);
+    expect(out.map((n) => n.dayId)).toEqual(["d1", "d2", "d3"]);
+    expect(out.map((n) => n.stay?.id ?? null)).toEqual(["base", "exc", null]);
+    expect(out.map((n) => n.covering)).toEqual([1, 2, 0]);
+  });
+
+  it("matches date-less template days by day index", () => {
+    const days = [
+      { id: "t1", date: null, dayIndex: 1 },
+      { id: "t2", date: null, dayIndex: 2 },
+      { id: "t3", date: null, dayIndex: 3 },
+    ];
+    const stay = { id: "s", checkIn: null, checkOut: null, checkInDayIndex: 1, checkOutDayIndex: 2 };
+    const out = lodgingCoverage(days, [stay]);
+    expect(out.map((n) => n.stay?.id ?? null)).toEqual(["s", null]);
+  });
+
+  it("is empty for a one-day (or empty) trip", () => {
+    expect(lodgingCoverage([{ id: "x", date: d("2026-07-06") }], [])).toEqual([]);
+    expect(lodgingCoverage([], [])).toEqual([]);
   });
 });

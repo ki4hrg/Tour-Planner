@@ -30,7 +30,7 @@ import {
   formatFileSize,
   serializeDocument,
 } from "@/lib/documents";
-import { rollUpStays } from "@/lib/stays";
+import { lodgingCoverage, rollUpStays } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import {
   resolveSchedule,
@@ -39,7 +39,8 @@ import {
 } from "@/lib/payment-schedule";
 import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
-import { LodgingManager } from "../lodging-manager";
+import { LodgingManager, type SuggestedStaySpan } from "../lodging-manager";
+import { LodgingNights, nightLabel, type NightCell } from "../lodging-nights";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
@@ -54,6 +55,13 @@ import {
 } from "../actions";
 
 export const dynamic = "force-dynamic";
+
+// Booking dashboard link, opened on one venue's engagement when there is one.
+function venueBookingHref(tripId: string, locationId: string | null): string {
+  return locationId
+    ? `/trips/${tripId}/booking?venue=${locationId}`
+    : `/trips/${tripId}/booking`;
+}
 
 export default async function TripOverviewPage({
   params,
@@ -151,7 +159,12 @@ export default async function TripOverviewPage({
   // Lodging (Stay) data — feeds the cost estimate and the Lodging section.
   const stays = await prisma.stay.findMany({
     where: { tripId: id },
-    orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
+    // Chronological: dated stays by check-in, template stays by check-in day.
+    orderBy: [
+      { checkIn: { sort: "asc", nulls: "last" } },
+      { checkInDayIndex: { sort: "asc", nulls: "last" } },
+      { priority: "desc" },
+    ],
     include: {
       location: { select: { id: true, name: true } },
     },
@@ -205,6 +218,8 @@ export default async function TripOverviewPage({
     stays.map((s) => ({
       checkIn: s.checkIn,
       checkOut: s.checkOut,
+      checkInDayIndex: s.checkInDayIndex,
+      checkOutDayIndex: s.checkOutDayIndex,
       headcount: s.headcount,
       costPerPersonPerNight:
         s.costPerPersonPerNight == null
@@ -213,6 +228,44 @@ export default async function TripOverviewPage({
       currency: s.currency,
     })),
   );
+
+  // Night-by-night lodging coverage for the Lodging card, plus the first run of
+  // uncovered nights so "+ Add stay" can pre-fill it.
+  const coverage = lodgingCoverage(trip.days, stays);
+  const nightCells: NightCell[] = coverage.map((n, i) => ({
+    dayId: n.dayId,
+    label: nightLabel(trip.days[i].date, trip.days[i].dayIndex),
+    stayId: n.stay?.id ?? null,
+    venue: n.stay?.location.name ?? null,
+    status: n.stay
+      ? (bookingByLocation.get(n.stay.locationId)?.status ?? null)
+      : null,
+    covering: n.covering,
+  }));
+  let suggestedSpan: SuggestedStaySpan | null = null;
+  const gapStart = coverage.findIndex((n) => !n.stay);
+  if (gapStart >= 0) {
+    let gapEnd = gapStart;
+    while (gapEnd + 1 < coverage.length && !coverage[gapEnd + 1].stay) gapEnd++;
+    // Nights exclude the departure day, so day gapEnd + 1 always exists.
+    const inDay = trip.days[gapStart];
+    const outDay = trip.days[gapEnd + 1];
+    if (trip.isTemplate) {
+      suggestedSpan = {
+        checkIn: null,
+        checkOut: null,
+        checkInDayIndex: inDay.dayIndex,
+        checkOutDayIndex: outDay.dayIndex,
+      };
+    } else if (inDay.date && outDay.date) {
+      suggestedSpan = {
+        checkIn: toDateInput(inDay.date),
+        checkOut: toDateInput(outDay.date),
+        checkInDayIndex: null,
+        checkOutDayIndex: null,
+      };
+    }
+  }
   const lodgingByCurrency = new Map(stayRollups.map((r) => [r.currency, r.total]));
   // Unified per-currency estimate = visited-location costs + lodging.
   const estimate = [
@@ -239,6 +292,8 @@ export default async function TripOverviewPage({
   >();
   const moneyAttention: {
     venue: string;
+    // Deep link to this engagement's row on the booking dashboard.
+    href: string;
     currency: string;
     amount: number;
     dueDate: string;
@@ -270,10 +325,12 @@ export default async function TripOverviewPage({
       },
     );
     const venue = b.location?.name ?? b.label ?? "Booking";
+    const href = venueBookingHref(id, b.locationId);
     for (const inst of resolved) {
       if (inst.state === "overdue" && inst.outstanding && inst.dueDate) {
         moneyAttention.push({
           venue,
+          href,
           currency: b.agreedCurrency,
           amount: inst.outstanding,
           dueDate: inst.dueDate,
@@ -285,6 +342,7 @@ export default async function TripOverviewPage({
     if (nextDue?.dueDate && nextDue.outstanding) {
       moneyAttention.push({
         venue,
+        href,
         currency: b.agreedCurrency,
         amount: nextDue.outstanding,
         dueDate: nextDue.dueDate,
@@ -386,6 +444,7 @@ export default async function TripOverviewPage({
             if (!unpaid && !openStatus) return null;
             return {
               id: b.id,
+              href: venueBookingHref(id, b.locationId),
               name: b.location?.name ?? b.label ?? "Booking",
               status: b.status,
               unpaid,
@@ -461,8 +520,9 @@ export default async function TripOverviewPage({
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Itinerary — right 2/3 on desktop, below the details on mobile. */}
-        <div className="order-2 min-w-0 lg:col-span-2">
+        {/* The trip's working surface — itinerary, where everyone sleeps, and
+            its paperwork. Right 2/3 on desktop, first on mobile. */}
+        <div className="min-w-0 space-y-6 lg:order-2 lg:col-span-2">
           <ItineraryOverview
             tripId={trip.id}
             canEdit={canEdit}
@@ -470,10 +530,84 @@ export default async function TripOverviewPage({
             lodgingByDay={summarizeDayLodging(trip.days, stays)}
             currentDayId={currentDayId}
           />
+
+          <Card id="lodging">
+            <CardHeader>
+              <CardTitle className="text-base">Lodging</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <LodgingNights nights={nightCells} />
+              <LodgingManager
+                tripId={trip.id}
+                canEdit={canEdit}
+                isTemplate={trip.isTemplate}
+                dayCount={trip.days.length}
+                currencies={trip.currencies}
+                locations={lodgingLocations.map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                  region: l.region?.name ?? null,
+                }))}
+                stays={stays.map((s) =>
+                  serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
+                )}
+                documentsByStay={documentsByStay}
+                suggestedSpan={canEdit ? suggestedSpan : null}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <DocumentsPanel
+                target="trip"
+                targetId={trip.id}
+                documents={trip.documents.map(serializeDocument)}
+                canEdit={canEdit}
+                emptyLabel="No trip-level files yet — printable itineraries and rosters go here."
+              />
+
+              {bookingDocuments.length > 0 ? (
+                <div className="space-y-1 border-t pt-3">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Filed on this trip&apos;s bookings
+                  </p>
+                  <ul className="space-y-1 text-sm">
+                    {bookingDocuments.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex items-baseline justify-between gap-2"
+                      >
+                        <a
+                          href={documentHref(doc.id)}
+                          className="truncate hover:underline"
+                        >
+                          {doc.title}
+                        </a>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {doc.booking?.location?.name ?? doc.booking?.label}{" "}
+                          · {formatFileSize(doc.size)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href={`/trips/${trip.id}/booking`}
+                    className="text-xs text-muted-foreground hover:underline"
+                  >
+                    Manage on the booking dashboard →
+                  </Link>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Trip meta — leads on mobile, left 1/3 on desktop. */}
-        <div className="order-1 min-w-0 space-y-6 lg:col-span-1">
+        {/* Trip meta — left 1/3 on desktop, after the working surface on mobile. */}
+        <div className="min-w-0 space-y-6 lg:order-1 lg:col-span-1">
           {wrapUp ? (
             <Card className="border-amber-300 dark:border-amber-800">
               <CardHeader>
@@ -513,7 +647,7 @@ export default async function TripOverviewPage({
                       {wrapUp.openEngagements.map((e) => (
                         <li key={e.id}>
                           <Link
-                            href={`/trips/${trip.id}/booking`}
+                            href={e.href}
                             className="font-medium hover:underline"
                           >
                             {e.name}
@@ -796,7 +930,11 @@ export default async function TripOverviewPage({
                             {formatMoney(a.amount, a.currency)}
                           </span>{" "}
                           <span className="text-muted-foreground">
-                            — {a.venue} · {a.overdue ? "was due" : "due"}{" "}
+                            —{" "}
+                            <Link href={a.href} className="hover:underline">
+                              {a.venue}
+                            </Link>{" "}
+                            · {a.overdue ? "was due" : "due"}{" "}
                             {formatDate(a.dueDate)}
                           </span>
                         </li>
@@ -807,78 +945,6 @@ export default async function TripOverviewPage({
               </CardContent>
             </Card>
           ) : null}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Lodging</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LodgingManager
-                tripId={trip.id}
-                canEdit={canEdit}
-                isTemplate={trip.isTemplate}
-                dayCount={trip.days.length}
-                currencies={trip.currencies}
-                locations={lodgingLocations.map((l) => ({
-                  id: l.id,
-                  name: l.name,
-                  region: l.region?.name ?? null,
-                }))}
-                stays={stays.map((s) =>
-                  serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
-                )}
-                documentsByStay={documentsByStay}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Documents</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <DocumentsPanel
-                target="trip"
-                targetId={trip.id}
-                documents={trip.documents.map(serializeDocument)}
-                canEdit={canEdit}
-                emptyLabel="No trip-level files yet — printable itineraries and rosters go here."
-              />
-
-              {bookingDocuments.length > 0 ? (
-                <div className="space-y-1 border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Filed on this trip&apos;s bookings
-                  </p>
-                  <ul className="space-y-1 text-sm">
-                    {bookingDocuments.map((doc) => (
-                      <li
-                        key={doc.id}
-                        className="flex items-baseline justify-between gap-2"
-                      >
-                        <a
-                          href={documentHref(doc.id)}
-                          className="truncate hover:underline"
-                        >
-                          {doc.title}
-                        </a>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {doc.booking?.location?.name ?? doc.booking?.label}{" "}
-                          · {formatFileSize(doc.size)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href={`/trips/${trip.id}/booking`}
-                    className="text-xs text-muted-foreground hover:underline"
-                  >
-                    Manage on the booking dashboard →
-                  </Link>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
 
           {todoistConnected ? (
             <Card>

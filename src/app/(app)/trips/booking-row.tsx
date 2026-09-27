@@ -220,6 +220,9 @@ function VenueDetails({
   const save = () =>
     run(() =>
       upsertVenueBooking(tripId, row.locationId, {
+        // Only used if this save CREATES the engagement; on update the server
+        // ignores status (the quick status control owns it), so a stale
+        // render-time value here can't clobber a just-made status change.
         status: row.status,
         label: label.trim() || undefined,
         bookedContactId: contactId === NONE ? undefined : contactId,
@@ -830,6 +833,7 @@ export function VenueRow({
   contacts,
   currencies,
   documents,
+  defaultOpen = false,
 }: {
   row: VenueBookingRow;
   tripId: string;
@@ -837,16 +841,21 @@ export function VenueRow({
   contacts: ContactOption[];
   currencies: string[];
   documents: SerializedDocument[];
+  // Deep-linked (`?venue=`) rows start expanded.
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const coverage = coverageLine(row);
 
   return (
     <>
       <TableRow
+        id={`venue-${row.locationId}`}
         className={cn(
+          "scroll-mt-20",
           row.needsInfo && "bg-amber-50 dark:bg-amber-950/40",
           !row.bookable && "text-muted-foreground",
+          defaultOpen && "ring-2 ring-primary/40 ring-inset",
         )}
       >
         <TableCell>
@@ -931,6 +940,7 @@ export function VenueCard({
   contacts,
   currencies,
   documents,
+  defaultOpen = false,
 }: {
   row: VenueBookingRow;
   tripId: string;
@@ -938,15 +948,19 @@ export function VenueCard({
   contacts: ContactOption[];
   currencies: string[];
   documents: SerializedDocument[];
+  // Deep-linked (`?venue=`) rows start expanded.
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const coverage = coverageLine(row);
 
   return (
     <div
+      id={`venue-card-${row.locationId}`}
       className={cn(
-        "rounded-lg border p-3",
+        "scroll-mt-20 rounded-lg border p-3",
         row.needsInfo && "bg-amber-50 dark:bg-amber-950/40",
+        defaultOpen && "ring-2 ring-primary/40",
       )}
     >
       <div className="flex items-start justify-between gap-2">

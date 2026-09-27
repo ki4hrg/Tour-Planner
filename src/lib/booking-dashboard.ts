@@ -22,7 +22,7 @@ import {
   type SerializedPayment,
 } from "./money";
 import { scheduleItemPrimaryLabel } from "./trips";
-import { nightsBetween } from "./stays";
+import { stayNights } from "./stays";
 
 // Serialized, client-safe rows for the booking dashboard. A "venue" row is the
 // single engagement for a (trip, location) — it auto-covers every schedule item the
@@ -145,7 +145,13 @@ type EngagementInput = {
 
 // checkIn/checkOut are null on a date-less template stay (day-relative anchors);
 // such a stay adds 0 nights and no dates to the engagement below.
-type StayInput = { locationId: string; checkIn: Date | null; checkOut: Date | null };
+type StayInput = {
+  locationId: string;
+  checkIn: Date | null;
+  checkOut: Date | null;
+  checkInDayIndex?: number | null;
+  checkOutDayIndex?: number | null;
+};
 
 type LocationInput = {
   id: string;
@@ -231,7 +237,7 @@ export function buildDashboardRows(data: DashboardData): {
   // Stays: lodging at a location folds into that venue's engagement.
   for (const stay of data.stays) {
     const v = ensure(stay.locationId);
-    v.nights += nightsBetween(stay.checkIn, stay.checkOut);
+    v.nights += stayNights(stay);
     if (stay.checkIn) v.dates.push(stay.checkIn);
   }
 

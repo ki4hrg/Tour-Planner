@@ -12,12 +12,15 @@ export const dynamic = "force-dynamic";
 
 export default async function BookingDashboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ venue?: string }>;
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
   const { id } = await params;
+  const { venue } = await searchParams;
 
   const trip = await prisma.trip.findUnique({
     where: { id },
@@ -86,7 +89,13 @@ export default async function BookingDashboardPage({
         },
       },
       stays: {
-        select: { locationId: true, checkIn: true, checkOut: true },
+        select: {
+          locationId: true,
+          checkIn: true,
+          checkOut: true,
+          checkInDayIndex: true,
+          checkOutDayIndex: true,
+        },
       },
     },
   });
@@ -175,6 +184,7 @@ export default async function BookingDashboardPage({
             contacts={contacts}
             currencies={trip.currencies}
             documentsByBooking={documentsByBooking}
+            focusLocationId={venue ?? null}
           />
         </CardContent>
       </Card>

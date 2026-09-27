@@ -5,10 +5,11 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type StayLike = {
-  // Null on a date-less template stay (day-relative anchors instead); such a stay
-  // has no calendar position, so it contributes 0 nights / 0 cost here.
+  // Null on a date-less template stay, which anchors by day number instead.
   checkIn: Date | null;
   checkOut: Date | null;
+  checkInDayIndex?: number | null;
+  checkOutDayIndex?: number | null;
   headcount?: number | null;
   costPerPersonPerNight?: number | null;
   currency?: string;
@@ -27,12 +28,20 @@ export function nightsBetween(
   return n > 0 ? n : 0;
 }
 
+/** Nights a stay spans in either anchor mode: calendar dates on a dated trip,
+ * day numbers on a date-less template (Day 2 → Day 4 is 2 nights). */
+export function stayNights(stay: StayLike): number {
+  if (stay.checkInDayIndex != null && stay.checkOutDayIndex != null)
+    return Math.max(0, stay.checkOutDayIndex - stay.checkInDayIndex);
+  return nightsBetween(stay.checkIn, stay.checkOut);
+}
+
 /** Cost of a whole stay = perPersonPerNight × headcount × nights. Any missing
  * factor → 0 (the estimate simply doesn't count it). */
 export function stayTotal(stay: StayLike): number {
   const perNight = stay.costPerPersonPerNight ?? 0;
   const heads = stay.headcount ?? 0;
-  return perNight * heads * nightsBetween(stay.checkIn, stay.checkOut);
+  return perNight * heads * stayNights(stay);
 }
 
 export type StayCurrencyTotal = { currency: string; total: number };
@@ -162,4 +171,41 @@ export function lodgingForDays<
 
   for (const d of days) if (!map.has(d.id)) map.set(d.id, null);
   return map;
+}
+
+export type NightCoverage<S> = {
+  dayId: string;
+  // The stay the group sleeps in (same pick as `lodgingForDays`), null = uncovered.
+  stay: S | null;
+  // How many stays cover this night. >1 is legitimate (a held base room plus an
+  // excursion) but worth surfacing so a planner can confirm it's intentional.
+  covering: number;
+};
+
+/**
+ * Night-by-night lodging coverage for the trip overview's Nights strip. The last
+ * itinerary day is the departure day and has no night, so N days → N-1 nights.
+ * Dated days match by calendar night, date-less template days by day index —
+ * the same rules as `lodgingForDays`.
+ */
+export function lodgingCoverage<
+  D extends { id: string; date: Date | null; dayIndex?: number },
+  S extends {
+    checkIn: Date | null;
+    checkOut: Date | null;
+    checkInDayIndex?: number | null;
+    checkOutDayIndex?: number | null;
+    priority?: number;
+  },
+>(days: D[], stays: S[]): NightCoverage<S>[] {
+  const picks = lodgingForDays(days, stays);
+  return days.slice(0, -1).map((d) => ({
+    dayId: d.id,
+    stay: picks.get(d.id) ?? null,
+    covering: stays.filter((s) =>
+      d.date != null
+        ? covers(s, d.date)
+        : d.dayIndex != null && coversDayIndex(s, d.dayIndex),
+    ).length,
+  }));
 }

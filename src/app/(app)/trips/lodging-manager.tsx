@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,21 +13,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import Link from "next/link";
-import {
-  BOOKING_STATUS_LABELS,
-  BOOKING_STATUS_CLASSES,
-  type SerializedStay,
-  type SerializedBooking,
-} from "@/lib/trips";
-import { nightsBetween, stayTotal } from "@/lib/stays";
+import type { SerializedStay } from "@/lib/trips";
+import { stayNights, stayTotal } from "@/lib/stays";
 import { currencyOptions } from "@/lib/money";
+import type { SerializedDocument } from "@/lib/documents";
+import { DocumentsPanel } from "../documents/documents-panel";
+import { StatusControl } from "./status-control";
 import {
   addStay,
   updateStay,
   deleteStay,
+  setVenueBookingStatus,
   type StayInputData,
 } from "./actions";
 
@@ -35,10 +33,14 @@ const NONE = "__none__";
 
 type Location = { id: string; name: string; region: string | null };
 
-// Run a FormState-returning action, surfacing the result as a toast.
-import type { SerializedDocument } from "@/lib/documents";
-import { DocumentsPanel } from "../documents/documents-panel";
+// Pre-fill for "+ Add stay": the first run of uncovered nights, in whichever
+// anchor mode the trip uses.
+export type SuggestedStaySpan = Pick<
+  SerializedStay,
+  "checkIn" | "checkOut" | "checkInDayIndex" | "checkOutDayIndex"
+>;
 
+// Run a FormState-returning action, surfacing the result as a toast.
 function useAction() {
   const [pending, start] = useTransition();
   const run = (fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>, onOk?: () => void) =>
@@ -58,10 +60,11 @@ export function LodgingManager({
   canEdit,
   isTemplate,
   dayCount,
-  locations: initialLocations,
+  locations,
   stays,
   currencies,
   documentsByStay,
+  suggestedSpan = null,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -77,12 +80,8 @@ export function LodgingManager({
   // The lodging CONTRACT belongs to the venue engagement, not here — a stay has
   // no booking of its own (see the booking dashboard).
   documentsByStay: Record<string, SerializedDocument[]>;
+  suggestedSpan?: SuggestedStaySpan | null;
 }) {
-  const locations = useMemo(
-    () => initialLocations.sort((a, b) => a.name.localeCompare(b.name)),
-    [initialLocations],
-  );
-
   const { pending, run } = useAction();
   const [adding, setAdding] = useState(false);
 
@@ -116,7 +115,18 @@ export function LodgingManager({
         ) : adding ? (
           <div className="rounded-md border border-dashed p-3">
             <p className="mb-2 text-sm font-medium">Add a stay</p>
+            {locations.length === 0 ? (
+              <p className="mb-2 text-xs text-muted-foreground">
+                No lodging venues yet. Only locations whose host-site profile
+                is marked &ldquo;provides lodging&rdquo; can be picked —{" "}
+                <Link href="/locations" className="underline">
+                  set one up in Locations
+                </Link>
+                .
+              </p>
+            ) : null}
             <StayFields
+              defaults={suggestedSpan ?? undefined}
               locations={locations}
               isTemplate={isTemplate}
               dayCount={dayCount}
@@ -138,7 +148,7 @@ export function LodgingManager({
             disabled={pending}
             onClick={() => setAdding(true)}
           >
-            + Add stay
+            {suggestedSpan ? "+ Add stay for the uncovered nights" : "+ Add stay"}
           </Button>
         )
       ) : null}
@@ -178,24 +188,16 @@ function StayRow({
   const checkOutDate = stay.checkOut
     ? new Date(`${stay.checkOut}T00:00:00.000Z`)
     : null;
-  const nights = dayRelative
-    ? Math.max(0, (stay.checkOutDayIndex ?? 0) - (stay.checkInDayIndex ?? 0))
-    : nightsBetween(checkInDate, checkOutDate);
-  const total = dayRelative
-    ? (stay.costPerPersonPerNight ?? 0) * (stay.headcount ?? 0) * nights
-    : stayTotal({
-        checkIn: checkInDate,
-        checkOut: checkOutDate,
-        headcount: stay.headcount,
-        costPerPersonPerNight: stay.costPerPersonPerNight,
-      });
+  const span = { ...stay, checkIn: checkInDate, checkOut: checkOutDate };
+  const nights = stayNights(span);
+  const total = stayTotal(span);
 
   const dateSpan = dayRelative
     ? `Day ${stay.checkInDayIndex} → Day ${stay.checkOutDayIndex}`
     : `${formatDate(checkInDate)}–${formatDate(checkOutDate)}`;
 
   return (
-    <div className="rounded-md border p-3 space-y-2">
+    <div id={`stay-${stay.id}`} className="scroll-mt-20 rounded-md border p-3 space-y-2">
       {editing && canEdit ? (
         <div className="space-y-4 rounded-md border bg-background p-3">
           <StayFields
@@ -239,21 +241,31 @@ function StayRow({
               </div>
 
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                {stay.booking ? (
-                  <BookingPill booking={stay.booking} />
-                ) : (
+                {/* Lodging's booking state IS the venue engagement — set it
+                    right here (the first status set creates the engagement). */}
+                <StatusControl
+                  status={stay.booking?.status ?? "NOT_BOOKED"}
+                  canEdit={canEdit}
+                  onSet={(status) =>
+                    setVenueBookingStatus(tripId, stay.locationId, status)
+                  }
+                />
+                {stay.booking?.bookedContact ? (
                   <span className="text-xs text-muted-foreground">
-                    No venue booking yet
+                    {stay.booking.bookedContact.name}
                   </span>
-                )}
-                {canEdit ? (
-                  <Link
-                    href={`/trips/${tripId}/booking`}
-                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    Manage in booking dashboard →
-                  </Link>
                 ) : null}
+                {stay.booking?.confirmationRef ? (
+                  <span className="text-xs text-muted-foreground">
+                    ref {stay.booking.confirmationRef}
+                  </span>
+                ) : null}
+                <Link
+                  href={`/trips/${tripId}/booking?venue=${stay.locationId}`}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  Price, payments &amp; contract →
+                </Link>
                 {canEdit || documents.length > 0 ? (
                   <button
                     type="button"
@@ -284,7 +296,11 @@ function StayRow({
                   className="text-destructive"
                   disabled={pending}
                   onClick={() => {
-                    if (window.confirm(`Delete stay at ${stay.location.name}?`))
+                    if (
+                      window.confirm(
+                        `Delete stay at ${stay.location.name}? Its files and notes are deleted too; the venue booking is kept.`,
+                      )
+                    )
                       run(() => deleteStay(stay.id));
                   }}
                 >
@@ -311,33 +327,10 @@ function StayRow({
   );
 }
 
-function BookingPill({ booking }: { booking: SerializedBooking }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <span
-        className={cn(
-          "rounded-full px-2 py-0.5 font-medium",
-          BOOKING_STATUS_CLASSES[booking.status],
-        )}
-      >
-        {BOOKING_STATUS_LABELS[booking.status]}
-      </span>
-      {booking.label ? (
-        <span className="text-muted-foreground">{booking.label}</span>
-      ) : null}
-      {booking.bookedContact ? (
-        <span className="text-muted-foreground">· {booking.bookedContact.name}</span>
-      ) : null}
-      {booking.confirmationRef ? (
-        <span className="text-muted-foreground">· ref {booking.confirmationRef}</span>
-      ) : null}
-    </span>
-  );
-}
-
 function StayFields({
   locations,
   initial,
+  defaults,
   isTemplate,
   dayCount,
   currencies,
@@ -347,6 +340,8 @@ function StayFields({
 }: {
   locations: Location[];
   initial?: SerializedStay;
+  // Starting span for a new stay (ignored when editing `initial`).
+  defaults?: SuggestedStaySpan;
   isTemplate: boolean;
   dayCount: number;
   currencies: string[];
@@ -357,14 +352,15 @@ function StayFields({
   const [locationId, setLocationId] = useState<string>(
     initial?.locationId ?? NONE,
   );
-  const [checkIn, setCheckIn] = useState(initial?.checkIn ?? "");
-  const [checkOut, setCheckOut] = useState(initial?.checkOut ?? "");
+  const anchors = initial ?? defaults;
+  const [checkIn, setCheckIn] = useState(anchors?.checkIn ?? "");
+  const [checkOut, setCheckOut] = useState(anchors?.checkOut ?? "");
   // Day-relative anchors (template mode). Stored as strings for the <Select>.
   const [checkInDay, setCheckInDay] = useState<string>(
-    initial?.checkInDayIndex != null ? String(initial.checkInDayIndex) : "",
+    anchors?.checkInDayIndex != null ? String(anchors.checkInDayIndex) : "",
   );
   const [checkOutDay, setCheckOutDay] = useState<string>(
-    initial?.checkOutDayIndex != null ? String(initial.checkOutDayIndex) : "",
+    anchors?.checkOutDayIndex != null ? String(anchors.checkOutDayIndex) : "",
   );
   const [arrivalTime, setArrivalTime] = useState(initial?.arrivalTime ?? "");
   const [departureTime, setDepartureTime] = useState(initial?.departureTime ?? "");
