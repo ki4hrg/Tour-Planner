@@ -177,6 +177,9 @@ export default async function BookingDashboardPage({
         </CardHeader>
         <CardContent>
           <BookingDashboard
+            // Remount per deep-linked venue: the expanded row and cleared
+            // filters are initial state, set only on mount.
+            key={venue ?? ""}
             tripId={trip.id}
             canEdit={canEdit}
             venueRows={venueRows}
