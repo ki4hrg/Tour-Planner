@@ -58,7 +58,7 @@ export function SetupForm() {
         </p>
       ) : null}
       <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? "Creating…" : "Create admin & continue"}
+        {pending ? "Creating…" : "Create admin"}
       </Button>
     </form>
   );

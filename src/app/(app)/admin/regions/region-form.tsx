@@ -89,7 +89,7 @@ export function RegionForm({
             id="name"
             name="name"
             defaultValue={initial?.name}
-            placeholder="e.g. London"
+            placeholder="London"
             required
           />
         </div>
@@ -125,10 +125,6 @@ export function RegionForm({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Set on top-level regions; sub-regions inherit. Drives the default
-            dial code when adding contact phone numbers.
-          </p>
         </div>
       </div>
 
@@ -151,7 +147,7 @@ export function RegionForm({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No trip types yet.</p>
+          <p className="text-sm text-muted-foreground">No trip types.</p>
         )}
       </div>
 

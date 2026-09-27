@@ -62,7 +62,7 @@ export async function createApiKey(
   revalidatePath("/admin/api-keys");
   return {
     ok: true,
-    message: "API key created. Copy the key below now — it will never be shown again.",
+    message: "API key created.",
     key,
     prefix,
   };
@@ -78,7 +78,7 @@ export async function revokeApiKey(
   await assertRole("ADMIN");
 
   const keyId = formData.get("keyId") as string;
-  if (!keyId) return { error: "Key ID is required." };
+  if (!keyId) return { error: "Missing key." };
 
   try {
     await prisma.apiKey.update({
@@ -107,7 +107,7 @@ export async function deleteApiKey(
   await assertRole("ADMIN");
 
   const keyId = formData.get("keyId") as string;
-  if (!keyId) return { error: "Key ID is required." };
+  if (!keyId) return { error: "Missing key." };
 
   try {
     await prisma.apiKey.delete({

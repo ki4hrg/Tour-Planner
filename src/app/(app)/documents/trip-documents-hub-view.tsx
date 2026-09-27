@@ -13,10 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DOCUMENT_TARGET_HELP,
-  type DocumentShareContext,
-  type SerializedDocument,
+import type {
+  DocumentShareContext,
+  SerializedDocument,
 } from "@/lib/documents";
 import type { DocumentTarget } from "@/lib/validators/document";
 import { uploadDocument, uploadVenueEngagementDocument } from "./actions";
@@ -123,10 +122,11 @@ export function TripDocumentsHubView({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {DOCUMENT_TARGET_HELP[selected.shareContext.target]}
-                    {selected.note ? ` ${selected.note}` : null}
-                  </p>
+                  {selected.note ? (
+                    <p className="text-xs text-muted-foreground">
+                      {selected.note}
+                    </p>
+                  ) : null}
                 </div>
               }
               onSubmit={(formData, done) => {
@@ -154,8 +154,7 @@ export function TripDocumentsHubView({
 
       {total === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No files for this trip yet. Participant itineraries and rosters go on
-          the trip; contracts and invoices on the venue&apos;s booking.
+          No documents.
         </p>
       ) : (
         filled.map((g) => (
@@ -177,7 +176,7 @@ export function TripDocumentsHubView({
       {empty.length > 0 ? (
         <div className="space-y-1 border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Nothing filed yet
+            No files
           </p>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {empty.map((g) => (
@@ -208,10 +207,6 @@ export function TripDocumentsHubView({
               ({libraryTotal} file{libraryTotal === 1 ? "" : "s"})
             </span>
           </summary>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Files filed on the venues themselves — shared across every trip that
-            visits them, not specific to this one. Manage them on the venue page.
-          </p>
           <div className="mt-3 space-y-3">
             {library.map((v) => (
               <section key={v.locationId} className="space-y-2">

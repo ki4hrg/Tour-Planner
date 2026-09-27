@@ -74,11 +74,6 @@ export function TripTodoistPanel({
 
   return (
     <div className="space-y-2 text-sm">
-      <p className="text-muted-foreground">
-        {linkedProjectId
-          ? `Follow-ups on this trip go to ${linkedName ? `“${linkedName}”` : "a linked Todoist project"}.`
-          : "No project linked — follow-ups fall back to the trip type's project, then your default."}
-      </p>
       <div className="flex flex-wrap items-center gap-2">
         <Select
           value={linkedProjectId ?? NONE}
@@ -134,7 +129,7 @@ export function TripTodoistPanel({
           disabled={pending}
           onClick={() => run(() => createTripTodoistProject(tripId))}
         >
-          Create project for this trip
+          Create project
         </Button>
       </div>
     </div>

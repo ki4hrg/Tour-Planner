@@ -127,21 +127,18 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         ) : (
           <>
             <Section title="Overdue payments" lines={overdue} />
-            <Section title="Book now — window open" lines={bookNow} />
+            <Section title="Window open" lines={bookNow} />
             <Section
-              title={`Payments due in the next ${DUE_SOON_DAYS} days`}
+              title={`Due in ${DUE_SOON_DAYS} days`}
               lines={dueSoon}
             />
           </>
         )}
         {missingPrice > 0 ? (
           <p className="text-xs text-muted-foreground">
-            {missingPrice} upcoming booking{missingPrice === 1 ? " has" : "s have"}{" "}
-            no agreed price —{" "}
-            <Link href="/bookings" className="underline">
-              review on Bookings
+            <Link href="/bookings" className="hover:underline">
+              {missingPrice} without agreed price →
             </Link>
-            .
           </p>
         ) : null}
       </CardContent>
@@ -188,7 +185,7 @@ function Section({ title, lines }: { title: string; lines: Line[] }) {
           href="/bookings"
           className="mt-1 inline-block text-xs text-muted-foreground hover:underline"
         >
-          +{more} more on Bookings →
+          +{more} more →
         </Link>
       ) : null}
     </section>

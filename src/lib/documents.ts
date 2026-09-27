@@ -271,16 +271,6 @@ export function defaultKindForTarget(
   }
 }
 
-/** One line on what belongs on each target — shown under the "Attach to…" picker. */
-export const DOCUMENT_TARGET_HELP: Record<DocumentShareContext["target"], string> = {
-  trip: "Participant itineraries, rosters and anything about the whole trip.",
-  booking:
-    "Contracts, invoices, receipts and confirmations for this engagement — including lodging, whose paperwork lives on the venue's booking.",
-  stay: "Stay-specific sheets: rooming lists, arrival instructions.",
-  location:
-    "Venue paperwork that outlives any one trip — floor plans, risk assessments, standing terms.",
-};
-
 export type ShareAudienceOption = {
   audience: DocumentShareAudience;
   label: string;
@@ -304,7 +294,7 @@ export function shareAudienceOptions(
   const participants: ShareAudienceOption = {
     audience: "PARTICIPANT",
     label: "Participants",
-    hint: "Every participant link for this trip.",
+    hint: "All participant links",
   };
   switch (ctx.target) {
     case "trip":
@@ -313,7 +303,7 @@ export function shareAudienceOptions(
         {
           audience: "HOST_SITE",
           label: "All host sites",
-          hint: "Every host-site link on this trip — every venue, not just one.",
+          hint: "Every venue's link",
         },
       ];
     case "location":
@@ -321,7 +311,7 @@ export function shareAudienceOptions(
         {
           audience: "HOST_SITE",
           label: "This venue's host site",
-          hint: `Host-site links for ${ctx.venueName ?? "this venue"} on any trip. Participant links never see venue files.`,
+          hint: "Any trip",
         },
       ];
     case "booking":
@@ -331,9 +321,7 @@ export function shareAudienceOptions(
         {
           audience: "HOST_SITE",
           label: "This venue's host site",
-          hint: ctx.venueName
-            ? `The host-site link for ${ctx.venueName} on this trip.`
-            : "The host-site link for this booking's venue on this trip (site-less bookings have none).",
+          hint: "This trip",
         },
       ];
     case "stay":
@@ -342,7 +330,7 @@ export function shareAudienceOptions(
         {
           audience: "HOST_SITE",
           label: "This venue's host site",
-          hint: `The host-site link for ${ctx.venueName ?? "the lodging venue"} on this trip.`,
+          hint: "This trip",
         },
       ];
   }

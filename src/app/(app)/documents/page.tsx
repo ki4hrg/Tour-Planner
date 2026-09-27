@@ -93,13 +93,7 @@ export default async function DocumentsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Documents</h1>
-        <p className="text-sm text-muted-foreground">
-          Every file on record. Upload from the trip, venue or booking it belongs
-          to.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Documents</h1>
 
       <form className="flex flex-wrap items-center gap-2" action="/documents">
         {kindFilter ? (
@@ -108,7 +102,7 @@ export default async function DocumentsPage({
         <Input
           name="q"
           defaultValue={query ?? ""}
-          placeholder="Search titles, filenames, notes…"
+          placeholder="Search…"
           className="max-w-xs"
         />
         <Button type="submit" variant="secondary" size="sm">
@@ -145,7 +139,7 @@ export default async function DocumentsPage({
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             {query || kindFilter
               ? "No documents match."
-              : "No documents yet. Upload one from a trip, venue or booking."}
+              : "No documents."}
           </CardContent>
         </Card>
       ) : (
@@ -198,7 +192,7 @@ export default async function DocumentsPage({
 
       {documents.length === 200 ? (
         <p className="text-xs text-muted-foreground">
-          Showing the 200 most recent — narrow the search to see older files.
+          Showing the 200 most recent.
         </p>
       ) : null}
     </div>

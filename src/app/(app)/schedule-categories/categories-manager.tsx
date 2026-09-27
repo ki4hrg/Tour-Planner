@@ -41,7 +41,7 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
     });
 
   if (categories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No categories yet.</p>;
+    return <p className="text-sm text-muted-foreground">No categories.</p>;
   }
 
   return (
@@ -134,9 +134,6 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-muted-foreground">
-        Drag-free reorder with ↑/↓ (manual override), or reset to alphabetical.
-      </p>
     </div>
   );
 }

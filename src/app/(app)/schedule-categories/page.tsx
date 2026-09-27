@@ -32,18 +32,12 @@ export default async function ScheduleCategoriesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Schedule categories</h1>
-        <p className="text-sm text-muted-foreground">
-          Kinds of itinerary item — Visit, Presentation, Meal, Travel. Each tints
-          its marker on the route line. Lower order sorts first in pickers.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Schedule categories</h1>
 
       {canManage ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add a category</CardTitle>
+            <CardTitle className="text-base">Add category</CardTitle>
           </CardHeader>
           <CardContent>
             <CategoryForm action={createCategory} submitLabel="Create" />

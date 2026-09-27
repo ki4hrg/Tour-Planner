@@ -28,7 +28,7 @@ export function OfflineBanner() {
       className="flex items-center justify-center gap-2 bg-amber-100 px-4 py-1.5 text-center text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
     >
       <WifiOff className="size-4 shrink-0" />
-      Offline — viewing cached data; changes won&apos;t save.
+      Offline — changes won&apos;t save.
     </div>
   );
 }

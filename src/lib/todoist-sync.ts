@@ -141,8 +141,7 @@ export async function resolveLocationProject(
   return typeLink?.todoistProjectId ?? connection.defaultProjectId;
 }
 
-const WARNING =
-  "Note saved, but Todoist could not be reached — the follow-up task was not synced.";
+const WARNING = "Note saved. Todoist sync failed.";
 
 /**
  * Push a note's follow-up state to Todoist after a create/update:

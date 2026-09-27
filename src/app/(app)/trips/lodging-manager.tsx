@@ -120,10 +120,7 @@ export function LodgingManager({
             <p className="mb-2 text-sm font-medium">Add a stay</p>
             {locations.length === 0 ? (
               <p className="mb-2 text-xs text-muted-foreground">
-                No lodging venues.{" "}
-                <Link href="/locations" className="underline">
-                  Set up lodging venue
-                </Link>
+                No lodging venues.
               </p>
             ) : null}
             <StayFields

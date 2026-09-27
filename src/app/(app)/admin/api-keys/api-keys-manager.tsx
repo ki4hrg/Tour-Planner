@@ -10,7 +10,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
 import {
   Table,
@@ -75,10 +74,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Create an API key</CardTitle>
-        <CardDescription>
-          Generate a new server-to-server API key for the WordPress plugin or other integrations.
-        </CardDescription>
+        <CardTitle className="text-base">New API key</CardTitle>
       </CardHeader>
       <CardContent>
         {state.key ? (
@@ -86,7 +82,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
           <div className="space-y-3">
             <div className="bg-amber-50 border border-amber-200 rounded p-3">
               <p className="text-xs text-amber-900 mb-2">
-                <strong>Save your key now.</strong> You will never see it again.
+                <strong>Shown once — copy it now.</strong>
               </p>
               <div className="font-mono text-sm break-all bg-white border rounded p-2">
                 {state.key}
@@ -98,7 +94,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
                 size="sm"
                 className="mt-2"
               >
-                {copiedKey ? "Copied!" : "Copy to clipboard"}
+                {copiedKey ? "Copied" : "Copy key"}
               </Button>
             </div>
           </div>
@@ -112,18 +108,15 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
               <Input
                 id="key-name"
                 name="name"
-                placeholder="e.g. WordPress plugin v2"
+                placeholder="WordPress plugin"
                 required
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="key-tripTypes">
-                Trip type scope{" "}
-                <span className="text-muted-foreground">(leave empty for all types)</span>
+                Trip types{" "}
+                <span className="text-muted-foreground">(none = all)</span>
               </Label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Select which trip types this key can read. Empty = all trip types.
-              </p>
               <div className="flex flex-wrap gap-2">
                 {tripTypes.map((tt) => (
                   <label key={tt.id} className="flex items-center gap-2 cursor-pointer">
@@ -183,12 +176,12 @@ export function ApiKeysManager({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Active keys</CardTitle>
+          <CardTitle className="text-base">Keys</CardTitle>
         </CardHeader>
         <CardContent>
           {keys.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No API keys yet. Create one above.
+              No API keys.
             </p>
           ) : (
             <div className="overflow-x-auto">

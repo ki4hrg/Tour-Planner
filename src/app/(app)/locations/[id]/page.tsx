@@ -636,7 +636,7 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="contacts" className="scroll-mt-20">
         <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
         </CardHeader>

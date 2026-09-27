@@ -300,7 +300,7 @@ describe("shareAudienceOptions", () => {
       (o) => o.audience === "HOST_SITE",
     );
     expect(host?.label).toBe("All host sites");
-    expect(host?.hint).toMatch(/every venue/);
+    expect(host?.hint).toMatch(/Every venue/);
   });
 });
 

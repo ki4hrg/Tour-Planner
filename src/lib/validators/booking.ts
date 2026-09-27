@@ -84,13 +84,13 @@ const installmentSchema = z
     ),
   })
   .refine((i) => (i.percent == null) !== (i.fixedAmount == null), {
-    message: "Each installment needs a percentage or a fixed amount (not both).",
+    message: "Set a percentage or a fixed amount, not both.",
   })
   .refine(
     (i) =>
       i.anchor === "NONE" || (i.offsetValue != null && i.offsetUnit != null),
     {
-      message: "A dated installment needs an offset value and unit.",
+      message: "Set an offset and unit.",
     },
   );
 

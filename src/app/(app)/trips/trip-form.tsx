@@ -176,10 +176,6 @@ export function TripForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Active trips move Planning → In progress → Complete by their
-              dates; archive or cancel to override.
-            </p>
           </div>
         )}
 
@@ -213,7 +209,7 @@ export function TripForm({
             name="capacity"
             type="number"
             min={0}
-            placeholder="max slots"
+            placeholder="e.g. 40"
             defaultValue={initial?.capacity ?? ""}
           />
         </div>
@@ -227,7 +223,7 @@ export function TripForm({
               name="participantCount"
               type="number"
               min={0}
-              placeholder="registered headcount"
+              placeholder="e.g. 32"
               defaultValue={initial?.participantCount ?? ""}
             />
           </div>
@@ -256,10 +252,6 @@ export function TripForm({
               </label>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Currency pickers on this trip (lodging, agreed prices, payments)
-            offer these.
-          </p>
         </div>
 
         <div className="space-y-1.5 sm:col-span-2">
@@ -281,7 +273,7 @@ export function TripForm({
               checked={isTemplate}
               onCheckedChange={(v) => setIsTemplate(v === true)}
             />
-            Save as a reusable template (no calendar dates)
+            Template (no dates)
           </label>
         ) : null}
       </div>

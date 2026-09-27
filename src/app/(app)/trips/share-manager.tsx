@@ -91,10 +91,7 @@ export function ShareManager({
   return (
     <div className="space-y-4 text-sm">
       {links.length === 0 ? (
-        <p className="text-muted-foreground">
-          No share links yet.
-          {canEdit ? " Create one below to share this itinerary." : ""}
-        </p>
+        <p className="text-muted-foreground">No share links.</p>
       ) : (
         <ul className="space-y-2">
           {links.map((link) => (
@@ -317,7 +314,7 @@ function CreateForm({
       </p>
       {noHostSites ? (
         <p className="text-xs text-destructive">
-          No host sites available. Mark a location as a host site first.
+          No host sites.
         </p>
       ) : null}
       <Button

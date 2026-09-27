@@ -17,7 +17,7 @@ export async function connectTodoist(
 ): Promise<FormState> {
   const user = await assertRole("PLANNER");
   const token = String(formData.get("token") ?? "").trim();
-  if (!token) return { error: "Paste your Todoist API token." };
+  if (!token) return { error: "Token required." };
 
   // Validate the token against the live API before storing anything, and make
   // sure our marker label exists so pushed tasks are filterable.
@@ -25,10 +25,7 @@ export async function connectTodoist(
     await listProjects(token);
     await ensureLabel(token, TOUR_PLANNER_LABEL);
   } catch {
-    return {
-      error:
-        "Todoist rejected that token. Copy it from Todoist → Settings → Integrations → Developer.",
-    };
+    return { error: "Todoist rejected that token." };
   }
 
   await prisma.todoistConnection.upsert({
@@ -66,7 +63,7 @@ export async function setDefaultTodoistProject(
     where: { userId: user.id },
     data: { defaultProjectId: projectId },
   });
-  if (updated.count === 0) return { error: "Connect Todoist first." };
+  if (updated.count === 0) return { error: "Todoist not connected." };
   revalidatePath("/settings");
   return { ok: true, message: "Default project saved." };
 }

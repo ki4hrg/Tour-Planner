@@ -55,7 +55,7 @@ function CreateUserForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Add a user</CardTitle>
+        <CardTitle className="text-base">Add user</CardTitle>
       </CardHeader>
       <CardContent>
         <form
@@ -198,7 +198,6 @@ function UserRowItem({
             variant="destructive"
             size="sm"
             disabled={isSelf || delPending}
-            title={isSelf ? "You cannot delete your own account" : undefined}
           >
             Delete
           </Button>

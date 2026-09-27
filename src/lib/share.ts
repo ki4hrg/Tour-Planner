@@ -24,9 +24,9 @@ export const SHARE_AUDIENCE_LABELS: Record<ShareAudience, string> = {
 
 // One-line description of what each audience link reveals — shown in the manager.
 export const SHARE_AUDIENCE_BLURBS: Record<ShareAudience, string> = {
-  STAFF: "Full itinerary: bookings, lodging, and internal logistics.",
-  PARTICIPANT: "Day-by-day schedule and lodging. No bookings or internal notes.",
-  HOST_SITE: "Only this host site's items and their booking status.",
+  STAFF: "Everything, incl. bookings and internal notes.",
+  PARTICIPANT: "Schedule and lodging. No bookings or notes.",
+  HOST_SITE: "This site's items and booking status.",
 };
 
 export const SHARE_AUDIENCES = Object.keys(
