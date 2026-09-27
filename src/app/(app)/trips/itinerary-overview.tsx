@@ -83,7 +83,7 @@ export function ItineraryOverview({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <CardTitle className="text-base">Itinerary</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {days.length > 0 ? (
@@ -98,9 +98,6 @@ export function ItineraryOverview({
           ) : null}
           <Button asChild size="sm" variant="outline">
             <Link href={`/trips/${tripId}/print`}>Print</Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/trips/${tripId}/booking`}>Booking</Link>
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href={`/trips/${tripId}/itinerary`}>

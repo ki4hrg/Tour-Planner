@@ -1,18 +1,12 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
-import { Badge } from "@/components/ui/badge";
-import { formatDate, todayUtc } from "@/lib/dates";
 import {
-  TRIP_LIFECYCLE_LABELS,
-  deriveTripLifecycle,
   serializeDay,
   TRAVEL_LEG_INCLUDE,
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { ItineraryEditor } from "../../itinerary-editor";
-import { TemplateChip } from "../../template-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +57,6 @@ export default async function ItineraryPage({
     },
   });
   if (!trip) notFound();
-  const lifecycle = deriveTripLifecycle(trip, todayUtc());
 
   const categories = await prisma.scheduleItemCategory.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -99,28 +92,6 @@ export default async function ItineraryPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            {trip.name}
-            {trip.isTemplate ? (
-              <TemplateChip />
-            ) : (
-              <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
-            )}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {trip.tripType.name}
-            {trip.startDate ? ` · starts ${formatDate(trip.startDate)}` : ""}
-          </p>
-        </div>
-        <Link
-          href={`/trips/${trip.id}`}
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← Overview
-        </Link>
-      </div>
 
       <ItineraryEditor
         tripId={trip.id}

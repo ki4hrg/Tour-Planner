@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
@@ -42,7 +41,6 @@ import { LodgingNights, nightLabel, type NightCell } from "../lodging-nights";
 import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
-import { TemplateChip } from "../template-chip";
 import { TripTodoistPanel } from "../trip-todoist-panel";
 import { TripDocumentsHub } from "../../documents/trip-documents-hub";
 import {
@@ -474,29 +472,6 @@ export default async function TripOverviewPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          {trip.name}
-          {trip.isTemplate ? (
-            <TemplateChip />
-          ) : (
-            <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
-          )}
-        </h1>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          {!trip.isTemplate ? (
-            <Link
-              href={`/trips/compare?type=${trip.tripTypeId}`}
-              className="hover:underline"
-            >
-              Compare years
-            </Link>
-          ) : null}
-          <Link href="/trips" className="hover:underline">
-            ← All trips
-          </Link>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* The trip's working surface — itinerary, where everyone sleeps, and

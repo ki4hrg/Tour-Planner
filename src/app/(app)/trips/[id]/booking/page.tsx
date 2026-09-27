@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
@@ -158,18 +157,6 @@ export default async function BookingDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Booking dashboard</h1>
-          <p className="text-sm text-muted-foreground">{trip.name}</p>
-        </div>
-        <Link
-          href={`/trips/${trip.id}`}
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← Overview
-        </Link>
-      </div>
 
       <Card>
         <CardHeader>
