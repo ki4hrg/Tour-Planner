@@ -182,6 +182,13 @@ npm test                          # vitest
   (see `trip-form.tsx`); the itinerary/lodging/share editors use **direct-call**
   actions (typed args, return `FormState`) driven by a small local `useAction()`
   (`useTransition` + toast) helper.
+- **UI copy**: no narration. No page/card subtitles or taglines, no helper
+  paragraphs explaining how a feature works or why it was designed that way, no
+  chatty empty states ("No stays." + the action button is enough). Buttons are
+  short verbs, headings are nouns, toasts are short facts ("Saved."). Convey state
+  with design cues (icons, badges, color, disabled states, `aria-label`) instead of
+  prose. Destructive confirmations may keep one line stating the consequence.
+  Design rationale belongs in code comments, never in the rendered UI.
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.
