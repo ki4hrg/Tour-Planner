@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SquareKanban, Table2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -13,6 +16,9 @@ import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
 import { isBookingSecured } from "@/lib/booking";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
+import { BookingBoard } from "./booking-board";
+
+export type DashboardView = "table" | "board";
 
 type ContactOption = { id: string; name: string };
 
@@ -50,6 +56,7 @@ export function BookingDashboard({
   currencies,
   documentsByBooking,
   focusLocationId = null,
+  initialView = "table",
 }: {
   tripId: string;
   canEdit: boolean;
@@ -64,7 +71,22 @@ export function BookingDashboard({
   // Deep link (`?venue=<locationId>`) from the trip page: start with every row
   // visible and that venue expanded + scrolled into view.
   focusLocationId?: string | null;
+  // `?view=board` — the kanban board instead of the attention-filtered table.
+  initialView?: DashboardView;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [view, setView] = useState<DashboardView>(initialView);
+  // Keep the choice in the URL so a reload or shared link opens the same view.
+  const switchView = (next: DashboardView) => {
+    setView(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "board") params.set("view", "board");
+    else params.delete("view");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
   const docsFor = (bookingId: string | null) =>
     (bookingId && documentsByBooking[bookingId]) || [];
   const focused = focusLocationId != null &&
@@ -107,9 +129,66 @@ export function BookingDashboard({
     );
   }
 
+  const viewToggle = (
+    <div
+      role="radiogroup"
+      aria-label="View"
+      className="inline-flex rounded-md border p-0.5 text-xs"
+    >
+      {(
+        [
+          ["table", "Table", Table2],
+          ["board", "Board", SquareKanban],
+        ] as const
+      ).map(([value, label, Icon]) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={view === value}
+          onClick={() => switchView(value)}
+          className={cn(
+            "flex items-center gap-1 rounded px-2 py-1",
+            view === value
+              ? "bg-muted font-medium text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Icon className="size-3.5" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === "board") {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-xs text-muted-foreground">
+            Drag a card to another column (or use its status menu) to change
+            its status. Open a card for price, payments and files.
+          </span>
+          {viewToggle}
+        </div>
+        <BookingBoard
+          tripId={tripId}
+          canEdit={canEdit}
+          venueRows={venueRows}
+          itemRows={itemRows}
+          contacts={contacts}
+          currencies={currencies}
+          docsFor={docsFor}
+          focusLocationId={focused ? focusLocationId : null}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        {viewToggle}
         <span className="text-muted-foreground">Show:</span>
         {FILTER_LABELS.map(({ key, label }) => (
           <label key={key} className="flex items-center gap-1.5">

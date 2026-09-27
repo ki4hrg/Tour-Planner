@@ -59,7 +59,7 @@ function useAction() {
 }
 
 // The window cell: when can this be booked (or is it already done).
-function WindowCell({ row }: { row: VenueBookingRow }) {
+export function WindowCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable || row.status === "NOT_NEEDED")
     return <span className="text-muted-foreground">—</span>;
   if (isBookingSecured(row.status))
@@ -80,7 +80,7 @@ function WindowCell({ row }: { row: VenueBookingRow }) {
   );
 }
 
-function PriceCell({ row }: { row: VenueBookingRow }) {
+export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable)
     return <span className="text-muted-foreground">—</span>;
   // The negotiated engagement price beats the catalog's asking price.
@@ -170,7 +170,7 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
   return <span className="text-xs text-muted-foreground">Nothing paid yet</span>;
 }
 
-function coverageLine(row: VenueBookingRow): string {
+export function coverageLine(row: VenueBookingRow): string {
   return [
     row.sessions.length
       ? `${row.sessions.length} session${row.sessions.length === 1 ? "" : "s"}`
@@ -186,7 +186,7 @@ function coverageLine(row: VenueBookingRow): string {
 // The expanded engagement panel — covered sessions plus (for planners) the
 // label/contact/ref/notes editor. Owns its own form state so the desktop table
 // row and the mobile card can each mount an instance.
-function VenueDetails({
+export function VenueDetails({
   row,
   tripId,
   canEdit,
