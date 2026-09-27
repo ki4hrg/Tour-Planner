@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { zodErrorMessage, type FormState } from "@/lib/forms";
 import { formatFileSize, resolveContentType, sanitizeFilename } from "@/lib/documents";
-import { ensureVenueBooking } from "../trips/actions";
+import { ensureVenueEngagement } from "@/lib/trip-mutations";
 import {
   documentMetaSchema,
   MAX_DOCUMENT_BYTES,
@@ -172,10 +172,12 @@ export async function uploadDocument(
  * `(trip, location)` booking first if the trip hasn't got one yet — so a
  * contract can be attached before anyone has touched the booking dashboard.
  *
- * Creation goes through `ensureVenueBooking` rather than a bare
+ * Creation goes through `ensureVenueEngagement` rather than a bare
  * `prisma.booking.create`, so the new engagement gets the same bookable check
  * and standing-payment-terms seeding (GH #86) as the dashboard's own create
- * path. It is create-only, so it never touches an existing booking.
+ * path, refuses a missing trip or an archived location, and tolerates a
+ * concurrent first create (P2002 → re-read). It is create-only, so it never
+ * touches an existing booking.
  */
 export async function uploadVenueEngagementDocument(
   tripId: string,
@@ -188,7 +190,7 @@ export async function uploadVenueEngagementDocument(
   const res = await parseUpload(formData);
   if ("error" in res) return { error: res.error };
 
-  const booking = await ensureVenueBooking(tripId, locationId);
+  const booking = await ensureVenueEngagement(tripId, locationId);
   if ("error" in booking) return booking;
 
   // A booking target revalidates the trip page, its booking dashboard and the

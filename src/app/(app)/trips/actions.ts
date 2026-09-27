@@ -7,8 +7,6 @@ import type {
   TripStatus,
   BookingStatus,
   ShareAudience,
-  PaymentAnchor,
-  PaymentOffsetUnit,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
@@ -23,12 +21,15 @@ import {
   installmentRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
-import { parseDateInput, computeDayDate, dayIndexForDate } from "@/lib/dates";
+import { parseDateInput, computeDayDate } from "@/lib/dates";
 import {
-  shiftStayDates,
-  shiftStayIndicesForDeletedDay,
-  startDateShiftDays,
-} from "@/lib/stay-shift";
+  applyStartDateChange,
+  assertBookable,
+  deleteItineraryDay,
+  seedScheduleFromLocation,
+  toScheduleSeed,
+  type LocationScheduleSeed,
+} from "@/lib/trip-mutations";
 import {
   instantiateDays,
   instantiateVenueBookings,
@@ -238,13 +239,14 @@ export async function updateTrip(
       select: { startDate: true },
     });
     await tx.trip.update({ where: { id }, data });
-    // startDate drives every derived day date — recompute on each save.
-    await recomputeDayDates(tx, id, data.startDate);
-    // Dated stays are absolute, so they don't follow the days on their own:
-    // move them by the same delta so lodging stays on the same trip nights.
-    // (dated ↔ date-less transitions have no delta and leave stays alone.)
-    const delta = startDateShiftDays(before?.startDate ?? null, data.startDate);
-    if (delta !== 0) await shiftDatedStays(tx, id, delta);
+    // startDate drives every derived day date — recompute on each save — and
+    // dated stays move by the same delta so lodging stays on the same nights.
+    await applyStartDateChange(
+      tx,
+      id,
+      before?.startDate ?? null,
+      data.startDate,
+    );
   });
 
   revalidatePath("/trips");
@@ -334,101 +336,6 @@ export async function deleteTrip(formData: FormData): Promise<void> {
 }
 
 // --- Shared helpers ---
-
-type Tx = Prisma.TransactionClient;
-
-/** Renumber a trip's days 1..n by current dayIndex and recompute each date. */
-async function recomputeDayDates(
-  tx: Tx,
-  tripId: string,
-  startDate: Date | null,
-) {
-  const days = await tx.itineraryDay.findMany({
-    where: { tripId },
-    orderBy: { dayIndex: "asc" },
-    select: { id: true },
-  });
-  for (let i = 0; i < days.length; i++) {
-    await tx.itineraryDay.update({
-      where: { id: days[i].id },
-      data: { dayIndex: i + 1, date: computeDayDate(startDate, i + 1) },
-    });
-  }
-}
-
-/** Move every dated stay on a trip by `deltaDays` (both ends). Day-indexed
- * (template) stays are relative already and need no shift. */
-async function shiftDatedStays(tx: Tx, tripId: string, deltaDays: number) {
-  const stays = await tx.stay.findMany({
-    where: { tripId, checkIn: { not: null }, checkOut: { not: null } },
-    select: { id: true, checkIn: true, checkOut: true },
-  });
-  for (const s of stays) {
-    if (!s.checkIn || !s.checkOut) continue;
-    await tx.stay.update({
-      where: { id: s.id },
-      data: shiftStayDates({ checkIn: s.checkIn, checkOut: s.checkOut }, deltaDays),
-    });
-  }
-}
-
-/**
- * After day `deletedIndex` is removed (and later days renumber down), pull each
- * stay's anchors down to match. Template stays shift by day index; dated stays
- * are measured against `startDate`, shifted the same way, and written back as
- * dates. A stay that covered ONLY the deleted night is left untouched (never
- * silently dropped) — the count comes back so the caller can say so.
- */
-async function shiftStaysForDeletedDay(
-  tx: Tx,
-  tripId: string,
-  deletedIndex: number,
-  startDate: Date | null,
-): Promise<number> {
-  const stays = await tx.stay.findMany({
-    where: { tripId },
-    select: {
-      id: true,
-      checkIn: true,
-      checkOut: true,
-      checkInDayIndex: true,
-      checkOutDayIndex: true,
-    },
-  });
-  let collapsed = 0;
-  for (const s of stays) {
-    const dated = s.checkIn != null && s.checkOut != null;
-    const range = dated
-      ? {
-          checkInDayIndex: dayIndexForDate(startDate, s.checkIn),
-          checkOutDayIndex: dayIndexForDate(startDate, s.checkOut),
-        }
-      : { checkInDayIndex: s.checkInDayIndex, checkOutDayIndex: s.checkOutDayIndex };
-    if (range.checkInDayIndex == null || range.checkOutDayIndex == null) continue;
-    const next = shiftStayIndicesForDeletedDay(
-      {
-        checkInDayIndex: range.checkInDayIndex,
-        checkOutDayIndex: range.checkOutDayIndex,
-      },
-      deletedIndex,
-    );
-    if (next.kind === "collapsed") collapsed++;
-    if (next.kind !== "shift") continue;
-    await tx.stay.update({
-      where: { id: s.id },
-      data: dated
-        ? {
-            checkIn: computeDayDate(startDate, next.checkInDayIndex),
-            checkOut: computeDayDate(startDate, next.checkOutDayIndex),
-          }
-        : {
-            checkInDayIndex: next.checkInDayIndex,
-            checkOutDayIndex: next.checkOutDayIndex,
-          },
-    });
-  }
-  return collapsed;
-}
 
 async function tripIdForDay(dayId: string): Promise<string | null> {
   const day = await prisma.itineraryDay.findUnique({
@@ -522,29 +429,11 @@ export async function updateDay(
 
 export async function deleteDay(dayId: string): Promise<FormState> {
   await assertRole("PLANNER");
-  const day = await prisma.itineraryDay.findUnique({
-    where: { id: dayId },
-    select: {
-      tripId: true,
-      dayIndex: true,
-      trip: { select: { startDate: true } },
-    },
-  });
-  if (!day) return { error: "Day not found." };
+  const res = await deleteItineraryDay(dayId);
+  if ("error" in res) return { error: res.error };
 
-  const collapsed = await prisma.$transaction(async (tx) => {
-    await tx.itineraryDay.delete({ where: { id: dayId } }); // cascades to items
-    await recomputeDayDates(tx, day.tripId, day.trip.startDate);
-    // Later days just renumbered/redated down by one — pull lodging along.
-    return shiftStaysForDeletedDay(
-      tx,
-      day.tripId,
-      day.dayIndex,
-      day.trip.startDate,
-    );
-  });
-
-  revalidateTrip(day.tripId);
+  revalidateTrip(res.tripId);
+  const collapsed = res.collapsedStays;
   return {
     ok: true,
     message: collapsed
@@ -1063,67 +952,6 @@ export async function addBooking(
   return { ok: true, message: "Booking added." };
 }
 
-// Create or update the single venue-engagement booking for a (trip, location).
-// The engagement auto-covers every schedule item in the trip that visits this
-// location plus any stay there — so the booking dashboard upserts by venue rather
-// than per session. `locationId` is the engaged venue (forced from the arg, not the
-// input). Idempotent on (tripId, locationId) via the @@unique.
-// A location flagged not-bookable (a walk-by stop) can never hold a booking.
-async function assertBookable(locationId: string): Promise<string | null> {
-  const loc = await prisma.location.findUnique({
-    where: { id: locationId },
-    select: { bookable: true },
-  });
-  if (!loc) return "Location not found.";
-  if (!loc.bookable) return "This site is marked not bookable.";
-  return null;
-}
-
-// A venue's standing payment terms (GH #86) pre-fill a NEW engagement's schedule.
-// Returns Prisma nested-create data for `Booking.paymentSchedule`, or undefined
-// when the location carries no default. Only ever used on the create branch —
-// an existing engagement keeps whatever schedule it already has.
-async function seedScheduleFromLocation(
-  locationId: string,
-): Promise<{ create: LocationScheduleSeed[] } | undefined> {
-  const defaults = await prisma.locationPaymentScheduleItem.findMany({
-    where: { locationId },
-    orderBy: { sortOrder: "asc" },
-  });
-  if (!defaults.length) return undefined;
-  return { create: defaults.map(toScheduleSeed) };
-}
-
-type LocationScheduleSeed = {
-  label: string | null;
-  percent: Prisma.Decimal | null;
-  fixedAmount: Prisma.Decimal | null;
-  anchor: PaymentAnchor;
-  offsetValue: number | null;
-  offsetUnit: PaymentOffsetUnit | null;
-  sortOrder: number;
-};
-
-function toScheduleSeed(d: {
-  label: string | null;
-  percent: Prisma.Decimal | null;
-  fixedAmount: Prisma.Decimal | null;
-  anchor: PaymentAnchor;
-  offsetValue: number | null;
-  offsetUnit: PaymentOffsetUnit | null;
-  sortOrder: number;
-}): LocationScheduleSeed {
-  return {
-    label: d.label,
-    percent: d.percent,
-    fixedAmount: d.fixedAmount,
-    anchor: d.anchor,
-    offsetValue: d.offsetValue,
-    offsetUnit: d.offsetUnit,
-    sortOrder: d.sortOrder,
-  };
-}
-
 // Fill each instantiated engagement that carries NO schedule with its location's
 // standing terms (GH #86). One batched query for all locations that need one;
 // engagements the template already scheduled are left as-is (template wins).
@@ -1150,6 +978,12 @@ async function applyLocationScheduleDefaults(
   });
 }
 
+// Create or update the single venue-engagement booking for a (trip, location).
+// The engagement auto-covers every schedule item in the trip that visits this
+// location plus any stay there — so the booking dashboard upserts by venue rather
+// than per session. `locationId` is the engaged venue (forced from the arg, not the
+// input). Idempotent on (tripId, locationId) via the @@unique.
+// A not-bookable location (walk-by stop) is refused (`assertBookable`).
 export async function upsertVenueBooking(
   tripId: string,
   locationId: string,
@@ -1208,27 +1042,6 @@ export async function setVenueBookingStatus(
 
   revalidateTrip(tripId);
   return { ok: true, message: "Status updated." };
-}
-
-// Make sure a (trip, location) engagement exists — e.g. so a contract can be
-// filed before the venue has been given a status — and return its id. Create-
-// only: an engagement that already exists (even one created a moment ago) is
-// left exactly as it is.
-export async function ensureVenueBooking(
-  tripId: string,
-  locationId: string,
-): Promise<{ error: string } | { bookingId: string }> {
-  await assertRole("PLANNER");
-  const notBookable = await assertBookable(locationId);
-  if (notBookable) return { error: notBookable };
-  const schedule = await seedScheduleFromLocation(locationId);
-  const booking = await prisma.booking.upsert({
-    where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, locationId, ...(schedule ? { paymentSchedule: schedule } : {}) },
-    update: {},
-    select: { id: true },
-  });
-  return { bookingId: booking.id };
 }
 
 // Quick status set for an existing booking by id (the dashboard's one-click control
