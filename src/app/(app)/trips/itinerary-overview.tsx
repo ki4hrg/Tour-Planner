@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Moon } from "lucide-react";
+import { ChevronRight, MapPin, Moon } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -51,12 +51,14 @@ export function ItineraryOverview({
   canEdit,
   days,
   lodgingByDay,
+  cityByDay,
   currentDayId,
 }: {
   tripId: string;
   canEdit: boolean;
   days: SerializedDay[];
   lodgingByDay?: Record<string, DayLodgingSummary | null>;
+  cityByDay?: Record<string, string | null>;
   // When the trip is happening now, the id of the day that falls on today — so we
   // open straight to it instead of day 1. Null/absent → default to the first day.
   currentDayId?: string | null;
@@ -118,6 +120,7 @@ export function ItineraryOverview({
                 open={open.has(day.id)}
                 onToggle={() => toggleDay(day.id)}
                 lodging={lodgingByDay?.[day.id] ?? null}
+                city={cityByDay?.[day.id] ?? null}
                 // The last day is departure — it has no night to cover.
                 hasNight={lodgingByDay != null && i < days.length - 1}
               />
@@ -134,12 +137,14 @@ function DayRow({
   open,
   onToggle,
   lodging,
+  city,
   hasNight,
 }: {
   day: SerializedDay;
   open: boolean;
   onToggle: () => void;
   lodging: DayLodgingSummary | null;
+  city: string | null;
   hasNight: boolean;
 }) {
   const allSites = daySites(day);
@@ -172,9 +177,16 @@ function DayRow({
               {day.date ? (
                 <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
               ) : null}
+              {city ? (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin className="size-3 shrink-0" />
+                  {city}
+                </span>
+              ) : null}
               {/* Where the group sleeps, visible without expanding the day —
-                  and a loud gap when a night has no stay. */}
-              {lodging ? (
+                  and a loud gap when a night has no stay. Once open, the
+                  day's closing Overnight line says it, so skip it here. */}
+              {lodging && !open ? (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Moon className="size-3 shrink-0" />
                   {lodging.locationName}
