@@ -148,6 +148,9 @@ export type SerializedItemLocation = {
     id: string;
     name: string;
     mapUrl?: string | null;
+    googlePlaceId?: string | null;
+    lat?: number | null;
+    lng?: number | null;
     primaryContact?: { name: string; phone: string | null } | null;
   };
 };
@@ -343,6 +346,9 @@ export type VenueRun = {
     id: string;
     name: string;
     mapUrl?: string | null;
+    googlePlaceId?: string | null;
+    lat?: number | null;
+    lng?: number | null;
     primaryContact?: { name: string; phone: string | null } | null;
   }[];
   items: SerializedScheduleItem[];
@@ -392,6 +398,9 @@ export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
       id: s.location.id,
       name: s.location.name,
       mapUrl: s.location.mapUrl,
+      googlePlaceId: s.location.googlePlaceId,
+      lat: s.location.lat,
+      lng: s.location.lng,
       primaryContact: s.location.primaryContact,
     }));
     if (last && last.venues.length > 0 && sigOf(last.venues) === sigOf(venues)) {
@@ -450,6 +459,9 @@ type ItemLocationRow = {
     id: string;
     name: string;
     mapUrl?: string | null;
+    googlePlaceId?: string | null;
+    lat?: number | null;
+    lng?: number | null;
     primaryContact?: { name: string; phone: string | null } | null;
   };
 };
@@ -544,6 +556,13 @@ export function serializeScheduleItem(
           name: s.location.name,
           // Staff-only extras, present only when the caller's query loaded them.
           ...(s.location.mapUrl !== undefined ? { mapUrl: s.location.mapUrl } : {}),
+          ...(s.location.googlePlaceId !== undefined
+            ? {
+                googlePlaceId: s.location.googlePlaceId,
+                lat: s.location.lat ?? null,
+                lng: s.location.lng ?? null,
+              }
+            : {}),
           ...(s.location.primaryContact !== undefined
             ? { primaryContact: s.location.primaryContact }
             : {}),

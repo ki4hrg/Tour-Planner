@@ -19,10 +19,13 @@ describe("buildExportPayload", () => {
     id,
     name,
     regionId,
-    address: null,
+    address: null as string | null,
     description: null,
     website: null,
-    mapUrl: null,
+    mapUrl: null as string | null,
+    googlePlaceId: null as string | null,
+    lat: null as number | null,
+    lng: null as number | null,
     archivedAt: null,
     updatedAt: d("2026-05-20"),
     hostSite: null,
@@ -458,6 +461,87 @@ describe("buildExportPayload", () => {
 
     // JSON serialization should be identical.
     expect(JSON.stringify(payload1)).toBe(JSON.stringify(payload2));
+  });
+
+  describe("location place data", () => {
+    // One stop at `loc`, so it lands in the locations dict.
+    const exportLoc = (loc: ReturnType<typeof baseLoc>) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const day: any = {
+        id: "day1",
+        dayIndex: 1,
+        date: d("2026-06-01"),
+        title: null,
+        participantNotes: null,
+        primaryLocationId: null,
+        scheduleItems: [
+          {
+            order: 0,
+            title: loc.name,
+            startTime: null,
+            endTime: null,
+            category: null,
+            travel: null,
+            sites: [{ order: 0, location: loc }],
+          },
+        ],
+        plannedLocations: [],
+      };
+      return buildExportPayload(baseTrip, [day], [], [loc], []).locations[loc.id];
+    };
+
+    it("exports placeId, lat and lng and prefers the place ID for mapHref", () => {
+      const out = exportLoc({
+        ...baseLoc("loc-nr", "New Room"),
+        address: "36 The Horsefair, Bristol",
+        googlePlaceId: "ChIJ_newroom",
+        lat: 51.4585,
+        lng: -2.5903,
+      });
+      expect(out).toMatchObject({
+        placeId: "ChIJ_newroom",
+        lat: 51.4585,
+        lng: -2.5903,
+        mapHref:
+          "https://www.google.com/maps/search/?api=1&query=New%20Room&query_place_id=ChIJ_newroom",
+      });
+    });
+
+    it("falls back to coordinates, then name + address, in the derived search form", () => {
+      const coords = exportLoc({
+        ...baseLoc("loc-a", "Epworth Old Rectory"),
+        lat: 53.5236,
+        lng: -0.8237,
+      });
+      expect(coords.placeId).toBeNull();
+      expect(coords.mapHref).toBe(
+        "https://www.google.com/maps/search/?api=1&query=53.5236,-0.8237",
+      );
+
+      const plain = exportLoc({
+        ...baseLoc("loc-b", "Wesley's Chapel"),
+        address: "49 City Rd, London",
+      });
+      expect(plain).toMatchObject({ placeId: null, lat: null, lng: null });
+      expect(plain.mapHref).toBe(
+        "https://www.google.com/maps/search/?api=1&query=Wesley's%20Chapel%2C%2049%20City%20Rd%2C%20London",
+      );
+    });
+
+    it("keeps a curated mapUrl ahead of the place ID", () => {
+      const out = exportLoc({
+        ...baseLoc("loc-c", "Lincoln College"),
+        mapUrl: "https://maps.app.goo.gl/abc123",
+        googlePlaceId: "ChIJ_lincoln",
+      });
+      expect(out.mapHref).toBe("https://maps.app.goo.gl/abc123");
+      expect(out.placeId).toBe("ChIJ_lincoln");
+    });
+
+    it("emits coordinates both-or-neither", () => {
+      const out = exportLoc({ ...baseLoc("loc-d", "Half"), lat: 51.5 });
+      expect(out).toMatchObject({ lat: null, lng: null });
+    });
   });
 
   it("never includes logistical notes, contact details, or staff-only fields", () => {

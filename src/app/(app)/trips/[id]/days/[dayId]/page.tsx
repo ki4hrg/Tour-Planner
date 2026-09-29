@@ -60,6 +60,9 @@ export default async function TripDayPage({
                       // Never load these on share-page queries — and
                       // redactDaysForShare strips them defensively regardless.
                       mapUrl: true,
+                      googlePlaceId: true,
+                      lat: true,
+                      lng: true,
                       primaryContact: { select: { name: true, phone: true } },
                     },
                   },

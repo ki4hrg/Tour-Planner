@@ -59,6 +59,9 @@ export interface ExportLocation {
   description: string | null;
   website: string | null;
   mapHref: string | null;
+  placeId: string | null; // Google place ID
+  lat: number | null; // WGS84; both-or-neither with lng
+  lng: number | null;
   providesLodging: boolean;
   archived: boolean;
   updatedAt: string;
@@ -79,6 +82,9 @@ type LocationRow = {
   description: string | null;
   website: string | null;
   mapUrl: string | null;
+  googlePlaceId: string | null;
+  lat: number | null;
+  lng: number | null;
   archivedAt: Date | null;
   updatedAt: Date;
   hostSite?: {
@@ -296,6 +302,10 @@ export function buildExportPayload(
         description: loc.description,
         website: loc.website,
         mapHref: mapHref(loc),
+        placeId: loc.googlePlaceId,
+        // Both-or-neither, even if a row somehow holds just one.
+        lat: loc.lat != null && loc.lng != null ? loc.lat : null,
+        lng: loc.lat != null && loc.lng != null ? loc.lng : null,
         providesLodging: loc.hostSite?.providesLodging ?? false,
         archived: loc.archivedAt != null,
         updatedAt: loc.updatedAt.toISOString(),

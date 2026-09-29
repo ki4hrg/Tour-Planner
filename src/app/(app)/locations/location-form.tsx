@@ -17,6 +17,7 @@ import {
 import { useEditSection } from "@/components/editable-section";
 import { regionOptions, type RegionNode } from "@/lib/regions";
 import type { FormState } from "@/lib/forms";
+import { GooglePlaceField } from "./google-place-field";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
@@ -31,6 +32,9 @@ export type LocationInitial = {
   notes: string | null;
   website: string | null;
   mapUrl: string | null;
+  googlePlaceId: string | null;
+  lat: number | null;
+  lng: number | null;
   bookable: boolean;
   bookingOpensLeadDays: number | null;
   bookingNotes: string | null;
@@ -44,12 +48,14 @@ export function LocationForm({
   tripTypes,
   regions,
   initial,
+  placesEnabled,
 }: {
   action: Action;
   submitLabel: string;
   tripTypes: { id: string; name: string }[];
   regions: RegionNode[];
   initial?: LocationInitial;
+  placesEnabled: boolean;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
@@ -60,6 +66,10 @@ export function LocationForm({
   // post an empty value cleanly).
   const [regionId, setRegionId] = useState(initial?.regionId ?? NO_REGION);
   const [bookable, setBookable] = useState(initial?.bookable ?? true);
+  // Controlled so the Google place picker can read the name and fill an empty
+  // address.
+  const [name, setName] = useState(initial?.name ?? "");
+  const [address, setAddress] = useState(initial?.address ?? "");
   const options = regionOptions(regions);
 
   const section = useEditSection();
@@ -82,7 +92,13 @@ export function LocationForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="name">Name</Label>
-          <Input id="name" name="name" defaultValue={initial?.name} required />
+          <Input
+            id="name"
+            name="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="regionId">Region</Label>
@@ -112,7 +128,12 @@ export function LocationForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="address">Address</Label>
-          <Input id="address" name="address" defaultValue={initial?.address ?? ""} />
+          <Input
+            id="address"
+            name="address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="website">Website</Label>
@@ -134,6 +155,13 @@ export function LocationForm({
             defaultValue={initial?.mapUrl ?? ""}
           />
         </div>
+        <GooglePlaceField
+          enabled={placesEnabled}
+          locationName={name}
+          address={address}
+          onFillAddress={setAddress}
+          initial={initial}
+        />
       </div>
 
       <div>

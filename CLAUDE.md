@@ -57,8 +57,9 @@ engagement; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agre
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
-payment terms + host site), `list-regions` (V, resolves `regionId`), `list-trip-types`
-(V, resolves `tripTypeId`), `create-location` (P), `update-location` (P),
+payment terms, host site + Google place link), `list-regions` (V, resolves `regionId`), `list-trip-types`
+(V, resolves `tripTypeId`), `create-location` (P), `update-location` (P; both take
+`googlePlaceId` + `lat`/`lng`, the coords both-or-neither),
 `set-host-site` (P, upserts capability flags or `remove`s host-site status),
 `set-primary-contact` (P, links the contact + marks it primary, or clears the
 designation), `add-location-cost` (P), `update-location-cost` (P),
@@ -148,6 +149,29 @@ push/reconcile; NO revalidatePath — MCP-safe), `src/lib/crypto.ts` (AES-256-GC
 token encryption keyed off `AUTH_SECRET`; tokens never reach the client — the UI
 shows last-4 only). Everything Todoist is best-effort: an outage downgrades the
 toast message but never fails the note save.
+
+## Google places (location place IDs + coordinates)
+
+`Location.googlePlaceId` / `lat` / `lng` (coords both-or-neither, DB CHECK
+`location_coordinates`) + `placeIdCheckedAt` / `placeIdNeedsReview`. All Google
+calls are **server-side** with `GOOGLE_MAPS_API_KEY` (Places API (New); unset ⇒
+search hidden, coords still hand-editable) — the key never reaches the browser.
+`src/lib/google-places.ts` is the pure HTTP client; field masks are deliberately
+minimal (Details for a pick: `id,location,formattedAddress` — no `displayName`,
+it's a Pro field; refresh: `id` only). Surfaces:
+- **Location form** `GooglePlaceField` → `locations/place-actions.ts` (autocomplete
+  session token + details). Picking offers to fill an empty address; never overwrites.
+- **Backfill** `/admin/places` (ADMIN): Text Search candidates per unlinked location;
+  a human must **Accept** — never auto-link (a wrong place is worse than none).
+- **Refresh**: `src/lib/place-refresh.ts` re-resolves IDs older than 12 months;
+  a changed ID is stored, NOT_FOUND clears the ID (keeps coords) and sets
+  `placeIdNeedsReview` (listed first on `/admin/places`). Runs daily from an
+  in-process timer started in `src/instrumentation.ts` (single container — no
+  external cron), plus a "Refresh now" button.
+- **`mapHref`** (`src/lib/maps.ts`) order: curated `mapUrl` → place ID
+  (`…search/?api=1&query=<name>&query_place_id=<id>`) → `lat,lng` → name+address.
+  Derived links must keep the `https://www.google.com/maps/search/?api=1&query=`
+  prefix — the WordPress plugin treats that prefix as "derived" and ignores it.
 
 ## Stack
 
@@ -423,7 +447,8 @@ Admin actions:
   }],
   locations: {[id]: {
     id, name, regionId, address, description, website, mapHref (computed from
-    name/address or mapUrl), providesLodging (HostSite.providesLodging or false),
+    name/address or mapUrl), placeId (Google place ID | null), lat, lng
+    (numbers | null, both-or-neither), providesLodging (HostSite.providesLodging or false),
     archived (archivedAt != null), updatedAt (ISO)
   }},
   regions: {[id]: {

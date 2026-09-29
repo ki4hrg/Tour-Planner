@@ -31,6 +31,11 @@ const SECTIONS = [
     desc: "People with access and their roles (Admin / Planner / Viewer).",
   },
   {
+    href: "/admin/places",
+    title: "Google places",
+    desc: "Link locations to Google Maps places (backfill + yearly place-ID refresh).",
+  },
+  {
     href: "/admin/api-keys",
     title: "API Keys",
     desc: "Server-to-server keys for exporting trip data to the WordPress plugin.",

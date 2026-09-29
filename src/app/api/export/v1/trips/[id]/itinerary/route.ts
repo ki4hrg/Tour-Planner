@@ -16,6 +16,9 @@ const LOCATION_SELECT = {
   description: true,
   website: true,
   mapUrl: true,
+  googlePlaceId: true,
+  lat: true,
+  lng: true,
   archivedAt: true,
   updatedAt: true,
   hostSite: {
@@ -130,6 +133,9 @@ export async function GET(
       description: true,
       website: true,
       mapUrl: true,
+      googlePlaceId: true,
+      lat: true,
+      lng: true,
       archivedAt: true,
       updatedAt: true,
       hostSite: {

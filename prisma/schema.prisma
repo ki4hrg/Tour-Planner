@@ -197,6 +197,11 @@ model Location {
   notes                  String? // internal planning scratch (staff-only)
   website                String?
   mapUrl                 String? // optional one-tap "open in maps"
+  googlePlaceId          String? // Google Places (New) place ID; preferred over name+address for map links
+  lat                    Float? // WGS84; both-or-neither with lng (DB CHECK location_coordinates)
+  lng                    Float?
+  placeIdCheckedAt       DateTime? // when googlePlaceId was last set/confirmed with Google (refreshed yearly)
+  placeIdNeedsReview     Boolean                       @default(false) // Google dropped the ID on refresh; re-link by hand
   bookable               Boolean                       @default(true) // false = never booked (walk-by stops); hidden from booking attention
   bookingOpensLeadDays   Int? // earliest bookable = startDate - this
   bookingNotes           String?

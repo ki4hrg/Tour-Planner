@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { LocationForm } from "../location-form";
 import { createLocation } from "../actions";
+import { placesEnabled } from "@/lib/google-places";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export default async function NewLocationPage() {
             submitLabel="Create location"
             tripTypes={tripTypes}
             regions={regions}
+            placesEnabled={placesEnabled()}
           />
         </CardContent>
       </Card>
