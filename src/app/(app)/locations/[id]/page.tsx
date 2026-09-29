@@ -18,6 +18,7 @@ import {
   serializeInstallment,
 } from "@/lib/payment-schedule";
 import { mapHref } from "@/lib/maps";
+import { placesEnabled } from "@/lib/google-places";
 import { effectiveDialCode } from "@/lib/regions";
 import { serializeNote } from "@/lib/notes";
 import {
@@ -616,6 +617,7 @@ export default async function LocationDetailPage({
               submitLabel="Save changes"
               tripTypes={allTripTypes}
               regions={allRegions}
+              placesEnabled={placesEnabled()}
               initial={{
                 id: location.id,
                 name: location.name,
@@ -625,6 +627,9 @@ export default async function LocationDetailPage({
                 notes: location.notes,
                 website: location.website,
                 mapUrl: location.mapUrl,
+                googlePlaceId: location.googlePlaceId,
+                lat: location.lat,
+                lng: location.lng,
                 bookable: location.bookable,
                 bookingOpensLeadDays: location.bookingOpensLeadDays,
                 bookingNotes: location.bookingNotes,

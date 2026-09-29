@@ -372,7 +372,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Create Location",
       description:
-        "Create a location (a venue, stop, or potential host site). Requires a name. description is itinerary-facing (shown on shared itineraries); notes are staff-only. Set bookable=false for walk-by stops that are never booked. regionId files it under a region (use list-regions); tripTypeIds tag it (use list-trip-types). To make it a host site or add pricing, use set-host-site / add-location-cost afterwards.",
+        "Create a location (a venue, stop, or potential host site). Requires a name. description is itinerary-facing (shown on shared itineraries); notes are staff-only. Set bookable=false for walk-by stops that are never booked. regionId files it under a region (use list-regions); tripTypeIds tag it (use list-trip-types). googlePlaceId (a Google Places place ID) plus lat/lng (both or neither) make map links open the exact place. To make it a host site or add pricing, use set-host-site / add-location-cost afterwards.",
       inputSchema: {
         name: z.string(),
         regionId: z.string().optional(),
@@ -381,6 +381,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         notes: z.string().optional(),
         website: z.string().optional(),
         mapUrl: z.string().optional(),
+        googlePlaceId: z.string().optional(),
+        lat: z.number().min(-90).max(90).nullable().optional(),
+        lng: z.number().min(-180).max(180).nullable().optional(),
         bookable: z.boolean().optional(),
         bookingOpensLeadDays: z.number().optional(),
         bookingNotes: z.string().optional(),
@@ -402,6 +405,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       notes,
       website,
       mapUrl,
+      googlePlaceId,
+      lat,
+      lng,
       bookable,
       bookingOpensLeadDays,
       bookingNotes,
@@ -420,6 +426,15 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         };
       }
 
+      if ((lat == null) !== (lng == null)) {
+        return {
+          content: [
+            { type: "text" as const, text: "Error: Pass lat and lng together, or neither." },
+          ],
+          isError: true,
+        };
+      }
+
       try {
         const location = await prisma.location.create({
           data: {
@@ -429,6 +444,10 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             notes: notes || null,
             website: website || null,
             mapUrl: mapUrl || null,
+            googlePlaceId: googlePlaceId || null,
+            placeIdCheckedAt: googlePlaceId ? new Date() : null,
+            lat: lat ?? null,
+            lng: lng ?? null,
             bookable: bookable ?? true,
             bookingOpensLeadDays: bookingOpensLeadDays ?? null,
             bookingNotes: bookingNotes || null,
@@ -463,7 +482,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Location",
       description:
-        "Update a location's details. Only include fields you want to change. Pass regionId to refile (empty string clears the region). Passing tripTypeIds REPLACES the tag set (pass [] to clear). Use get-location to find the id and current values.",
+        "Update a location's details. Only include fields you want to change. Pass regionId to refile (empty string clears the region). Passing tripTypeIds REPLACES the tag set (pass [] to clear). googlePlaceId links a Google place (empty string clears); lat/lng must be passed together (null clears both). Use get-location to find the id and current values.",
       inputSchema: {
         locationId: z.string(),
         name: z.string().optional(),
@@ -473,6 +492,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         notes: z.string().optional(),
         website: z.string().optional(),
         mapUrl: z.string().optional(),
+        googlePlaceId: z.string().optional(),
+        lat: z.number().min(-90).max(90).nullable().optional(),
+        lng: z.number().min(-180).max(180).nullable().optional(),
         bookable: z.boolean().optional(),
         bookingOpensLeadDays: z.number().optional(),
         bookingNotes: z.string().optional(),
@@ -495,6 +517,9 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       notes,
       website,
       mapUrl,
+      googlePlaceId,
+      lat,
+      lng,
       bookable,
       bookingOpensLeadDays,
       bookingNotes,
@@ -521,6 +546,26 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         if (notes !== undefined) data.notes = notes || null;
         if (website !== undefined) data.website = website || null;
         if (mapUrl !== undefined) data.mapUrl = mapUrl || null;
+        if (googlePlaceId !== undefined) {
+          data.googlePlaceId = googlePlaceId || null;
+          data.placeIdCheckedAt = googlePlaceId ? new Date() : null;
+          data.placeIdNeedsReview = false;
+        }
+        if (lat !== undefined || lng !== undefined) {
+          if ((lat == null) !== (lng == null)) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: Pass lat and lng together (null for both clears them).",
+                },
+              ],
+              isError: true,
+            };
+          }
+          data.lat = lat ?? null;
+          data.lng = lng ?? null;
+        }
         if (bookable !== undefined) data.bookable = bookable;
         if (bookingOpensLeadDays !== undefined)
           data.bookingOpensLeadDays = bookingOpensLeadDays ?? null;

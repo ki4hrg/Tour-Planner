@@ -26,6 +26,9 @@ function parseLocation(formData: FormData) {
     notes: formData.get("notes") || undefined,
     website: formData.get("website") ?? "",
     mapUrl: formData.get("mapUrl") ?? "",
+    googlePlaceId: formData.get("googlePlaceId") || undefined,
+    lat: formData.get("lat") ?? "",
+    lng: formData.get("lng") ?? "",
     bookable: formData.get("bookable") != null,
     bookingOpensLeadDays: formData.get("bookingOpensLeadDays") ?? "",
     bookingNotes: formData.get("bookingNotes") || undefined,
@@ -42,6 +45,9 @@ function toLocationData(d: LocationInput) {
     notes: d.notes || null,
     website: d.website || null,
     mapUrl: d.mapUrl || null,
+    googlePlaceId: d.googlePlaceId || null,
+    lat: d.lat ?? null,
+    lng: d.lng ?? null,
     bookable: d.bookable,
     bookingOpensLeadDays: d.bookingOpensLeadDays ?? null,
     bookingNotes: d.bookingNotes || null,
@@ -60,6 +66,7 @@ export async function createLocation(
   const location = await prisma.location.create({
     data: {
       ...toLocationData(parsed.data),
+      placeIdCheckedAt: parsed.data.googlePlaceId ? new Date() : null,
       ...(parsed.data.regionId
         ? { region: { connect: { id: parsed.data.regionId } } }
         : {}),
@@ -84,10 +91,25 @@ export async function updateLocation(
   const parsed = parseLocation(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
+  const existing = await prisma.location.findUnique({
+    where: { id },
+    select: { googlePlaceId: true },
+  });
+  if (!existing) return { error: "Location not found." };
+  const placeId = parsed.data.googlePlaceId || null;
+
   await prisma.location.update({
     where: { id },
     data: {
       ...toLocationData(parsed.data),
+      // A newly linked (or cleared) place restarts the yearly refresh clock and
+      // settles any "Google dropped this place" review flag.
+      ...(placeId !== existing.googlePlaceId
+        ? {
+            placeIdCheckedAt: placeId ? new Date() : null,
+            placeIdNeedsReview: false,
+          }
+        : {}),
       region: parsed.data.regionId
         ? { connect: { id: parsed.data.regionId } }
         : { disconnect: true },

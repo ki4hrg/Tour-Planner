@@ -22,6 +22,11 @@ const SECTIONS = [
     title: "Users",
   },
   {
+    href: "/admin/places",
+    title: "Google places",
+    desc: "Link locations to Google Maps places (backfill + yearly place-ID refresh).",
+  },
+  {
     href: "/admin/api-keys",
     title: "API Keys",
   },
