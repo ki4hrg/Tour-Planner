@@ -76,6 +76,7 @@ export default async function TripOverviewPage({
       days: {
         orderBy: { dayIndex: "asc" },
         include: {
+          cityRegion: { select: { name: true } },
           scheduleItems: {
             orderBy: { order: "asc" },
             include: {
@@ -483,6 +484,9 @@ export default async function TripOverviewPage({
             canEdit={canEdit}
             days={trip.days.map(serializeDay)}
             lodgingByDay={summarizeDayLodging(trip.days, stays)}
+            cityByDay={Object.fromEntries(
+              trip.days.map((d) => [d.id, d.cityRegion?.name ?? null]),
+            )}
             currentDayId={currentDayId}
           />
 
