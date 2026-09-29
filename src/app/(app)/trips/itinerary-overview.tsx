@@ -186,11 +186,13 @@ function DayRow({
               {/* Where the group sleeps, visible without expanding the day —
                   and a loud gap when a night has no stay. Once open, the
                   day's closing Overnight line says it, so skip it here. */}
-              {lodging && !open ? (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Moon className="size-3 shrink-0" />
-                  {lodging.locationName}
-                </span>
+              {lodging ? (
+                open ? null : (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Moon className="size-3 shrink-0" />
+                    {lodging.locationName}
+                  </span>
+                )
               ) : hasNight ? (
                 <span className="flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-400">
                   <Moon className="size-3 shrink-0" />
