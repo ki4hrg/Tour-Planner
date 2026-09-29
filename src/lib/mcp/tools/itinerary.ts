@@ -84,7 +84,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Itinerary",
       description:
-        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. Also returns each day's plannedLocations — the rough-plan venues assigned to the day without timed items (see add-planned-location). This is the most detailed view of a trip's plan.",
+        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. Also returns each day's plannedLocations — the rough-plan venues assigned to the day without timed items (see add-planned-location). Each day also carries its primary city (cityRegion, a region from list-regions). This is the most detailed view of a trip's plan.",
       inputSchema: { tripId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -102,6 +102,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           orderBy: { dayIndex: "asc" },
           include: {
             primaryLocation: { select: { id: true, name: true } },
+            cityRegion: { select: { id: true, name: true } },
             plannedLocations: {
               orderBy: { order: "asc" },
               include: { location: { select: { id: true, name: true } } },
@@ -166,11 +167,12 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Itinerary Day",
       description:
-        "Add a new day to a trip's itinerary. The day is appended at the end with the next sequential day number. Its date is automatically computed from the trip's start date. Optionally set primaryLocationId (from search-locations) as the day's default venue for new schedule items.",
+        "Add a new day to a trip's itinerary. The day is appended at the end with the next sequential day number. Its date is automatically computed from the trip's start date. Optionally set primaryLocationId (from search-locations) as the day's default venue for new schedule items, and cityRegionId (from list-regions) as the day's primary city.",
       inputSchema: {
         tripId: z.string(),
         title: z.string().optional(),
         primaryLocationId: z.string().optional(),
+        cityRegionId: z.string().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -179,7 +181,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         openWorldHint: false,
       },
     },
-    async ({ tripId, title, primaryLocationId }) => {
+    async ({ tripId, title, primaryLocationId, cityRegionId }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
           return {
@@ -207,6 +209,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             dayIndex,
             title: title || null,
             primaryLocationId: primaryLocationId || null,
+            cityRegionId: cityRegionId || null,
             date: computeDayDate(trip.startDate, dayIndex),
           },
         });
@@ -528,13 +531,14 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Itinerary Day",
       description:
-        "Update a day's title, notes, and primary location. logisticalNotes are staff-only (hidden on participant/host-site shares); participantNotes are participant-facing free text. primaryLocationId sets the day's default venue (get its id from search-locations); pass an empty string to clear it. Only include fields you want to change. Use get-itinerary to find the day id. (Day dates are derived from the trip start date and cannot be set directly.)",
+        "Update a day's title, notes, primary location, and primary city. logisticalNotes are staff-only (hidden on participant/host-site shares); participantNotes are participant-facing free text. primaryLocationId sets the day's default venue (get its id from search-locations); pass an empty string to clear it. cityRegionId sets the day's primary city (get its id from list-regions; empty string clears it) — the WordPress export uses it as the day's cityRegionId, deriving one from the day's venues when unset. Only include fields you want to change. Use get-itinerary to find the day id. (Day dates are derived from the trip start date and cannot be set directly.)",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
         logisticalNotes: z.string().optional(),
         participantNotes: z.string().optional(),
         primaryLocationId: z.string().optional(),
+        cityRegionId: z.string().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -543,7 +547,14 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         openWorldHint: false,
       },
     },
-    async ({ dayId, title, logisticalNotes, participantNotes, primaryLocationId }) => {
+    async ({
+      dayId,
+      title,
+      logisticalNotes,
+      participantNotes,
+      primaryLocationId,
+      cityRegionId,
+    }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
           return {
@@ -560,6 +571,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           data.participantNotes = participantNotes || null;
         if (primaryLocationId !== undefined)
           data.primaryLocationId = primaryLocationId || null;
+        if (cityRegionId !== undefined)
+          data.cityRegionId = cityRegionId || null;
 
         await prisma.itineraryDay.update({ where: { id: dayId }, data });
 

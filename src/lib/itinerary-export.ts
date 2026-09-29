@@ -105,6 +105,7 @@ type DayRow = {
   title: string | null;
   participantNotes: string | null;
   primaryLocationId: string | null;
+  cityRegionId: string | null; // explicit primary city; wins over derivation
 };
 
 type ScheduleItemRow = {
@@ -233,10 +234,14 @@ export function buildExportPayload(
       }
     }
 
-    // Determine cityRegionId: primaryLocation region → overnight location region
-    // → first stop's location region → null.
-    let cityRegionId: string | null = null;
-    if (day.primaryLocationId) {
+    // Determine cityRegionId: the planner-set city → primaryLocation region →
+    // overnight location region → first stop's location region → null. An
+    // explicit city pointing at a region we didn't load falls through.
+    let cityRegionId: string | null =
+      day.cityRegionId && regionMap.has(day.cityRegionId)
+        ? day.cityRegionId
+        : null;
+    if (!cityRegionId && day.primaryLocationId) {
       const primaryLoc = locationMap.get(day.primaryLocationId);
       if (primaryLoc?.regionId) cityRegionId = primaryLoc.regionId;
     }
@@ -279,11 +284,11 @@ export function buildExportPayload(
 
   // Build export locations (every location referenced by stops/overnights/primary).
   const exportedLocationIds = new Set<string>();
+  for (const day of days) {
+    if (day.primaryLocationId && locationMap.has(day.primaryLocationId))
+      exportedLocationIds.add(day.primaryLocationId);
+  }
   for (const day of exportDays) {
-    if (day.cityRegionId) {
-      const loc = locationMap.get(day.cityRegionId);
-      if (loc) exportedLocationIds.add(loc.id);
-    }
     if (day.overnight) exportedLocationIds.add(day.overnight.locationId);
     for (const stop of day.stops) {
       exportedLocationIds.add(stop.locationId);

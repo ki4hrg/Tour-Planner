@@ -73,6 +73,9 @@ type Location = {
   tagged: boolean;
 };
 type Contact = { id: string; name: string };
+// A Region option for the day's city: `label` is the full path for the picker,
+// `name` the short form for the day header.
+type City = { id: string; name: string; label: string };
 type Category = {
   id: string;
   name: string;
@@ -110,6 +113,7 @@ export function ItineraryEditor({
   locations: initialLocations,
   contacts: initialContacts,
   presentations: initialPresentations,
+  cities,
 }: {
   tripId: string;
   canEdit: boolean;
@@ -120,6 +124,7 @@ export function ItineraryEditor({
   locations: Location[];
   contacts: Contact[];
   presentations: Presentation[];
+  cities: City[];
 }) {
   // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
@@ -234,6 +239,7 @@ export function ItineraryEditor({
           locations={locations}
           contacts={contacts}
           presentations={presentations}
+          cities={cities}
           onMove={moveDay}
           onCreateLocation={addNewLocation}
           onCreateContact={addNewContact}
@@ -267,6 +273,7 @@ function DayCard({
   locations,
   contacts,
   presentations,
+  cities,
   onMove,
   onCreateLocation,
   onCreateContact,
@@ -280,6 +287,7 @@ function DayCard({
   locations: Location[];
   contacts: Contact[];
   presentations: Presentation[];
+  cities: City[];
   onMove: (index: number, dir: -1 | 1) => void;
   onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
@@ -299,6 +307,10 @@ function DayCard({
   const [primaryLocationId, setPrimaryLocationId] = useState<string>(
     day.primaryLocationId ?? NONE,
   );
+  const [cityRegionId, setCityRegionId] = useState<string>(
+    day.cityRegionId ?? NONE,
+  );
+  const cityName = cities.find((c) => c.id === day.cityRegionId)?.name;
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
     const next = [...day.items];
@@ -314,6 +326,12 @@ function DayCard({
         <div className="min-w-0">
           <span className="font-medium">Day {day.dayIndex}</span>
           {day.title ? <span> — {day.title}</span> : null}
+          {cityName ? (
+            <span className="text-sm text-muted-foreground">
+              {" "}
+              · {cityName}
+            </span>
+          ) : null}
           {day.date ? (
             <span className="text-sm text-muted-foreground">
               {" "}
@@ -392,6 +410,22 @@ function DayCard({
             />
           </div>
           <div className="space-y-1.5">
+            <Label className="text-xs">City</Label>
+            <Select value={cityRegionId} onValueChange={setCityRegionId}>
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {cities.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label className="text-xs">Primary location</Label>
             <Select value={primaryLocationId} onValueChange={setPrimaryLocationId}>
               <SelectTrigger size="sm">
@@ -419,6 +453,7 @@ function DayCard({
                     participantNotes,
                     primaryLocationId:
                       primaryLocationId === NONE ? "" : primaryLocationId,
+                    cityRegionId: cityRegionId === NONE ? "" : cityRegionId,
                   }),
                 () => setEditingDay(false),
               )

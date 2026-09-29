@@ -62,6 +62,7 @@ export type TemplateDay = {
   dayIndex: number;
   title: string | null;
   logisticalNotes: string | null;
+  cityRegionId?: string | null;
   scheduleItems: TemplateScheduleItem[];
   plannedLocations: TemplatePlannedLocation[];
 };
@@ -100,6 +101,7 @@ export type InstantiatedDay = {
   date: Date | null;
   title: string | null;
   logisticalNotes: string | null;
+  cityRegionId: string | null;
   scheduleItems: { create: InstantiatedScheduleItem[] };
   plannedLocations: { create: TemplatePlannedLocation[] };
 };
@@ -202,6 +204,7 @@ export function instantiateDays(
         date: computeDayDate(startDate, dayIndex),
         title: day.title,
         logisticalNotes: day.logisticalNotes,
+        cityRegionId: day.cityRegionId ?? null,
         plannedLocations: {
           create: [...day.plannedLocations]
             .sort((a, b) => a.order - b.order)

@@ -6,6 +6,7 @@ import {
   TRAVEL_LEG_INCLUDE,
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
+import { regionOptions } from "@/lib/regions";
 import { ItineraryEditor } from "../../itinerary-editor";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,16 @@ export default async function ItineraryPage({
     },
   });
 
+  // City picker for each day (the WP export's day header).
+  const regions = await prisma.region.findMany({
+    select: { id: true, name: true, parentId: true },
+  });
+  const regionName = new Map(regions.map((r) => [r.id, r.name]));
+  const cities = regionOptions(regions).map((o) => ({
+    ...o,
+    name: regionName.get(o.id) ?? o.label,
+  }));
+
   return (
     <div className="space-y-6">
 
@@ -108,6 +119,7 @@ export default async function ItineraryPage({
         }))}
         contacts={contacts}
         presentations={presentations}
+        cities={cities}
       />
     </div>
   );

@@ -390,6 +390,59 @@ describe("buildExportPayload", () => {
     expect(payload.days[0].cityRegionId).toBe("region-primary");
   });
 
+  it("prefers the explicit day city over the derived fallback", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const day1: any = {
+      id: "day1",
+      dayIndex: 0,
+      date: d("2026-06-01"),
+      title: "Day 1",
+      participantNotes: null,
+      primaryLocationId: "primary1",
+      cityRegionId: "region-city",
+      scheduleItems: [],
+      plannedLocations: [],
+    };
+
+    const locations = [baseLoc("primary1", "Primary", "region-primary")];
+    const regions = [
+      baseRegion("region-england", "England", null),
+      baseRegion("region-city", "Oxford", "region-england"),
+      baseRegion("region-primary", "Primary Region", null),
+    ];
+
+    const payload = buildExportPayload(baseTrip, [day1], [], locations, regions);
+
+    expect(payload.days[0].cityRegionId).toBe("region-city");
+    // The city and its ancestors ship in the regions dict.
+    expect(payload.regions["region-city"].path).toBe("England › Oxford");
+    expect(payload.regions).toHaveProperty("region-england");
+    // The primary location is still exported.
+    expect(payload.locations).toHaveProperty("primary1");
+  });
+
+  it("falls back to derivation when the explicit city region wasn't loaded", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const day1: any = {
+      id: "day1",
+      dayIndex: 0,
+      date: d("2026-06-01"),
+      title: "Day 1",
+      participantNotes: null,
+      primaryLocationId: "primary1",
+      cityRegionId: "region-missing",
+      scheduleItems: [],
+      plannedLocations: [],
+    };
+
+    const locations = [baseLoc("primary1", "Primary", "region-primary")];
+    const regions = [baseRegion("region-primary", "Primary Region", null)];
+
+    const payload = buildExportPayload(baseTrip, [day1], [], locations, regions);
+
+    expect(payload.days[0].cityRegionId).toBe("region-primary");
+  });
+
   it("includes region hierarchy in regions dict", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const day: any = {

@@ -93,14 +93,14 @@ model User {
 // staff only sees the prefix (first 8 chars) and the hash. Scoped to trip types
 // (empty = all). Supports key rotation via revocation without deleting history.
 model ApiKey {
-  id           String    @id @default(cuid())
-  name         String    // Human-readable label (e.g. "WordPress plugin v2")
-  prefix       String    // First 8 chars of the key, shown in UI for identification
-  keyHash      String    @unique // SHA-256 hex digest of the full key
-  tripTypeIds  String[] // Empty = all trip types; non-empty = scoped to these IDs
-  createdAt    DateTime  @default(now())
-  lastUsedAt   DateTime? // Tracked for key rotation monitoring
-  revokedAt    DateTime? // Non-null = key is revoked; null = active
+  id          String    @id @default(cuid())
+  name        String // Human-readable label (e.g. "WordPress plugin v2")
+  prefix      String // First 8 chars of the key, shown in UI for identification
+  keyHash     String    @unique // SHA-256 hex digest of the full key
+  tripTypeIds String[] // Empty = all trip types; non-empty = scoped to these IDs
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime? // Tracked for key rotation monitoring
+  revokedAt   DateTime? // Non-null = key is revoked; null = active
 }
 
 enum TodoistAuthType {
@@ -172,16 +172,17 @@ model TripType {
 // Admin-managed, hierarchical place catalog (e.g. England → London). A region can
 // apply to several trip types, and a Location belongs to at most one region.
 model Region {
-  id        String     @id @default(cuid())
+  id        String         @id @default(cuid())
   name      String
   dialCode  String? // phone country code, digits only (e.g. "44"); children inherit via the parent chain
-  parent    Region?    @relation("RegionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  parent    Region?        @relation("RegionTree", fields: [parentId], references: [id], onDelete: SetNull)
   parentId  String?
-  children  Region[]   @relation("RegionTree")
-  tripTypes TripType[] @relation("RegionTripTypes")
+  children  Region[]       @relation("RegionTree")
+  tripTypes TripType[]     @relation("RegionTripTypes")
   locations Location[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  cityDays  ItineraryDay[] @relation("DayCityRegion")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   @@unique([parentId, name])
   @@index([parentId])
@@ -303,6 +304,12 @@ model ItineraryDay {
   // with this. Optional; SetNull so archiving/deleting a location never drops days.
   primaryLocation   Location?              @relation("DayPrimaryLocation", fields: [primaryLocationId], references: [id], onDelete: SetNull)
   primaryLocationId String?
+  // The day's primary city (a Region node, e.g. "London"). Drives the day header
+  // on the WP pilgrimage plugin via the export's cityRegionId; when unset the
+  // export derives one (primary location → overnight → first stop). SetNull so
+  // deleting a region never drops days.
+  cityRegion        Region?                @relation("DayCityRegion", fields: [cityRegionId], references: [id], onDelete: SetNull)
+  cityRegionId      String?
   scheduleItems     ScheduleItem[]
   // Rough-plan layer (GH #9): locations intended for this day WITHOUT committing
   // to timed schedule items — "we'll be in this city seeing A, B, C." Promoted
@@ -311,6 +318,7 @@ model ItineraryDay {
 
   @@index([tripId])
   @@index([primaryLocationId])
+  @@index([cityRegionId])
 }
 
 // A day-level "rough plan" assignment (GH #9): a location intended for a day at a

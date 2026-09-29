@@ -112,6 +112,7 @@ export async function GET(
     locationIds.add(stay.locationId);
   }
   for (const day of trip.days) {
+    if (day.primaryLocationId) locationIds.add(day.primaryLocationId);
     for (const item of day.scheduleItems) {
       for (const site of item.sites) {
         locationIds.add(site.location.id);
@@ -150,6 +151,9 @@ export async function GET(
   const regionIds = new Set<string>();
   for (const loc of locations) {
     if (loc.regionId) regionIds.add(loc.regionId);
+  }
+  for (const day of trip.days) {
+    if (day.cityRegionId) regionIds.add(day.cityRegionId);
   }
 
   // Recursively gather parent regions.

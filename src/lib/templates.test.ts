@@ -51,6 +51,7 @@ const sample = [
     dayIndex: 2,
     title: "Second",
     logisticalNotes: "notes-2",
+    cityRegionId: "region-oxford",
     // Out of order + with a note, to exercise sort/renumber/carry-over.
     plannedLocations: [
       { locationId: "plB", order: 1, note: null },
@@ -93,6 +94,11 @@ describe("instantiateDays", () => {
     expect(
       day2.scheduleItems.create.map((s) => s.sites.create[0]?.locationId),
     ).toEqual(["locA", "locB"]);
+  });
+
+  it("carries over each day's city", () => {
+    const out = instantiateDays(sample, null);
+    expect(out.map((d) => d.cityRegionId)).toEqual([null, "region-oxford"]);
   });
 
   it("derives dates from startDate (day 1 == start, +1 per day)", () => {

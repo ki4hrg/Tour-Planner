@@ -81,6 +81,7 @@ const TEMPLATE_DAYS_SELECT = {
   dayIndex: true,
   title: true,
   logisticalNotes: true,
+  cityRegionId: true,
   plannedLocations: {
     select: { locationId: true, order: true, note: true },
   },
@@ -410,6 +411,7 @@ export async function updateDay(
     logisticalNotes?: string;
     participantNotes?: string;
     primaryLocationId?: string;
+    cityRegionId?: string;
   },
 ): Promise<FormState> {
   await assertRole("PLANNER");
@@ -423,6 +425,7 @@ export async function updateDay(
       logisticalNotes: parsed.data.logisticalNotes || null,
       participantNotes: parsed.data.participantNotes || null,
       primaryLocationId: parsed.data.primaryLocationId || null,
+      cityRegionId: parsed.data.cityRegionId || null,
     },
   });
 

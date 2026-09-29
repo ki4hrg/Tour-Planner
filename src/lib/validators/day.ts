@@ -12,6 +12,8 @@ export const daySchema = z.object({
   participantNotes: z.string().trim().optional(),
   // Default venue for the day; new schedule items pre-fill their picker with it.
   primaryLocationId: optionalId,
+  // Primary city (a Region); the export's day cityRegionId prefers it.
+  cityRegionId: optionalId,
 });
 
 export type DayInput = z.infer<typeof daySchema>;

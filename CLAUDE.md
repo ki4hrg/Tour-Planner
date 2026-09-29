@@ -41,8 +41,8 @@ minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **itinerary.ts** — `list-schedule-categories` (V, resolves `categoryId`),
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
-`plannedLocations`), `add-day` (P),
-`update-day` (P, title + logistical/participant notes), `delete-day` (P, renumbers +
+`plannedLocations` + `cityRegion`), `add-day` (P),
+`update-day` (P, title + logistical/participant notes + primary location/city), `delete-day` (P, renumbers +
 recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
 (P, rough day→location assignment with no times — GH #9; idempotent per
@@ -503,12 +503,17 @@ occurrence wins). Travel legs are completely omitted (no locationId, no represen
 Per day: highest-priority covering stay (ties broken by shortest span). Respects both
 calendar dates (dated trips) and day indices (templates). Null when no stay covers the night.
 
-### City region fallback (for day cityRegionId)
+### Day city (cityRegionId)
 
-1. Day's primaryLocation.regionId
-2. Overnight lodging location.regionId
-3. First stop's location.regionId
-4. null
+`ItineraryDay.cityRegionId` is the planner-set primary city (a `Region` node; set
+in the day editor, `add-day`/`update-day` MCP, copied through templates). The WP
+plugin keys its day header off it. Export resolution order:
+
+1. Day's explicit `cityRegionId`
+2. Day's primaryLocation.regionId
+3. Overnight lodging location.regionId
+4. First stop's location.regionId
+5. null
 
 ### Test fixture
 
