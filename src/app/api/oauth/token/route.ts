@@ -7,6 +7,7 @@ import {
   hashToken,
   ACCESS_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_TTL_SECONDS,
+  REFRESH_GRACE_SECONDS,
 } from "@/lib/mcp/auth";
 
 type IssuedUser = { id: string; email: string; role: Role };
@@ -144,9 +145,60 @@ async function handleRefreshToken(params: URLSearchParams) {
     return oauthError("invalid_grant", "Unknown refresh token.");
   }
 
-  // Reuse detection: a token that was already rotated/revoked is presented again.
-  // Treat as theft and revoke the entire family.
+  // Reuse detection with grace window for retries.
+  // A token that was just rotated (revokedAt + replacedById both set) within the
+  // grace window is treated as a benign retry if its successor is still unused.
+  // Genuine replay attacks (after grace window or with a used successor) revoke the family.
   if (stored.revokedAt) {
+    // Grace window: if rotated moments ago and successor is still unused, issue a pair
+    // under the same family instead of revoking (accommodates timeouts, proxy duplicates,
+    // concurrent refreshes on unreliable networks).
+    const isRotated = stored.replacedById !== null;
+    const rotatedAt = stored.revokedAt.getTime();
+    const isWithinGraceWindow = Date.now() - rotatedAt < REFRESH_GRACE_SECONDS * 1000;
+
+    if (isRotated && isWithinGraceWindow && stored.replacedById) {
+      // Check if the successor token is still live (not revoked, not expired).
+      // If it's been used, the second presenter is not the client that used it, so the
+      // grant must go regardless of the grace window.
+      const successor = await prisma.oAuthRefreshToken.findUnique({
+        where: { id: stored.replacedById },
+      });
+
+      if (successor && successor.revokedAt === null && successor.expiresAt > new Date()) {
+        // Successor is still live and unused — this is a benign retry.
+        // Verify client ID and user still exist, then issue a fresh pair in the same family.
+        if (clientId && stored.clientId !== clientId) {
+          return oauthError("invalid_grant", "client_id mismatch.");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { id: stored.userId },
+          select: { id: true, email: true, role: true },
+        });
+
+        if (!user) {
+          // User is gone — revoke the family.
+          await prisma.oAuthRefreshToken.updateMany({
+            where: { familyId: stored.familyId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          return oauthError("invalid_grant", "User no longer exists.");
+        }
+
+        // Issue a fresh pair under the same family (grace window allowed the retry).
+        const { accessToken, refreshToken } = await issueTokens(
+          user,
+          stored.clientId,
+          stored.scope,
+          stored.familyId,
+        );
+        return tokenResponse(accessToken, refreshToken, stored.scope);
+      }
+    }
+
+    // Outside grace window, or successor was used/revoked — this is a replay.
+    // Revoke the entire family (theft detection).
     await prisma.oAuthRefreshToken.updateMany({
       where: { familyId: stored.familyId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -179,7 +231,7 @@ async function handleRefreshToken(params: URLSearchParams) {
     return oauthError("invalid_grant", "User no longer exists.");
   }
 
-  // Rotate: mint a new pair in the same family, then revoke the presented token.
+  // Rotate: mint a new pair in the same family, then mark the presented token rotated.
   const { accessToken, refreshToken, refreshId } = await issueTokens(
     user,
     stored.clientId,
