@@ -6,14 +6,26 @@ import type { Role } from "@prisma/client";
 const ISSUER = "tour-planner";
 const AUDIENCE = "tour-planner-mcp";
 
-// Access tokens are short-lived so that a revoked session (refresh token) stops
-// granting access quickly even though the JWT itself is self-contained and never
-// checked against the database on the MCP hot path.
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
+// Access tokens are self-contained JWTs, verified by signature alone on the MCP hot
+// path — never checked against the database. So a revoked session can keep granting
+// access until its current access token expires: up to this TTL. An hour (was 15
+// minutes) is the tradeoff for refreshing a quarter as often, and every refresh is a
+// chance for a lost response to cost the client its connection.
+export const ACCESS_TOKEN_TTL_SECONDS = 60 * 60; // 60 minutes
 const ACCESS_TOKEN_TTL = `${ACCESS_TOKEN_TTL_SECONDS}s`;
 
 // Refresh tokens are long-lived and rotated on every use.
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+
+// Grace window for refresh token rotation reuse detection. When a refresh token
+// that was just rotated is presented again within this window, AND its successor
+// has not yet been rotated, a fresh pair is issued instead of revoking the family.
+// This accommodates benign retries (timeouts, network duplicates, concurrent
+// refreshes) that occur frequently with MCP clients, while still protecting against
+// genuine replay attacks (once the successor is used, the second presenter is not
+// the client that used it, and the grant goes).
+// See: src/app/api/oauth/token/route.ts handleRefreshToken() and RFC 6819 §5.2.2.3
+export const REFRESH_GRACE_SECONDS = 120; // 2 minutes
 
 function getSecret() {
   const raw = process.env.AUTH_SECRET;
