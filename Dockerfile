@@ -47,6 +47,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3076
+# Next's standalone server.js binds to $HOSTNAME, which Docker sets to the
+# container ID — that resolves to the container IP only, so 127.0.0.1 (the
+# healthcheck) gets ECONNREFUSED. Bind all interfaces instead.
+ENV HOSTNAME=0.0.0.0
 
 # Non-root runtime user.
 RUN addgroup --system --gid 1001 nodejs \
