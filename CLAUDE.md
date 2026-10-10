@@ -2,11 +2,11 @@
 
 ## MCP Server
 
-Remote MCP endpoint at `/api/mcp` (Streamable HTTP). OAuth 2.1 at `/api/oauth/*`.
+Remote MCP endpoint at `/mcp` (Streamable HTTP; `src/app/mcp/route.ts`). OAuth 2.1 at `/api/oauth/*`.
 Discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
 (served via rewrites in `next.config.ts` to `/api/well-known/*`).
 
-The `/api/mcp` route creates a fresh `WebStandardStreamableHTTPServerTransport` per request
+The `/mcp` route creates a fresh `WebStandardStreamableHTTPServerTransport` per request
 with `enableJsonResponse: true`. This is required: the handler closes the transport in a
 `finally` right after `handleRequest()` returns, so the default SSE-streaming mode (which writes
 the reply asynchronously) would tear the stream down before the response is sent. JSON mode makes
@@ -234,7 +234,7 @@ npm test                          # vitest
   (`src/lib/share.ts`).
 - **Routing**: authenticated pages live under `src/app/(app)/` (shell = `AppNav` +
   `requireUser` layout). Public routes: `/login`, `/setup`, `/share/[token]`,
-  `/api/{auth,mcp,oauth,well-known}`, `/api/feed/[token].ics`,
+  `/api/{auth,oauth,well-known}`, `/mcp`, `/api/feed/[token].ics`,
   `/api/share/[token].ics`, `/api/share/[token]/documents/[id]`. The `src/proxy.ts` matcher excludes those + assets
   (add the route's path segment to the negative lookahead when introducing a new
   public endpoint).
