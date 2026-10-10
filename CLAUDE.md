@@ -3,8 +3,11 @@
 ## MCP Server
 
 Remote MCP endpoint at `/mcp` (Streamable HTTP; `src/app/mcp/route.ts`). OAuth 2.1 at `/api/oauth/*`.
-Discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
-(served via rewrites in `next.config.ts` to `/api/well-known/*`).
+Discovery at `/.well-known/oauth-protected-resource` (also `/.well-known/oauth-protected-resource/mcp`,
+the RFC 9728 path-suffixed form; same document) and `/.well-known/oauth-authorization-server`
+(served via rewrites in `next.config.ts` to `/api/well-known/*`). The `/mcp` 401 sends
+`WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"`.
+`src/proxy.ts` excludes `.well-known` from its auth matcher, so discovery is never redirected to login.
 
 The `/mcp` route creates a fresh `WebStandardStreamableHTTPServerTransport` per request
 with `enableJsonResponse: true`. This is required: the handler closes the transport in a

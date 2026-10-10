@@ -1,5 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { getMcpUser } from "@/lib/mcp/auth";
+import { getBaseUrl, getMcpUser } from "@/lib/mcp/auth";
 import { createMcpServer } from "@/lib/mcp/server";
 
 export async function POST(request: Request) {
@@ -7,7 +7,9 @@ export async function POST(request: Request) {
   if (!user) {
     return new Response("Unauthorized", {
       status: 401,
-      headers: { "WWW-Authenticate": "Bearer" },
+      headers: {
+        "WWW-Authenticate": `Bearer resource_metadata="${getBaseUrl()}/.well-known/oauth-protected-resource/mcp"`,
+      },
     });
   }
 
