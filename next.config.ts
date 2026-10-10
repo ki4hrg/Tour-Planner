@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
         source: "/.well-known/oauth-protected-resource",
         destination: "/api/well-known/oauth-protected-resource",
       },
+      {
+        // RFC 9728 path-suffixed form for the /mcp resource. Same document.
+        source: "/.well-known/oauth-protected-resource/mcp",
+        destination: "/api/well-known/oauth-protected-resource",
+      },
     ];
   },
 };
