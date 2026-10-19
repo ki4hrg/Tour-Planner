@@ -15,6 +15,7 @@ export type LocationTripRow = {
   ongoing: boolean;
   bookingStatus: BookingStatus;
   sessionCount: number;
+  plannedCount: number; // rough-plan day assignments with no set time
   hasLodging: boolean;
 };
 
@@ -36,6 +37,7 @@ export function LocationTripsPanel({
           r.sessionCount
             ? `${r.sessionCount} session${r.sessionCount === 1 ? "" : "s"}`
             : null,
+          r.plannedCount ? `${r.plannedCount} planned` : null,
           r.hasLodging ? "lodging" : null,
         ]
           .filter(Boolean)

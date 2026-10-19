@@ -154,7 +154,8 @@ export default async function LocationDetailPage({
   const termsCurrency = location.costs[0]?.currency ?? "USD";
 
   // Trips touching this venue that are ongoing or start within 30 days — the
-  // on-site working set. Touch = engagement booking, schedule-item site, or stay.
+  // on-site working set. Touch = engagement booking, schedule-item site, stay,
+  // or a rough-plan (time-less) day assignment.
   const today = todayUtc();
   const currentTripRows = await prisma.trip.findMany({
     where: {
@@ -171,6 +172,7 @@ export default async function LocationDetailPage({
             },
           },
         },
+        { days: { some: { plannedLocations: { some: { locationId: id } } } } },
       ],
     },
     orderBy: { startDate: "asc" },
@@ -187,6 +189,7 @@ export default async function LocationDetailPage({
             where: { sites: { some: { locationId: id } } },
             select: { id: true },
           },
+          plannedLocations: { where: { locationId: id }, select: { id: true } },
         },
       },
     },
@@ -200,37 +203,51 @@ export default async function LocationDetailPage({
     ongoing: isOngoing(t.startDate, t.endDate),
     bookingStatus: t.bookings[0]?.status ?? "NOT_BOOKED",
     sessionCount: t.days.reduce((n, d) => n + d.scheduleItems.length, 0),
+    plannedCount: t.days.reduce((n, d) => n + d.plannedLocations.length, 0),
     hasLodging: t.stays.length > 0,
   }));
 
   // Visit history: which non-template trips this venue appears in, newest first.
-  const visitRows = await prisma.scheduleItemSite.findMany({
-    where: {
-      locationId: id,
-      scheduleItem: { day: { trip: { isTemplate: false } } },
-    },
-    select: {
-      scheduleItem: {
-        select: {
-          day: {
-            select: {
-              trip: { select: { id: true, name: true, startDate: true } },
-            },
-          },
-        },
+  // Timed schedule-item stops and rough-plan (time-less) day assignments are
+  // counted separately so an unfirmed plan still shows up here.
+  const tripSelect = {
+    day: { select: { trip: { select: { id: true, name: true, startDate: true } } } },
+  } as const;
+  const [visitRows, plannedRows] = await Promise.all([
+    prisma.scheduleItemSite.findMany({
+      where: {
+        locationId: id,
+        scheduleItem: { day: { trip: { isTemplate: false } } },
       },
-    },
-  });
+      select: { scheduleItem: { select: tripSelect } },
+    }),
+    prisma.itineraryDayLocation.findMany({
+      where: { locationId: id, day: { trip: { isTemplate: false } } },
+      select: tripSelect,
+    }),
+  ]);
   const visitMap = new Map<
     string,
-    { id: string; name: string; startDate: Date | null; count: number }
+    {
+      id: string;
+      name: string;
+      startDate: Date | null;
+      count: number;
+      planned: number;
+    }
   >();
-  for (const v of visitRows) {
-    const t = v.scheduleItem.day.trip;
-    const existing = visitMap.get(t.id);
-    if (existing) existing.count += 1;
-    else visitMap.set(t.id, { id: t.id, name: t.name, startDate: t.startDate, count: 1 });
-  }
+  const tally = (
+    t: { id: string; name: string; startDate: Date | null },
+    key: "count" | "planned",
+  ) => {
+    const existing =
+      visitMap.get(t.id) ??
+      { id: t.id, name: t.name, startDate: t.startDate, count: 0, planned: 0 };
+    existing[key] += 1;
+    visitMap.set(t.id, existing);
+  };
+  for (const v of visitRows) tally(v.scheduleItem.day.trip, "count");
+  for (const p of plannedRows) tally(p.day.trip, "planned");
   const visits = [...visitMap.values()].sort(
     (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
   );
@@ -444,8 +461,15 @@ export default async function LocationDetailPage({
                     {v.name}
                   </Link>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {v.startDate ? formatDate(v.startDate) : "—"} · {v.count}{" "}
-                    visit{v.count === 1 ? "" : "s"}
+                    {[
+                      v.startDate ? formatDate(v.startDate) : "—",
+                      v.count
+                        ? `${v.count} visit${v.count === 1 ? "" : "s"}`
+                        : null,
+                      v.planned ? `${v.planned} planned` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </li>
               ))}
