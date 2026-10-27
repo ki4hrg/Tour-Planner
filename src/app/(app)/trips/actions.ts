@@ -1139,6 +1139,47 @@ export async function setBookingStepAction(
   return { ok: true };
 }
 
+// Tick (or untick) a step on several bookings at once — the progress view's
+// bulk action ("booking forms went out for all three venues"). Each entry names
+// its own step, since the bookings may follow different workflows. Applies what
+// it can and reports the rest.
+export async function setBookingStepsBulk(
+  entries: { target: BookingTarget; stepId: string }[],
+  done: boolean,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const on = todayUtc();
+  const tripIds = new Set<string>();
+  let updated = 0;
+  const failed: string[] = [];
+  for (const { target, stepId } of entries) {
+    const t = await resolveBookingTarget(target);
+    if ("error" in t) {
+      failed.push(t.error);
+      continue;
+    }
+    const res = await setBookingStep({
+      bookingId: t.bookingId,
+      stepId,
+      done,
+      completedOn: on,
+      userId: user.id,
+    });
+    if ("error" in res) {
+      failed.push(res.error);
+      continue;
+    }
+    updated++;
+    if (t.tripId) tripIds.add(t.tripId);
+  }
+  for (const id of tripIds) revalidateTrip(id);
+  const msg = `Updated ${updated} booking${updated === 1 ? "" : "s"}.`;
+  if (failed.length) {
+    return { error: `${msg} ${failed.length} failed: ${[...new Set(failed)].join(" ")}` };
+  }
+  return { ok: true, message: msg };
+}
+
 // Move a booking straight to a workflow stage (the board's drag between step
 // columns): ticks `stepId` and clears every later step; null = not started.
 export async function setBookingStageAction(

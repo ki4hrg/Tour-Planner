@@ -362,7 +362,11 @@ npm test                          # vitest
   the template's own workflow wins and progress resets). The one status UI is
   `WorkflowControl` (`trips/workflow-control.tsx`, catalog via
   `BookingWorkflowsProvider` in the `(app)` layout); the board's per-workflow view
-  drags between step columns (`setBookingStage`). Rough-plan planned locations also
+  drags between step columns (`setBookingStage`). The dashboard's **Progress** view
+  (`trips/booking-progress.tsx`, `?view=progress`) lists every booking across
+  workflows with its full step strip — one-click step toggles, plus multi-select
+  "Mark done" matched by step LABEL (`setBookingStepsBulk`), since selected rows
+  may follow different workflows. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
 - **Location merge**: `src/lib/location-merge.ts` folds a duplicate SOURCE into
