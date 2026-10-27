@@ -239,7 +239,7 @@ describe("formatting", () => {
   it("formats sessions with date or day number", () => {
     expect(
       formatSession({
-        id: "i",
+        id: "i", dayId: null,
         dayIndex: 2,
         date: "2026-07-07",
         startTime: "10:00",
@@ -249,7 +249,7 @@ describe("formatting", () => {
     ).toBe("Tue 7 Jul, 10:00–12:00: Visit");
     expect(
       formatSession({
-        id: "i",
+        id: "i", dayId: null,
         dayIndex: 3,
         date: null,
         startTime: null,
@@ -281,7 +281,7 @@ describe("buildVenueEmail", () => {
             nightCount: 2,
             sessions: [
               {
-                id: "s",
+                id: "s", dayId: null,
                 dayIndex: 2,
                 date: "2026-07-07",
                 startTime: "10:00",

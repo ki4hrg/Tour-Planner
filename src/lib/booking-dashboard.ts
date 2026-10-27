@@ -33,6 +33,7 @@ import { progressView, type BookingProgressView } from "./booking-workflow";
 
 export type CoveredSession = {
   id: string;
+  dayId: string | null; // links the session to its day view
   dayIndex: number;
   date: string | null;
   startTime: string | null;
@@ -150,6 +151,7 @@ const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
   );
 
 type DayInput = {
+  id?: string;
   dayIndex: number;
   date: Date | null;
   scheduleItems: ItemInput[];
@@ -258,6 +260,7 @@ export function buildDashboardRows(data: DashboardData): {
         const v = ensure(site.locationId);
         v.sessions.push({
           id: item.id,
+          dayId: day.id ?? null,
           dayIndex: day.dayIndex,
           date: day.date ? toDateInput(day.date) : null,
           startTime: item.startTime,
@@ -288,6 +291,7 @@ export function buildDashboardRows(data: DashboardData): {
       if (v.sessions.some((s) => s.dayIndex === day.dayIndex)) continue;
       v.sessions.push({
         id: `planned:${day.dayIndex}:${p.locationId}`,
+        dayId: day.id ?? null,
         dayIndex: day.dayIndex,
         date: day.date ? toDateInput(day.date) : null,
         startTime: null,

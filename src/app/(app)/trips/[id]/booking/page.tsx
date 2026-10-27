@@ -35,6 +35,7 @@ export default async function BookingDashboardPage({
       days: {
         orderBy: { dayIndex: "asc" },
         select: {
+          id: true,
           dayIndex: true,
           date: true,
           plannedLocations: { select: { locationId: true } },

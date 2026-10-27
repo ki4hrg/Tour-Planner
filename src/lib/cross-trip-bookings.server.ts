@@ -53,6 +53,7 @@ const TRIP_SELECT = {
   days: {
     orderBy: { dayIndex: "asc" },
     select: {
+      id: true,
       dayIndex: true,
       date: true,
       plannedLocations: { select: { locationId: true } },

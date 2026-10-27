@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -110,14 +111,26 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
         <PaymentState row={row} />
       </div>
     );
+  // No agreed price yet: fall back to the venue's list prices (its Cost
+  // catalog, edited on the Location page), each named, and tagged "list" so
+  // they read as reference prices, not this trip's deal.
   return (
     <div className="space-y-0.5">
-      {row.costs.map((c) => (
-        <div key={c.id} className="flex items-center gap-1.5">
+      {row.costs.map((c, i) => (
+        <div key={c.id} className="flex flex-wrap items-center gap-x-1.5">
+          <span className="text-muted-foreground">{c.label}</span>
           <span>
             {formatMoney(c.amount, c.currency)}
             <span className="text-muted-foreground"> {COST_UNIT_LABELS[c.unit]}</span>
           </span>
+          {i === 0 ? (
+            <span
+              className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
+              title="Venue list price"
+            >
+              list
+            </span>
+          ) : null}
           {isCostStale(c.confirmedAt) ? (
             <span
               className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
@@ -301,7 +314,18 @@ export function VenueDetails({
                   D{s.dayIndex}
                 </span>
                 <span className="min-w-0">
-                  {s.label}
+                  {s.dayId ? (
+                    <Link
+                      href={`/trips/${tripId}/days/${s.dayId}${
+                        s.planned ? "" : `#item-${s.id}`
+                      }`}
+                      className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                    >
+                      {s.label}
+                    </Link>
+                  ) : (
+                    s.label
+                  )}
                   <span className="text-muted-foreground">
                     {s.startTime || s.endTime
                       ? ` · ${[s.startTime, s.endTime].filter(Boolean).join("–")}`
