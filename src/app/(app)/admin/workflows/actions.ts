@@ -64,7 +64,7 @@ export async function saveWorkflow(
       where: { workflowId: id, id: { notIn: [...kept] } },
     });
     for (const [i, s] of steps.entries()) {
-      const data = { label: s.label, status: s.status, sortOrder: i };
+      const data = { label: s.label, status: s.status, actor: s.actor, sortOrder: i };
       if (s.id) {
         await tx.bookingWorkflowStep.update({ where: { id: s.id }, data });
       } else {

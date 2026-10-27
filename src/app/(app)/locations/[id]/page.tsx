@@ -15,9 +15,12 @@ import { agreedTotal, tripHeadcount } from "@/lib/costs";
 import { bookingStageText } from "@/lib/trips";
 import {
   BOOKING_PROGRESS_SELECT,
+  WORKFLOW_STEP_SELECT,
   progressView,
-  upcomingStep,
+  waitingOn,
+  waitingView,
 } from "@/lib/booking-workflow";
+import { WaitingNote } from "../../trips/waiting-note";
 import { LocationWorkflowSelect } from "../location-workflow-select";
 import { ProgressList, type ProgressLine } from "../../trips/booking-progress";
 import {
@@ -365,11 +368,11 @@ export default async function LocationDetailPage({
             select: {
               steps: {
                 orderBy: { sortOrder: "asc" },
-                select: { id: true, label: true, sortOrder: true, status: true },
+                select: WORKFLOW_STEP_SELECT,
               },
             },
           },
-          stepCompletions: { select: { stepId: true } },
+          stepCompletions: { select: { stepId: true, completedOn: true } },
           bookedOn: true,
           createdAt: true,
           agreedAmount: true,
@@ -417,8 +420,17 @@ export default async function LocationDetailPage({
         startDate: b.trip!.startDate,
         status: b.status,
         stageLabel: b.stageLabel,
-        nextStep: b.workflow
-          ? (upcomingStep(b.workflow.steps, b.stepCompletions, b.status)?.label ?? null)
+        // Whose move: the upcoming step + its owner, days waiting as of today.
+        waiting: b.workflow
+          ? waitingView(
+              waitingOn(
+                b.workflow.steps,
+                b.stepCompletions,
+                b.status,
+                b.bookedOn ?? b.createdAt,
+              ),
+              today,
+            )
           : null,
         currency: b.agreedCurrency,
         // Set only for a per-person rate whose trip has no headcount.
@@ -650,7 +662,11 @@ export default async function LocationDetailPage({
                     </Link>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {e.startDate ? formatDate(e.startDate) : "—"} ·{" "}
-                      {e.nextStep ? `Next: ${e.nextStep}` : bookingStageText(e)}
+                      {e.waiting ? (
+                        <WaitingNote waiting={e.waiting} />
+                      ) : (
+                        bookingStageText(e)
+                      )}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">

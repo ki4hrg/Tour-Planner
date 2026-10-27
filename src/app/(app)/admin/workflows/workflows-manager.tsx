@@ -16,10 +16,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FormState } from "@/lib/forms";
-import type { StepStatus } from "@/lib/booking-workflow";
+import type { StepActor, StepStatus } from "@/lib/booking-workflow";
+import { cn } from "@/lib/utils";
 import { createWorkflow, saveWorkflow, deleteWorkflow } from "./actions";
 
-type Step = { id?: string; key: string; label: string; status: StepStatus };
+type Step = {
+  id?: string;
+  key: string;
+  label: string;
+  status: StepStatus;
+  actor: StepActor;
+};
 
 export type WorkflowRow = {
   id: string;
@@ -27,12 +34,18 @@ export type WorkflowRow = {
   isDefault: boolean;
   bookingCount: number;
   locationCount: number;
-  steps: { id: string; label: string; status: StepStatus }[];
+  steps: { id: string; label: string; status: StepStatus; actor: StepActor }[];
 };
 
 const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   IN_PROGRESS: "In progress",
   CONFIRMED: "Confirmed",
+};
+
+// Whose move the step is once a booking reaches it.
+const STEP_ACTOR_LABELS: Record<StepActor, string> = {
+  US: "Us",
+  VENUE: "Venue",
 };
 
 function useAction() {
@@ -77,7 +90,11 @@ export function WorkflowsManager({ workflows }: { workflows: WorkflowRow[] }) {
           aria-label="New workflow name"
           className="max-w-xs"
         />
-        <Button type="submit" variant="outline" disabled={pending || !name.trim()}>
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={pending || !name.trim()}
+        >
           Add workflow
         </Button>
       </form>
@@ -124,7 +141,12 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
       saveWorkflow(workflow.id, {
         name,
         isDefault,
-        steps: steps.map(({ id, label, status }) => ({ id, label, status })),
+        steps: steps.map(({ id, label, status, actor }) => ({
+          id,
+          label,
+          status,
+          actor,
+        })),
       }),
     );
   };
@@ -171,12 +193,14 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
         <span className="ml-auto flex gap-1">
           {workflow.bookingCount ? (
             <Badge variant="secondary">
-              {workflow.bookingCount} booking{workflow.bookingCount === 1 ? "" : "s"}
+              {workflow.bookingCount} booking
+              {workflow.bookingCount === 1 ? "" : "s"}
             </Badge>
           ) : null}
           {workflow.locationCount ? (
             <Badge variant="secondary">
-              {workflow.locationCount} location{workflow.locationCount === 1 ? "" : "s"}
+              {workflow.locationCount} location
+              {workflow.locationCount === 1 ? "" : "s"}
             </Badge>
           ) : null}
         </span>
@@ -184,7 +208,10 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
 
       <ol className="space-y-2">
         {steps.map((s, i) => (
-          <li key={s.key} className="flex items-center gap-2">
+          <li
+            key={s.key}
+            className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
+          >
             <span className="w-5 text-right text-sm text-muted-foreground">
               {i + 1}.
             </span>
@@ -192,13 +219,39 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
               value={s.label}
               onChange={(e) => patch(i, { label: e.target.value })}
               aria-label={`Step ${i + 1} label`}
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0"
             />
+            <div
+              role="radiogroup"
+              aria-label={`Step ${i + 1} owner`}
+              className="ml-7 inline-flex shrink-0 rounded-md border p-0.5 text-xs sm:ml-0"
+            >
+              {(Object.keys(STEP_ACTOR_LABELS) as StepActor[]).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  role="radio"
+                  aria-checked={s.actor === a}
+                  onClick={() => patch(i, { actor: a })}
+                  className={cn(
+                    "rounded px-2 py-1",
+                    s.actor === a
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {STEP_ACTOR_LABELS[a]}
+                </button>
+              ))}
+            </div>
             <Select
               value={s.status}
               onValueChange={(v) => patch(i, { status: v as StepStatus })}
             >
-              <SelectTrigger className="w-36" aria-label={`Step ${i + 1} reaches`}>
+              <SelectTrigger
+                className="w-36"
+                aria-label={`Step ${i + 1} reaches`}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -209,32 +262,37 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Move up"
-              disabled={i === 0}
-              onClick={() => move(i, -1)}
-            >
-              <ArrowUp className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Move down"
-              disabled={i === steps.length - 1}
-              onClick={() => move(i, 1)}
-            >
-              <ArrowDown className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Remove step"
-              onClick={() => setSteps((prev) => prev.filter((_, j) => j !== i))}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+            {/* Below sm the row wraps: label, then owner + status, then these. */}
+            <span className="ml-auto flex sm:ml-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Move up"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Move down"
+                disabled={i === steps.length - 1}
+                onClick={() => move(i, 1)}
+              >
+                <ArrowDown className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Remove step"
+                onClick={() =>
+                  setSteps((prev) => prev.filter((_, j) => j !== i))
+                }
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </span>
           </li>
         ))}
       </ol>
@@ -246,7 +304,7 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
           onClick={() =>
             setSteps((prev) => [
               ...prev,
-              { key: newKey(), label: "", status: "IN_PROGRESS" },
+              { key: newKey(), label: "", status: "IN_PROGRESS", actor: "US" },
             ])
           }
         >

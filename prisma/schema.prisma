@@ -36,6 +36,14 @@ enum BookingStatus {
   NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 
+// Whose move a workflow step is: US (the planner — "sign the agreement") or
+// VENUE (waiting on them — "confirm availability"). The booking's upcoming step
+// decides who holds the ball (src/lib/booking-workflow.ts `waitingOn`).
+enum StepActor {
+  US
+  VENUE
+}
+
 enum CostUnit {
   PER_PERSON
   PER_GROUP
@@ -543,6 +551,7 @@ model BookingWorkflowStep {
   label       String
   sortOrder   Int                     @default(0)
   status      BookingStatus           @default(IN_PROGRESS)
+  actor       StepActor               @default(US) // who completes this step
   completions BookingStepCompletion[]
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt

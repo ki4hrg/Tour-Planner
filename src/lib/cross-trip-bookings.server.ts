@@ -14,6 +14,7 @@ import {
   type VenueMeta,
 } from "./cross-trip-bookings";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { loadWorkflowCatalog } from "@/lib/booking-workflow-sync";
 
 export type { TripItemBookings };
 
@@ -128,7 +129,7 @@ export async function loadCrossTripBookings({
   tripTypeId?: string;
   includePast?: boolean;
 } = {}): Promise<CrossTripBookings> {
-  const [trips, regions] = await Promise.all([
+  const [trips, regions, workflows] = await Promise.all([
     prisma.trip.findMany({
       where: {
         ...crossTripScope(includePast),
@@ -140,6 +141,7 @@ export async function loadCrossTripBookings({
     prisma.region.findMany({
       select: { id: true, name: true, parentId: true },
     }),
+    loadWorkflowCatalog(),
   ]);
 
   const locationIds = [
@@ -211,6 +213,7 @@ export async function loadCrossTripBookings({
       locations,
       tripStartDate: t.startDate,
       headcount: tripHeadcount(t),
+      workflows,
     });
     return { trip, venueRows, itemRows };
   });

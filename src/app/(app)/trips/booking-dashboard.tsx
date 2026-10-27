@@ -15,6 +15,7 @@ import {
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
 import { isBookingSecured } from "@/lib/booking";
+import { isYourMove } from "@/lib/cross-trip-bookings";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
 import { BookingBoard } from "./booking-board";
 import { BookingProgress } from "./booking-progress";
@@ -28,6 +29,7 @@ type Filters = {
   missingPrice: boolean;
   unconfirmed: boolean;
   paymentOverdue: boolean;
+  yourMove: boolean;
 };
 
 const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
@@ -35,6 +37,7 @@ const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
   { key: "missingPrice", label: "Missing price" },
   { key: "unconfirmed", label: "Unconfirmed" },
   { key: "paymentOverdue", label: "Payment overdue" },
+  { key: "yourMove", label: "Your move" },
 ];
 
 function venueMatches(row: VenueBookingRow, f: Filters): boolean {
@@ -44,7 +47,8 @@ function venueMatches(row: VenueBookingRow, f: Filters): boolean {
     (f.windowOpen && row.open && !isBookingSecured(row.status)) ||
     (f.missingPrice && row.isMissingCost) ||
     (f.unconfirmed && !isBookingSecured(row.status)) ||
-    (f.paymentOverdue && row.overdueAmount > 0)
+    (f.paymentOverdue && row.overdueAmount > 0) ||
+    (f.yourMove && isYourMove(row))
   );
 }
 
@@ -96,6 +100,7 @@ export function BookingDashboard({
     missingPrice: !focused,
     unconfirmed: !focused,
     paymentOverdue: !focused,
+    yourMove: !focused,
   });
 
   useEffect(() => {
@@ -114,7 +119,11 @@ export function BookingDashboard({
     ? venueRows.filter((r) => venueMatches(r, filters))
     : venueRows;
   const shownItems = anyFilter
-    ? itemRows.filter((r) => filters.unconfirmed && !isBookingSecured(r.status))
+    ? itemRows.filter(
+        (r) =>
+          (filters.unconfirmed && !isBookingSecured(r.status)) ||
+          (filters.yourMove && isYourMove(r)),
+      )
     : itemRows;
 
   const total = venueRows.length + itemRows.length;

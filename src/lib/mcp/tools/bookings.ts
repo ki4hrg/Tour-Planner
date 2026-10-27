@@ -1,6 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { BookingStatus } from "@prisma/client";
+import {
+  WORKFLOW_STEP_SELECT,
+  waitingOn,
+  waitingView,
+} from "@/lib/booking-workflow";
 import { BOOKING_STATUSES } from "@/lib/trips";
 import {
   seedWorkflowFor,
@@ -21,7 +26,8 @@ import { engagementLocationIdFor } from "@/lib/booked-via.server";
 
 const BOOKING_STATUSES_TUPLE = BOOKING_STATUSES as [BookingStatus, ...BookingStatus[]];
 
-// Workflow + step completions, for workflowProgress().
+// Workflow + step completions (+ the dates "whose move" falls back to), for
+// workflowProgress().
 const WORKFLOW_INCLUDE = {
   workflow: {
     select: {
@@ -29,7 +35,7 @@ const WORKFLOW_INCLUDE = {
       name: true,
       steps: {
         orderBy: { sortOrder: "asc" as const },
-        select: { id: true, label: true, status: true },
+        select: WORKFLOW_STEP_SELECT,
       },
     },
   },
@@ -37,25 +43,48 @@ const WORKFLOW_INCLUDE = {
 };
 
 function workflowProgress(b: {
+  status: BookingStatus;
   stageLabel: string | null;
   stageOn: Date | null;
+  bookedOn: Date | null;
+  createdAt: Date;
   workflow: {
     id: string;
     name: string;
-    steps: { id: string; label: string; status: BookingStatus }[];
+    steps: {
+      id: string;
+      label: string;
+      sortOrder: number;
+      status: BookingStatus;
+      actor: "US" | "VENUE";
+    }[];
   } | null;
   stepCompletions: { stepId: string; completedOn: Date }[];
 }) {
-  if (!b.workflow) return { workflow: null };
+  if (!b.workflow) return { workflow: null, waiting: null };
   const done = new Map(b.stepCompletions.map((c) => [c.stepId, c.completedOn]));
+  // Whose move: the upcoming step, its owner, and how long it has waited.
+  const w = waitingView(
+    waitingOn(b.workflow.steps, b.stepCompletions, b.status, b.bookedOn ?? b.createdAt),
+    todayUtc(),
+  );
   return {
     workflow: { id: b.workflow.id, name: b.workflow.name },
     stage: b.stageLabel,
     stageOn: b.stageOn ? toDateInput(b.stageOn) : null,
+    waiting: w
+      ? {
+          actor: w.actor,
+          nextStep: { id: w.stepId, label: w.stepLabel },
+          since: w.since,
+          daysWaiting: w.days,
+        }
+      : null,
     steps: b.workflow.steps.map((s) => ({
       id: s.id,
       label: s.label,
       reachesStatus: s.status,
+      actor: s.actor,
       done: done.has(s.id),
       completedOn: done.has(s.id) ? toDateInput(done.get(s.id)!) : null,
     })),
@@ -72,7 +101,15 @@ function toolError(text: string) {
 async function bookingStateResult(bookingId: string) {
   const b = await prisma.booking.findUniqueOrThrow({
     where: { id: bookingId },
-    select: { id: true, status: true, stageLabel: true, stageOn: true, ...WORKFLOW_INCLUDE },
+    select: {
+      id: true,
+      status: true,
+      stageLabel: true,
+      stageOn: true,
+      bookedOn: true,
+      createdAt: true,
+      ...WORKFLOW_INCLUDE,
+    },
   });
   return {
     content: [
@@ -91,7 +128,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference, and money: agreedAmount/agreedUnit as stored, agreedTotal (agreedAmount × headcount when agreedUnit is PER_PERSON, else agreedAmount; null when unknown), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with its owner — actor US = us, VENUE = the venue — and whether and when it was done; step IDs feed set-booking-step), whose move it is (waiting: { actor US|VENUE, nextStep {id,label}, since, daysWaiting } — the upcoming step's owner and how long since the last step was ticked, or since the booking was made; null when nothing is pending or no workflow), location, contact, confirmation reference, and money: agreedAmount/agreedUnit as stored, agreedTotal (agreedAmount × headcount when agreedUnit is PER_PERSON, else agreedAmount; null when unknown), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -528,7 +565,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Booking Workflows",
       description:
-        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
+        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED) and its owner (actor: US = our move, e.g. 'Sign agreement'; VENUE = waiting on the venue, e.g. 'Availability confirmed'). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -544,7 +581,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           isDefault: true,
           steps: {
             orderBy: { sortOrder: "asc" },
-            select: { id: true, label: true, status: true },
+            select: { id: true, label: true, status: true, actor: true },
           },
         },
       });
@@ -559,6 +596,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
                   id: st.id,
                   label: st.label,
                   reachesStatus: st.status,
+                  actor: st.actor,
                 })),
               })),
               null,
