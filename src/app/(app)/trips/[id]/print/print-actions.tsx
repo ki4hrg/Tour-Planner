@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { Printer, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // The print page's screen-only controls (hidden in the printout via print:hidden
@@ -11,9 +11,10 @@ export function PrintActions({ tripId }: { tripId: string }) {
     <div className="flex items-center justify-between gap-3 print:hidden">
       <Link
         href={`/trips/${tripId}`}
-        className="text-sm text-muted-foreground hover:underline"
+        className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
       >
-        ← Overview
+        <ChevronLeft className="size-4" />
+        Overview
       </Link>
       <Button size="sm" onClick={() => window.print()}>
         <Printer className="size-4" /> Print

@@ -12,6 +12,7 @@ import {
   type VenueLine,
 } from "../multi-year-grid";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -172,9 +173,10 @@ export default async function CompareYearsPage({
         </div>
         <Link
           href="/trips"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All trips
+          <ChevronLeft className="size-4" />
+          All trips
         </Link>
       </div>
 

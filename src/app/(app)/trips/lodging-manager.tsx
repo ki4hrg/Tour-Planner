@@ -279,14 +279,14 @@ function StayRow({
                 ) : null}
                 <Link
                   href={`/trips/${tripId}/booking?venue=${stay.locationId}`}
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  className="text-xs text-muted-foreground link-quiet"
                 >
-                  Booking →
+                  Booking
                 </Link>
                 {canEdit || documents.length > 0 ? (
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    className="text-xs text-muted-foreground link-quiet"
                     onClick={() => setShowFiles((v) => !v)}
                     aria-expanded={showFiles}
                   >

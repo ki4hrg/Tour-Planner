@@ -137,9 +137,9 @@ export default async function TripsPage({
         <span className="ml-auto">
           <Link
             href={qs({ status, templates: showTemplates ? undefined : "1" })}
-            className="text-sm text-muted-foreground underline-offset-2 hover:underline"
+            className="text-sm text-muted-foreground link-quiet"
           >
-            {showTemplates ? "← Trips" : "Show templates"}
+            {showTemplates ? "Hide templates" : "Show templates"}
           </Link>
         </span>
       </div>

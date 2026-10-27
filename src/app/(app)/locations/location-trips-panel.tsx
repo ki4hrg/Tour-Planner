@@ -58,9 +58,9 @@ export function LocationTripsPanel({
               {r.ongoing ? (
                 <Link
                   href={`/trips/${r.tripId}/today`}
-                  className="shrink-0 text-xs text-muted-foreground hover:underline"
+                  className="shrink-0 text-xs text-muted-foreground link-quiet"
                 >
-                  Today →
+                  Today
                 </Link>
               ) : null}
             </div>

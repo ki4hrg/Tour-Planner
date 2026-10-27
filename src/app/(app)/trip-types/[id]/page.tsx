@@ -13,6 +13,7 @@ import { EditableSection } from "@/components/editable-section";
 import { TripTypeForm } from "../trip-type-form";
 import { updateTripType, deleteTripType } from "../actions";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +50,10 @@ export default async function TripTypeDetailPage({
         <h1 className="text-2xl font-semibold">{tripType.name}</h1>
         <Link
           href="/trip-types"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All trip types
+          <ChevronLeft className="size-4" />
+          All trip types
         </Link>
       </div>
 

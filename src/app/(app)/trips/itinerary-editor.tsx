@@ -1619,7 +1619,7 @@ function ItemFields({
         ) : (
           <button
             type="button"
-            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            className="text-xs text-muted-foreground link-quiet"
             onClick={() => setCreatingLocation(true)}
           >
             + Create a new location
@@ -1687,7 +1687,7 @@ function ItemFields({
             ) : (
               <button
                 type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingTalk(true)}
               >
                 + Create a new talk
@@ -1776,7 +1776,7 @@ function ItemFields({
             ) : (
               <button
                 type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingPresenter(true)}
               >
                 + Create a new presenter

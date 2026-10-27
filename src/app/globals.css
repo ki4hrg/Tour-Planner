@@ -121,6 +121,18 @@
   --sidebar-ring: #6fae93;
 }
 
+/* Inline text link: underlined (faintly) at rest so it reads as a link —
+   hover-only underlines left links like "Booking" / "Files" looking like plain
+   metadata. Arrows are not link markers here (an arrow reads as a process). */
+@utility link-quiet {
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+  &:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

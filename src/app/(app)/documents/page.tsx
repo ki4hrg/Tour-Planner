@@ -157,9 +157,9 @@ export default async function DocumentsPage({
                   </a>
                   <Link
                     href={target.href}
-                    className="text-xs text-muted-foreground hover:underline"
+                    className="text-xs text-muted-foreground link-quiet"
                   >
-                    {target.label} →
+                    {target.label}
                   </Link>
                 </div>
                 {doc.description ? (

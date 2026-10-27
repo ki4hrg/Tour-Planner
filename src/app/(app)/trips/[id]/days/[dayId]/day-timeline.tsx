@@ -110,9 +110,9 @@ function DayShiftControl({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="text-xs text-muted-foreground link-quiet"
       >
-        Slide times →
+        Slide times
       </button>
     );
   }
@@ -176,7 +176,7 @@ function DayShiftControl({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="text-xs text-muted-foreground link-quiet"
       >
         Cancel
       </button>
@@ -254,7 +254,7 @@ function QuickEdit({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-0.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="mt-0.5 text-xs text-muted-foreground link-quiet"
       >
         Edit
       </button>
@@ -363,9 +363,9 @@ function QuickEdit({
         </Button>
         <Link
           href={`/trips/${tripId}/itinerary#item-${item.id}`}
-          className="ml-auto text-xs text-muted-foreground hover:underline"
+          className="ml-auto text-xs text-muted-foreground link-quiet"
         >
-          All options →
+          All options
         </Link>
       </div>
     </div>

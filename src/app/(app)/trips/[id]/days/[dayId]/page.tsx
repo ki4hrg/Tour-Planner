@@ -118,9 +118,10 @@ export default async function TripDayPage({
       <div className="flex items-center justify-between gap-3">
         <Link
           href={`/trips/${trip.id}`}
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← {trip.name}
+          <ChevronLeft className="size-4" />
+          {trip.name}
         </Link>
         <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
       </div>

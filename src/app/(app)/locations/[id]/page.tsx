@@ -46,6 +46,7 @@ import { MergeLocationPanel } from "../merge-location-panel";
 import { NotesThread } from "../../notes/notes-thread";
 import { DocumentRow, DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -443,9 +444,10 @@ export default async function LocationDetailPage({
         </h1>
         <Link
           href="/locations"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All locations
+          <ChevronLeft className="size-4" />
+          All locations
         </Link>
       </div>
 

@@ -849,9 +849,9 @@ export default async function TripOverviewPage({
                 </CardTitle>
                 <Link
                   href={`/trips/${trip.id}/booking`}
-                  className="text-xs text-muted-foreground hover:underline"
+                  className="text-xs text-muted-foreground link-quiet"
                 >
-                  Bookings →
+                  Bookings
                 </Link>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">

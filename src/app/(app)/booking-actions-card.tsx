@@ -116,9 +116,9 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         </CardTitle>
         <Link
           href="/bookings"
-          className="text-sm text-muted-foreground hover:underline"
+          className="text-sm text-muted-foreground link-quiet"
         >
-          All bookings →
+          All bookings
         </Link>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
@@ -137,7 +137,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         {missingPrice > 0 ? (
           <p className="text-xs text-muted-foreground">
             <Link href="/bookings" className="hover:underline">
-              {missingPrice} without agreed price →
+              {missingPrice} without agreed price
             </Link>
           </p>
         ) : null}
@@ -183,9 +183,9 @@ function Section({ title, lines }: { title: string; lines: Line[] }) {
       {more > 0 ? (
         <Link
           href="/bookings"
-          className="mt-1 inline-block text-xs text-muted-foreground hover:underline"
+          className="mt-1 inline-block text-xs text-muted-foreground link-quiet"
         >
-          +{more} more →
+          +{more} more
         </Link>
       ) : null}
     </section>

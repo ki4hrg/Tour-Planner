@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { TripForm } from "../trip-form";
 import { createTrip } from "../actions";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,10 @@ export default async function NewTripPage({
         </h1>
         <Link
           href={asTemplate ? "/trips?templates=1" : "/trips"}
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          {asTemplate ? "← All templates" : "← All trips"}
+          <ChevronLeft className="size-4" />
+          {asTemplate ? "All templates" : "All trips"}
         </Link>
       </div>
       <Card>
