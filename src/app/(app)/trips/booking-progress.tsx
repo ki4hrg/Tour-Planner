@@ -300,8 +300,8 @@ export function BookingProgress({
                   />
                 ) : null}
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{line.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="font-medium [overflow-wrap:anywhere]">{line.name}</p>
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {[line.detail, line.workflow?.name].filter(Boolean).join(" · ")}
                   </p>
                 </div>

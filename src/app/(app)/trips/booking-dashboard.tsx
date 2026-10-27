@@ -163,7 +163,7 @@ export function BookingDashboard({
   if (view === "progress") {
     return (
       <div className="space-y-3">
-        <div className="flex justify-end">{viewToggle}</div>
+        <div className="flex">{viewToggle}</div>
         <BookingProgress
           tripId={tripId}
           canEdit={canEdit}
@@ -177,9 +177,7 @@ export function BookingDashboard({
   if (view === "board") {
     return (
       <div className="space-y-3">
-        <div className="flex justify-end">
-          {viewToggle}
-        </div>
+        <div className="flex">{viewToggle}</div>
         <BookingBoard
           tripId={tripId}
           canEdit={canEdit}

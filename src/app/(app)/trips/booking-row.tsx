@@ -936,7 +936,8 @@ export function VenueRow({
           defaultOpen && "ring-2 ring-primary/40 ring-inset",
         )}
       >
-        <TableCell>
+        {/* Long venue names wrap rather than pushing the other columns off. */}
+        <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -1133,7 +1134,7 @@ export function ItemRow({
   return (
     <>
     <TableRow>
-      <TableCell>
+      <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
         <button
           type="button"
           className="text-left font-medium hover:underline"
