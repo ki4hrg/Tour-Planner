@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
+import { withBookedViaParentsWhere } from "@/lib/booked-via";
 import { tripHeadcount } from "@/lib/costs";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
@@ -120,10 +121,12 @@ export default async function BookingDashboardPage({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,
@@ -163,6 +166,10 @@ export default async function BookingDashboardPage({
     tripStartDate: trip.startDate,
     headcount: tripHeadcount(trip),
   });
+  // A deep link to a site booked via a parent opens the parent's row.
+  const focusVenue = venue
+    ? (locations.find((l) => l.id === venue)?.bookedViaId ?? venue)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -183,7 +190,7 @@ export default async function BookingDashboardPage({
             contacts={contacts}
             currencies={trip.currencies}
             documentsByBooking={documentsByBooking}
-            focusLocationId={venue ?? null}
+            focusLocationId={focusVenue}
           />
         </CardContent>
       </Card>

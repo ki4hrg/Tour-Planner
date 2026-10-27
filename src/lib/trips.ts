@@ -696,10 +696,17 @@ export type SerializedStay = {
   // The venue-engagement booking covering this stay's location (resolved by the
   // caller from the trip's engagements), or null. Lodging no longer owns a booking.
   booking: SerializedBooking | null;
+  // The parent venue whose engagement covers this lodging, when the stay's
+  // location is booked via one (null otherwise).
+  bookedVia: { id: string; name: string } | null;
 };
 
 type StayRow = Stay & {
-  location: { id: string; name: string };
+  location: {
+    id: string;
+    name: string;
+    bookedVia?: { id: string; name: string } | null;
+  };
 };
 
 // A compact, client-safe summary of the night's lodging for a single day — what
@@ -762,6 +769,9 @@ export function serializeStay(
     priority: stay.priority,
     notes: stay.notes,
     booking,
+    bookedVia: stay.location.bookedVia
+      ? { id: stay.location.bookedVia.id, name: stay.location.bookedVia.name }
+      : null,
   };
 }
 

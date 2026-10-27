@@ -25,11 +25,14 @@ import { agreedTotal as resolveAgreedTotal } from "./costs";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { stayNights } from "./stays";
 import { progressView, type BookingProgressView } from "./booking-workflow";
+import { bookedViaMap, engagementLocationId } from "./booked-via";
 
 // Serialized, client-safe rows for the booking dashboard. A "venue" row is the
 // single engagement for a (trip, location) — it auto-covers every schedule item the
 // trip runs at that location plus any lodging there. An "item" row is a site-less
-// booking (e.g. a coach) tied to one schedule item.
+// booking (e.g. a coach) tied to one schedule item. A site booked via a parent
+// venue (`Location.bookedViaId`) folds into the PARENT's row: its sessions and
+// nights are covered by the parent's engagement, each labelled with the site.
 
 export type CoveredSession = {
   id: string;
@@ -198,6 +201,9 @@ type StayInput = {
 type LocationInput = {
   id: string;
   name: string;
+  // Booked via a parent venue; the parent must be in `locations` too (load
+  // with `withBookedViaParentsWhere`) or the site keeps its own row.
+  bookedViaId?: string | null;
   bookable: boolean;
   defaultWorkflowId?: string | null;
   bookingOpensLeadDays: number | null;
@@ -217,7 +223,15 @@ export type DashboardData = {
   headcount?: number | null;
 };
 
-type VenueAccum = { sessions: CoveredSession[]; dates: Date[]; nights: number };
+type VenueAccum = {
+  sessions: CoveredSession[];
+  dates: Date[];
+  nights: number;
+  // `${dayIndex}:${siteId}` already covered by a timed session, and item ids
+  // already listed (a block visiting parent + child counts once).
+  siteDays: Set<string>;
+  itemIds: Set<string>;
+};
 
 /**
  * Build the dashboard's venue-engagement rows and site-less item-booking rows from
@@ -230,6 +244,16 @@ export function buildDashboardRows(data: DashboardData): {
   itemRows: ItemBookingRow[];
 } {
   const locById = new Map(data.locations.map((l) => [l.id, l]));
+  // Child site → the parent whose engagement covers it (parent must be loaded).
+  const viaMap = bookedViaMap(
+    data.locations.filter((l) => l.bookedViaId && locById.has(l.bookedViaId)),
+  );
+  const venueOf = (siteId: string) => engagementLocationId(siteId, viaMap);
+  // Under a parent's heading, a child's session names its site.
+  const withSite = (label: string, siteId: string, venueId: string) =>
+    siteId === venueId
+      ? label
+      : `${label} · ${locById.get(siteId)?.name ?? "Unknown location"}`;
   const engByLoc = new Map<string, EngagementInput>();
   for (const e of data.engagements) {
     if (e.locationId) engByLoc.set(e.locationId, e);
@@ -239,7 +263,13 @@ export function buildDashboardRows(data: DashboardData): {
   const ensure = (locationId: string): VenueAccum => {
     let v = venues.get(locationId);
     if (!v) {
-      v = { sessions: [], dates: [], nights: 0 };
+      v = {
+        sessions: [],
+        dates: [],
+        nights: 0,
+        siteDays: new Set(),
+        itemIds: new Set(),
+      };
       venues.set(locationId, v);
     }
     return v;
@@ -257,7 +287,11 @@ export function buildDashboardRows(data: DashboardData): {
       ).primary;
       const label = scheduleItemPrimaryLabel({ ...item, sites: [] }).primary;
       for (const site of item.sites) {
-        const v = ensure(site.locationId);
+        const venueId = venueOf(site.locationId);
+        const v = ensure(venueId);
+        v.siteDays.add(`${day.dayIndex}:${site.locationId}`);
+        if (v.itemIds.has(item.id)) continue;
+        v.itemIds.add(item.id);
         v.sessions.push({
           id: item.id,
           dayId: day.id ?? null,
@@ -265,7 +299,7 @@ export function buildDashboardRows(data: DashboardData): {
           date: day.date ? toDateInput(day.date) : null,
           startTime: item.startTime,
           endTime: item.endTime,
-          label: sessionLabel,
+          label: withSite(sessionLabel, site.locationId, venueId),
         });
         if (day.date) v.dates.push(day.date);
       }
@@ -284,11 +318,14 @@ export function buildDashboardRows(data: DashboardData): {
         });
       }
     }
-    // Planned visits: one untimed session per (day, venue) the day's schedule
+    // Planned visits: one untimed session per (day, site) the day's schedule
     // doesn't already cover.
     for (const p of day.plannedLocations ?? []) {
-      const v = ensure(p.locationId);
-      if (v.sessions.some((s) => s.dayIndex === day.dayIndex)) continue;
+      const venueId = venueOf(p.locationId);
+      const v = ensure(venueId);
+      const key = `${day.dayIndex}:${p.locationId}`;
+      if (v.siteDays.has(key)) continue;
+      v.siteDays.add(key);
       v.sessions.push({
         id: `planned:${day.dayIndex}:${p.locationId}`,
         dayId: day.id ?? null,
@@ -296,7 +333,7 @@ export function buildDashboardRows(data: DashboardData): {
         date: day.date ? toDateInput(day.date) : null,
         startTime: null,
         endTime: null,
-        label: "Planned",
+        label: withSite("Planned", p.locationId, venueId),
         planned: true,
       });
       if (day.date) v.dates.push(day.date);
@@ -305,7 +342,7 @@ export function buildDashboardRows(data: DashboardData): {
 
   // Stays: lodging at a location folds into that venue's engagement.
   for (const stay of data.stays) {
-    const v = ensure(stay.locationId);
+    const v = ensure(venueOf(stay.locationId));
     v.nights += stayNights(stay);
     if (stay.checkIn) v.dates.push(stay.checkIn);
   }

@@ -5,6 +5,7 @@ import { requireUser, hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toDateInput } from "@/lib/dates";
 import { buildDashboardRows, type VenueBookingRow } from "@/lib/booking-dashboard";
+import { withBookedViaParentsWhere } from "@/lib/booked-via";
 import { tripHeadcount } from "@/lib/costs";
 import {
   MultiYearGrid,
@@ -112,10 +113,12 @@ export default async function CompareYearsPage({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,

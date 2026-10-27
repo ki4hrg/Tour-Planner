@@ -20,6 +20,7 @@ import type { BookingStatus, CostUnit, Prisma } from "@prisma/client";
 import { BOOKING_STATUS_RANK } from "./booking-workflow";
 import { recomputeBooking } from "./booking-workflow-sync";
 import { prisma } from "@/lib/db";
+import { mergeBookedVia } from "./booked-via";
 
 // Join two free-text fields: keep both when they differ, never duplicate.
 export function joinText(
@@ -180,6 +181,8 @@ export type LocationMergePreview = {
   contacts: number;
   travelReferences: number;
   shareLinks: number;
+  // Sites booked via the source that will be booked via the target instead.
+  coveredSites: number;
   hostSite: "none" | "moved" | "merged";
   paymentTerms: "none" | "moved" | "dropped";
 };
@@ -211,6 +214,8 @@ async function loadPair(db: Db, sourceId: string, targetId: string) {
     primaryContactId: true,
     archivedAt: true,
     defaultWorkflowId: true,
+    bookedViaId: true,
+    coveredSites: { select: { id: true } },
     hostSite: true,
     contacts: { select: { id: true } },
     tripTypes: { select: { id: true } },
@@ -222,7 +227,82 @@ async function loadPair(db: Db, sourceId: string, targetId: string) {
   ]);
   if (!source) throw new MergeError("Location to merge away not found.");
   if (!target) throw new MergeError("Location to keep not found.");
-  return { source, target };
+  // Booked-via (parent venue) link: the source's covered sites move to the
+  // target; refused when that would nest parents.
+  const bookedVia = mergeBookedVia({
+    sourceId,
+    targetId,
+    sourceBookedViaId: source.bookedViaId,
+    targetBookedViaId: target.bookedViaId,
+    sourceHasCoveredSites: source.coveredSites.some((c) => c.id !== targetId),
+    targetHasCoveredSites: target.coveredSites.some((c) => c.id !== sourceId),
+  });
+  if ("error" in bookedVia) throw new MergeError(bookedVia.error);
+  return { source, target, bookedVia };
+}
+
+/**
+ * Move every venue engagement on `sourceId` to `targetId`. Where both venues
+ * are engaged on the same trip the two fold into the target's booking —
+ * payments, notes and documents move over, scalar gaps fill from the source,
+ * the status keeps the further-along of the two, the source's schedule is
+ * adopted only when the target has none, and same-workflow step completions
+ * move — then the status recomputes. Returns how many engagements moved.
+ * Shared by the location merge and "booked via" (a site gaining a parent hands
+ * its engagements to the parent).
+ */
+export async function foldVenueEngagements(
+  tx: Prisma.TransactionClient,
+  sourceId: string,
+  targetId: string,
+): Promise<number> {
+  const sourceBookings = await tx.booking.findMany({
+    where: { locationId: sourceId, tripId: { not: null } },
+    include: { _count: { select: { paymentSchedule: true } } },
+  });
+  for (const sb of sourceBookings) {
+    const tb = await tx.booking.findUnique({
+      where: { tripId_locationId: { tripId: sb.tripId!, locationId: targetId } },
+      include: { _count: { select: { paymentSchedule: true } } },
+    });
+    if (!tb) continue; // no collision — repointed by the updateMany below
+    const move = { where: { bookingId: sb.id }, data: { bookingId: tb.id } };
+    await tx.payment.updateMany(move);
+    await tx.note.updateMany(move);
+    await tx.document.updateMany(move);
+    if (tb._count.paymentSchedule === 0) {
+      await tx.paymentScheduleItem.updateMany(move);
+    }
+    // Workflow progress: the target's workflow wins (adopting the source's
+    // when it has none); source completions on that workflow's steps move
+    // over unless the target already ticked the same step.
+    const workflowId = tb.workflowId ?? sb.workflowId;
+    if (workflowId && sb.workflowId === workflowId) {
+      const done = await tx.bookingStepCompletion.findMany({
+        where: { bookingId: tb.id },
+        select: { stepId: true },
+      });
+      await tx.bookingStepCompletion.updateMany({
+        where: {
+          bookingId: sb.id,
+          stepId: { notIn: done.map((d) => d.stepId) },
+        },
+        data: { bookingId: tb.id },
+      });
+    }
+    await tx.booking.update({
+      where: { id: tb.id },
+      data: { ...mergeBookingFields(tb, sb), workflowId },
+    });
+    await tx.booking.delete({ where: { id: sb.id } });
+    await recomputeBooking(tb.id, tx);
+  }
+  // The rest (no collision) simply repoint.
+  await tx.booking.updateMany({
+    where: { locationId: sourceId, tripId: { not: null } },
+    data: { locationId: targetId },
+  });
+  return sourceBookings.length;
 }
 
 export class MergeError extends Error {}
@@ -288,6 +368,7 @@ export async function previewLocationMerge(
     contacts: source.contacts.filter((c) => !targetContactIds.has(c.id)).length,
     travelReferences: travelFrom + travelTo + travelStops + primaryDays,
     shareLinks,
+    coveredSites: source.coveredSites.filter((c) => c.id !== targetId).length,
     hostSite: !source.hostSite ? "none" : target.hostSite ? "merged" : "moved",
     paymentTerms:
       source._count.defaultPaymentSchedule === 0
@@ -307,7 +388,11 @@ export async function mergeLocations(
   const preview = await previewLocationMerge(sourceId, targetId);
 
   await prisma.$transaction(async (tx) => {
-    const { source, target } = await loadPair(tx, sourceId, targetId);
+    const { source, target, bookedVia } = await loadPair(
+      tx,
+      sourceId,
+      targetId,
+    );
     const fromSource = { where: { locationId: sourceId } };
     const toTarget = { data: { locationId: targetId } };
 
@@ -337,47 +422,8 @@ export async function mergeLocations(
     await tx.itineraryDayLocation.updateMany({ ...fromSource, ...toTarget });
 
     // Venue engagements: fold same-trip pairs, repoint the rest.
-    const sourceBookings = await tx.booking.findMany({
-      where: { locationId: sourceId, tripId: { not: null } },
-      include: { _count: { select: { paymentSchedule: true } } },
-    });
-    for (const sb of sourceBookings) {
-      const tb = await tx.booking.findUnique({
-        where: { tripId_locationId: { tripId: sb.tripId!, locationId: targetId } },
-        include: { _count: { select: { paymentSchedule: true } } },
-      });
-      if (!tb) continue; // no collision — repointed by the updateMany below
-      const move = { where: { bookingId: sb.id }, data: { bookingId: tb.id } };
-      await tx.payment.updateMany(move);
-      await tx.note.updateMany(move);
-      await tx.document.updateMany(move);
-      if (tb._count.paymentSchedule === 0) {
-        await tx.paymentScheduleItem.updateMany(move);
-      }
-      // Workflow progress: the target's workflow wins (adopting the source's
-      // when it has none); source completions on that workflow's steps move
-      // over unless the target already ticked the same step.
-      const workflowId = tb.workflowId ?? sb.workflowId;
-      if (workflowId && sb.workflowId === workflowId) {
-        const done = await tx.bookingStepCompletion.findMany({
-          where: { bookingId: tb.id },
-          select: { stepId: true },
-        });
-        await tx.bookingStepCompletion.updateMany({
-          where: {
-            bookingId: sb.id,
-            stepId: { notIn: done.map((d) => d.stepId) },
-          },
-          data: { bookingId: tb.id },
-        });
-      }
-      await tx.booking.update({
-        where: { id: tb.id },
-        data: { ...mergeBookingFields(tb, sb), workflowId },
-      });
-      await tx.booking.delete({ where: { id: sb.id } });
-      await recomputeBooking(tb.id, tx);
-    }
+    await foldVenueEngagements(tx, sourceId, targetId);
+    // Item-targeted bookings that name the source as their venue.
     await tx.booking.updateMany({ ...fromSource, ...toTarget });
 
     // Plain repoints.
@@ -422,6 +468,12 @@ export async function mergeLocations(
       });
     }
 
+    // Sites booked via the source are now booked via the target.
+    await tx.location.updateMany({
+      where: { bookedViaId: sourceId, id: { not: targetId } },
+      data: { bookedViaId: targetId },
+    });
+
     // The target's own fields + the union of contacts and trip-type tags.
     const { primaryContactId, regionId, ...fields } = mergeLocationFields(
       target,
@@ -437,8 +489,16 @@ export async function mergeLocations(
         primaryContact: primaryContactId
           ? { connect: { id: primaryContactId } }
           : undefined,
+        bookedVia: bookedVia.targetBookedViaId
+          ? { connect: { id: bookedVia.targetBookedViaId } }
+          : { disconnect: true },
       },
     });
+    // Booked via a parent now: the parent's engagement covers the target, so
+    // the target's own (incl. those just moved from the source) fold into it.
+    if (bookedVia.targetBookedViaId) {
+      await foldVenueEngagements(tx, targetId, bookedVia.targetBookedViaId);
+    }
 
     // Anything left on the source (host site / terms we didn't adopt) cascades.
     await tx.location.delete({ where: { id: sourceId } });

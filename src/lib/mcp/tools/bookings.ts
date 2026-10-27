@@ -17,6 +17,7 @@ import { agreedTotal, tripHeadcount } from "@/lib/costs";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
 import { assertBookable, seedScheduleFromLocation } from "@/lib/trip-mutations";
+import { engagementLocationIdFor } from "@/lib/booked-via.server";
 
 const BOOKING_STATUSES_TUPLE = BOOKING_STATUSES as [BookingStatus, ...BookingStatus[]];
 
@@ -90,7 +91,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference, and money: agreedAmount/agreedUnit as stored, agreedTotal (agreedAmount × headcount when agreedUnit is PER_PERSON, else agreedAmount; null when unknown), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference, and money: agreedAmount/agreedUnit as stored, agreedTotal (agreedAmount × headcount when agreedUnit is PER_PERSON, else agreedAmount; null when unknown), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -117,7 +118,16 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             ...(status ? { status: status as BookingStatus } : {}),
           },
           include: {
-            location: { select: { id: true, name: true } },
+            location: {
+              select: {
+                id: true,
+                name: true,
+                coveredSites: {
+                  select: { id: true, name: true },
+                  orderBy: { name: "asc" },
+                },
+              },
+            },
             bookedContact: { select: { id: true, name: true } },
             payments: { select: { amount: true } },
             ...WORKFLOW_INCLUDE,
@@ -239,7 +249,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); agreedUnit: null (or omitted) = agreedAmount is the TOTAL for the engagement; PER_PERSON = agreedAmount is a per-person rate, multiplied by the trip headcount (participantCount, else capacity) to get the total that balances, settled state and payment-schedule percentages use; with no headcount that total is unknown (agreedTotal null in list-bookings/list-payments). PER_GROUP is legacy and also means the total. Log actual payments with add-payment.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it; a locationId that is booked via a parent venue (get-location's bookedVia) resolves to the PARENT's engagement, which is what is created/updated and returned as engagementLocationId) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); agreedUnit: null (or omitted) = agreedAmount is the TOTAL for the engagement; PER_PERSON = agreedAmount is a per-person rate, multiplied by the trip headcount (participantCount, else capacity) to get the total that balances, settled state and payment-schedule percentages use; with no headcount that total is unknown (agreedTotal null in list-bookings/list-payments). PER_GROUP is legacy and also means the total. Log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -316,8 +326,12 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           };
         }
 
+        // A site booked via a parent is covered by the parent's engagement.
+        const venueId = isVenue
+          ? await engagementLocationIdFor(locationId!)
+          : null;
         const scalars = {
-          locationId: locationId || null,
+          locationId: (isVenue ? venueId : locationId) || null,
           label: label || null,
           bookedContactId: bookedContactId || null,
           confirmationRef: confirmationRef || null,
@@ -335,18 +349,18 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           // fires on the create branch — an existing engagement keeps its
           // schedule. A passed status is applied after the write, through the
           // same workflow rules as the web status control.
-          const notBookable = await assertBookable(locationId!);
+          const notBookable = await assertBookable(venueId!);
           if (notBookable) {
             return {
               content: [{ type: "text" as const, text: `Error: ${notBookable}` }],
               isError: true,
             };
           }
-          const schedule = await seedScheduleFromLocation(locationId!);
-          const workflow = await seedWorkflowFor(locationId!);
+          const schedule = await seedScheduleFromLocation(venueId!);
+          const workflow = await seedWorkflowFor(venueId!);
           booking = await prisma.booking.upsert({
             where: {
-              tripId_locationId: { tripId: tripId!, locationId: locationId! },
+              tripId_locationId: { tripId: tripId!, locationId: venueId! },
             },
             create: {
               tripId,
@@ -391,7 +405,13 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ id: booking.id }, null, 2),
+              text: JSON.stringify(
+                isVenue
+                  ? { id: booking.id, engagementLocationId: venueId }
+                  : { id: booking.id },
+                null,
+                2,
+              ),
             },
           ],
         };

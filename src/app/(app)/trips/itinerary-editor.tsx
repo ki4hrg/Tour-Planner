@@ -4,7 +4,11 @@ import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { GripVertical, Lock } from "lucide-react";
-import { VenueEngagementStatus, VenueEngagementSteps } from "./venue-engagements";
+import {
+  useVenueEngagementVia,
+  VenueEngagementStatus,
+  VenueEngagementSteps,
+} from "./venue-engagements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2174,15 +2178,13 @@ function VenueEngagementNote({
     <div className="space-y-2 rounded-md border p-3">
       <ul className="space-y-2 text-xs">
         {item.sites.map((s) => (
-          <li key={s.id} className="space-y-1">
-            <Link
-              href={`/trips/${tripId}/booking?venue=${encodeURIComponent(s.locationId)}`}
-              className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
-              {many ? `${s.location.name} booking` : "Venue booking"}
-            </Link>
-            <VenueEngagementSteps locationId={s.locationId} name={s.location.name} />
-          </li>
+          <VenueEngagementNoteRow
+            key={s.id}
+            tripId={tripId}
+            locationId={s.locationId}
+            name={s.location.name}
+            many={many}
+          />
         ))}
       </ul>
       {item.bookings.length > 0 ? (
@@ -2196,6 +2198,38 @@ function VenueEngagementNote({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// One site's engagement link + steps. A site booked via a parent links to the
+// parent's engagement row, which is the booking that covers it.
+function VenueEngagementNoteRow({
+  tripId,
+  locationId,
+  name,
+  many,
+}: {
+  tripId: string;
+  locationId: string;
+  name: string;
+  many: boolean;
+}) {
+  const via = useVenueEngagementVia(locationId);
+  const venueId = via?.id ?? locationId;
+  return (
+    <li className="space-y-1">
+      <Link
+        href={`/trips/${tripId}/booking?venue=${encodeURIComponent(venueId)}`}
+        className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        {via
+          ? `${via.name} booking`
+          : many
+            ? `${name} booking`
+            : "Venue booking"}
+      </Link>
+      <VenueEngagementSteps locationId={locationId} name={name} />
+    </li>
   );
 }
 

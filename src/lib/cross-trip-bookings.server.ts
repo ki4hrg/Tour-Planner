@@ -4,6 +4,7 @@ import { toDateInput, todayUtc } from "./dates";
 import { tripStillInPlayWhere } from "./trips";
 import { regionPath, type RegionNode } from "./regions";
 import { buildDashboardRows } from "./booking-dashboard";
+import { withBookedViaParentsWhere } from "./booked-via";
 import { tripHeadcount } from "./costs";
 import {
   groupRowsByVenue,
@@ -155,10 +156,12 @@ export async function loadCrossTripBookings({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,
