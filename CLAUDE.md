@@ -36,7 +36,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-52 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+55 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -51,7 +51,11 @@ recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedu
 (P, rough day→location assignment with no times — GH #9; idempotent per
 `(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
 `promote-planned-location` (P, converts a rough assignment into a time-less
-schedule item, then drops it).
+schedule item, then drops it), `reorder-days` (P, full day-id order; `dryRun`
+previews, `moveStays` shifts lodging whose nights moved together),
+`move-schedule-item` (P, within a day = re-sequence with time cascade; across
+days the item keeps its times and lands by them), `move-planned-location` (P).
+Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
 incl. agreed price + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
@@ -122,14 +126,6 @@ this is how an agent files a generated participant itinerary), `update-document`
   context for no gain; the URL works in any authenticated browser session.
 - **`update-note` / `delete-note`.** Only create + list are exposed; editing/removing
   log entries is rare and currently a UI-only concern.
-- **Reordering / moving (`reorderDays`, `reorderScheduleItems`, `moveScheduleItem`,
-  `movePlannedLocation`).** Drag-and-drop is a UI gesture (`trips/itinerary-dnd.tsx`;
-  cross-day item moves keep the item's times and land by them — `planCrossDayMove`);
-  MCP callers set `order` implicitly by add/delete (which renumber). Add explicit
-  reorder tools only if an agent needs to resequence without add/delete.
-
-### OAuth
-
 - Access tokens: stateless JWTs signed with `AUTH_SECRET` (HS256), audience `tour-planner-mcp`, **15-minute** TTL.
   They embed a `sid` claim = the issuing refresh token's id (the session). The MCP hot path verifies the
   signature only — it never reads the DB.
@@ -371,6 +367,12 @@ npm test                          # vitest
   may follow different workflows. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
+- **Day reorder + lodging**: dates belong to day POSITIONS, so reordering days
+  redates them; stays don't follow on their own. `staysFollowingDays`
+  (`src/lib/stay-shift.ts`, unit-tested) finds stays whose nights' days moved
+  together (shift by the same delta) or were split apart (left in place). The
+  editor previews this (`previewDayReorder`) and asks before writing; MCP
+  `reorder-days` takes `moveStays` / `dryRun`.
 - **Location merge**: `src/lib/location-merge.ts` folds a duplicate SOURCE into
   the kept TARGET in one txn and deletes the source — web "Merge into…" in the
   Location page's danger zone (`MergeLocationPanel`) + `merge-locations` MCP tool,

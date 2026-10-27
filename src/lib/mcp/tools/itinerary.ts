@@ -8,6 +8,12 @@ import { timedInsertIndex } from "@/lib/schedule-order";
 import { travelLegCreateData } from "@/lib/travel";
 import { TRAVEL_LEG_INCLUDE } from "@/lib/trips";
 import { deleteItineraryDay } from "@/lib/trip-mutations";
+import {
+  moveItemToDay,
+  movePlannedLocationTo,
+  previewDayReorder,
+  reorderTripDays,
+} from "@/lib/itinerary-mutations";
 
 // A travel span (GH #80) on add/update-schedule-item. Setting it makes the item
 // a travel leg: origin → destination by a method, item start/end = depart/arrive.
@@ -937,4 +943,147 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       }
     },
   );
+
+  // ── reorder-days (PLANNER+) ──────────────────────────────────────────
+  server.registerTool(
+    "reorder-days",
+    {
+      title: "Reorder Days",
+      description:
+        "Put a trip's days in a new order. Needs tripId and orderedDayIds = EVERY day id of the trip, each once, in the new order (get them from get-itinerary). Dates belong to the positions, not the days: the day moved to position 1 takes the trip's first date. Lodging does not move unless moveStays is true, which shifts each stay whose nights' days moved together; a stay whose days were split apart stays put. Call with dryRun: true first to see which stays would move (and where) without changing anything. Returns the affected stays plus movedStays/splitStays counts.",
+      inputSchema: {
+        tripId: z.string(),
+        orderedDayIds: z.array(z.string()),
+        moveStays: z.boolean().default(false),
+        dryRun: z.boolean().default(false),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ tripId, orderedDayIds, moveStays, dryRun }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return errorResult("Not authorized");
+        }
+        const preview = await previewDayReorder(tripId, orderedDayIds);
+        if ("error" in preview) return errorResult(preview.error);
+        if (dryRun) {
+          return jsonResult({ dryRun: true, stays: preview.stays });
+        }
+        const res = await reorderTripDays(tripId, orderedDayIds, { moveStays });
+        if ("error" in res) return errorResult(res.error);
+        return jsonResult({
+          success: true,
+          movedStays: res.movedStays,
+          splitStays: res.splitStays,
+          // What each affected stay did (or would have done, when moveStays was false).
+          stays: preview.stays,
+        });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  // ── move-schedule-item (PLANNER+) ────────────────────────────────────
+  server.registerTool(
+    "move-schedule-item",
+    {
+      title: "Move Schedule Item",
+      description:
+        "Move a schedule item to another position on its day, or to another day of the same trip. Needs itemId and toDayId (both from get-itinerary). toIndex is the 0-based position among the target day's OTHER items (omit = the end). Within a day this re-sequences, and times move with the sequence: each item keeps its own duration and the day's start time and free-time gaps are preserved. Across days the item keeps its own times: a timed item lands in time order on the new day whatever toIndex says, and an untimed one lands at toIndex. Bookings and travel details move with the item.",
+      inputSchema: {
+        itemId: z.string(),
+        toDayId: z.string(),
+        toIndex: z.number().int().nonnegative().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ itemId, toDayId, toIndex }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return errorResult("Not authorized");
+        }
+        const res = await moveItemToDay(
+          itemId,
+          toDayId,
+          toIndex ?? Number.MAX_SAFE_INTEGER,
+        );
+        if ("error" in res) return errorResult(res.error);
+        const day = await prisma.itineraryDay.findUnique({
+          where: { id: toDayId },
+          select: {
+            dayIndex: true,
+            scheduleItems: {
+              orderBy: { order: "asc" },
+              select: { id: true, title: true, order: true, startTime: true, endTime: true },
+            },
+          },
+        });
+        return jsonResult({ success: true, day });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  // ── move-planned-location (PLANNER+) ─────────────────────────────────
+  server.registerTool(
+    "move-planned-location",
+    {
+      title: "Move Planned Location",
+      description:
+        "Move a rough-plan location assignment (GH #9) to another day of the same trip. Identified by the (dayId, locationId) pair from get-itinerary; toDayId is the target day. If the target day already has that location planned, the two merge (notes combined).",
+      inputSchema: {
+        dayId: z.string(),
+        locationId: z.string(),
+        toDayId: z.string(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ dayId, locationId, toDayId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return errorResult("Not authorized");
+        }
+        const row = await prisma.itineraryDayLocation.findUnique({
+          where: { dayId_locationId: { dayId, locationId } },
+          select: { id: true },
+        });
+        if (!row) return errorResult("No such planned location for this day");
+        const res = await movePlannedLocationTo(row.id, toDayId);
+        if ("error" in res) return errorResult(res.error);
+        return jsonResult({ success: true, locationId, fromDayId: dayId, toDayId });
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+}
+
+function errorResult(text: string) {
+  return {
+    content: [{ type: "text" as const, text: `Error: ${text}` }],
+    isError: true,
+  };
+}
+
+function jsonResult(value: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+  };
 }

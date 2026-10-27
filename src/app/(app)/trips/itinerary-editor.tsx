@@ -47,6 +47,7 @@ import {
   deleteScheduleItem,
   moveScheduleItem,
   movePlannedLocation,
+  previewDayReorderAction,
   addPlannedLocation,
   removePlannedLocation,
   promotePlannedLocation,
@@ -78,6 +79,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { applyItineraryMove, type ItineraryMove } from "@/lib/itinerary-moves";
+import type { StayFollowLine } from "@/lib/itinerary-mutations";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const NONE = "__none__";
 
@@ -244,8 +253,30 @@ export function ItineraryEditor({
       if (res.error) toast.error(res.error);
     });
 
+  // A day reorder that moves nights with lodging on them asks first whether
+  // the stays should follow their days (the server lists which, and where to).
+  const [lodgingPrompt, setLodgingPrompt] = useState<{
+    ids: string[];
+    stays: StayFollowLine[];
+  } | null>(null);
+  const applyDayOrder = (ids: string[], moveStays: boolean) => {
+    setLodgingPrompt(null);
+    commit({ kind: "days", orderedIds: ids }, async () => {
+      const res = await reorderDays(tripId, ids, { moveStays });
+      if (res.message) toast.success(res.message);
+      return res;
+    });
+  };
   const reorderDayIds = (ids: string[]) =>
-    commit({ kind: "days", orderedIds: ids }, () => reorderDays(tripId, ids));
+    startMove(async () => {
+      const preview = await previewDayReorderAction(tripId, ids);
+      if ("error" in preview) {
+        toast.error(preview.error);
+        return;
+      }
+      if (preview.stays.length > 0) setLodgingPrompt({ ids, stays: preview.stays });
+      else applyDayOrder(ids, false);
+    });
 
   const moveDay = (index: number, dir: -1 | 1) => {
     const next = shownDays.map((d) => d.id);
@@ -336,6 +367,53 @@ export function ItineraryEditor({
           + Add day
         </Button>
       ) : null}
+      <Dialog
+        open={lodgingPrompt != null}
+        onOpenChange={(o) => !o && setLodgingPrompt(null)}
+      >
+        {lodgingPrompt ? (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move lodging with these days?</DialogTitle>
+            </DialogHeader>
+            <ul className="space-y-2 text-sm">
+              {lodgingPrompt.stays.map((st) => (
+                <li key={st.stayId}>
+                  <p className="font-medium">{st.name}</p>
+                  <p className="text-muted-foreground">
+                    {st.to ? (
+                      <>
+                        {st.from} → <span className="text-foreground">{st.to}</span>
+                      </>
+                    ) : (
+                      <>{st.from} · stays put (its nights are no longer together)</>
+                    )}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setLodgingPrompt(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => applyDayOrder(lodgingPrompt.ids, false)}
+              >
+                Keep lodging dates
+              </Button>
+              {lodgingPrompt.stays.some((st) => st.to) ? (
+                <Button onClick={() => applyDayOrder(lodgingPrompt.ids, true)}>
+                  Move lodging
+                </Button>
+              ) : null}
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
     </ItineraryDndProvider>
   );

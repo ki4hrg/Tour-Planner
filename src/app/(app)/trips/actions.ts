@@ -39,9 +39,15 @@ import {
   type InstantiatedVenueBooking,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
-import { planCrossDayMove } from "@/lib/schedule-move";
+import {
+  moveItemToDay,
+  movePlannedLocationTo,
+  previewDayReorder,
+  reorderDayItems,
+  reorderTripDays,
+  type StayFollowLine,
+} from "@/lib/itinerary-mutations";
 import { travelLegCreateData } from "@/lib/travel";
-import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
 import {
@@ -463,42 +469,38 @@ export async function deleteDay(dayId: string): Promise<FormState> {
   };
 }
 
+// Reorder a trip's days. `moveStays` also shifts lodging whose nights moved
+// together (the editor asks first — previewDayReorder lists what would move).
 export async function reorderDays(
   tripId: string,
   orderedDayIds: string[],
+  opts: { moveStays?: boolean } = {},
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
-    select: { startDate: true, days: { select: { id: true } } },
-  });
-  if (!trip) return { error: "Trip not found." };
-
-  // The ids must be exactly this trip's days — no foreign ids (which would
-  // renumber another trip's days), no omissions, no duplicates.
-  const own = new Set(trip.days.map((d) => d.id));
-  if (
-    orderedDayIds.length !== own.size ||
-    new Set(orderedDayIds).size !== orderedDayIds.length ||
-    !orderedDayIds.every((id) => own.has(id))
-  ) {
-    return { error: "Day list out of date." };
-  }
-
-  // Stays are left where they are: a drag-reorder has no unambiguous mapping
-  // for lodging (does the hotel follow the moved day or the night?), so the
-  // planner re-anchors them in the Lodging panel if needed.
-  await prisma.$transaction(
-    orderedDayIds.map((id, i) =>
-      prisma.itineraryDay.update({
-        where: { id, tripId },
-        data: { dayIndex: i + 1, date: computeDayDate(trip.startDate, i + 1) },
-      }),
-    ),
-  );
-
+  const res = await reorderTripDays(tripId, orderedDayIds, opts);
+  if ("error" in res) return { error: res.error };
   revalidateTrip(tripId);
-  return { ok: true };
+  if (!opts.moveStays) return { ok: true };
+  const { movedStays: n, splitStays: k } = res;
+  return {
+    ok: true,
+    message: [
+      n ? `Moved ${n} stay${n === 1 ? "" : "s"} with ${n === 1 ? "its" : "their"} days.` : null,
+      k ? `${k} stay${k === 1 ? "" : "s"} left in place.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined,
+  };
+}
+
+// The lodging a proposed day order would affect — feeds the editor's
+// "move lodging too?" prompt before anything is written.
+export async function previewDayReorderAction(
+  tripId: string,
+  orderedDayIds: string[],
+): Promise<{ error: string } | { ok: true; stays: StayFollowLine[] }> {
+  await assertRole("PLANNER");
+  return previewDayReorder(tripId, orderedDayIds);
 }
 
 // --- Rough-plan day locations (GH #9) ---
@@ -534,50 +536,16 @@ export async function addPlannedLocation(
   return { ok: true, message: "Planned location added." };
 }
 
-// Move a rough-plan location to another day of the same trip. If that day
-// already plans the location, the two collapse into the existing row (its note
-// kept, the moved note appended when they differ).
+// Move a rough-plan location to another day of the same trip (a duplicate on
+// the target day collapses into it — see movePlannedLocationTo).
 export async function movePlannedLocation(
   id: string,
   toDayId: string,
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  const row = await prisma.itineraryDayLocation.findUnique({
-    where: { id },
-    select: { dayId: true, locationId: true, note: true, day: { select: { tripId: true } } },
-  });
-  if (!row) return { error: "Planned location not found." };
-  if (row.dayId === toDayId) return { ok: true };
-  const target = await prisma.itineraryDay.findUnique({
-    where: { id: toDayId },
-    select: { tripId: true },
-  });
-  if (!target || target.tripId !== row.day.tripId) {
-    return { error: "Day not found." };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.itineraryDayLocation.findUnique({
-      where: { dayId_locationId: { dayId: toDayId, locationId: row.locationId } },
-      select: { id: true, note: true },
-    });
-    if (existing) {
-      if (row.note && row.note !== existing.note) {
-        await tx.itineraryDayLocation.update({
-          where: { id: existing.id },
-          data: { note: existing.note ? `${existing.note}; ${row.note}` : row.note },
-        });
-      }
-      await tx.itineraryDayLocation.delete({ where: { id } });
-    } else {
-      const count = await tx.itineraryDayLocation.count({ where: { dayId: toDayId } });
-      await tx.itineraryDayLocation.update({
-        where: { id },
-        data: { dayId: toDayId, order: count },
-      });
-    }
-  });
-  revalidateTrip(row.day.tripId);
+  const res = await movePlannedLocationTo(id, toDayId);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
   return { ok: true };
 }
 
@@ -890,92 +858,24 @@ export async function reorderScheduleItems(
   orderedItemIds: string[],
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  // Reorder carries the times with it: a moved item keeps its own duration while the
-  // day's anchor + free-time gaps are preserved, so the visible sequence and the clock
-  // never disagree. See cascadeReorderedTimes for the exact model.
-  const items = await prisma.scheduleItem.findMany({
-    where: { dayId },
-    select: { id: true, startTime: true, endTime: true },
-  });
-  const reordered = cascadeReorderedTimes(items, orderedItemIds);
-  await prisma.$transaction(
-    reordered.map((it) =>
-      prisma.scheduleItem.update({
-        where: { id: it.id },
-        data: { order: it.order, startTime: it.startTime, endTime: it.endTime },
-      }),
-    ),
-  );
-  const tripId = await tripIdForDay(dayId);
-  if (tripId) revalidateTrip(tripId);
+  const res = await reorderDayItems(dayId, orderedItemIds);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
   return { ok: true };
 }
 
-// Move an item to another day (the itinerary's drag between days, or "Move to
-// day…"). Same-day moves are a reorder (times cascade); across days the item
-// keeps its times and lands by them — see planCrossDayMove. Both days renumber
-// in one txn. `toIndex` is the 0-based drop position in the target day.
+// Move an item to another day or position (the itinerary's drag, or "Move to
+// day…"). `toIndex` is 0-based among the target day's other items; see
+// moveItemToDay for how times behave.
 export async function moveScheduleItem(
   itemId: string,
   toDayId: string,
   toIndex: number,
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  if (!Number.isInteger(toIndex)) return { error: "Invalid position." };
-  const item = await prisma.scheduleItem.findUnique({
-    where: { id: itemId },
-    select: {
-      id: true,
-      order: true,
-      startTime: true,
-      dayId: true,
-      day: { select: { tripId: true } },
-    },
-  });
-  if (!item) return { error: "Item not found." };
-  const target = await prisma.itineraryDay.findUnique({
-    where: { id: toDayId },
-    select: { tripId: true },
-  });
-  if (!target || target.tripId !== item.day.tripId) {
-    return { error: "Day not found." };
-  }
-
-  if (toDayId === item.dayId) {
-    const ids = (
-      await prisma.scheduleItem.findMany({
-        where: { dayId: toDayId },
-        orderBy: { order: "asc" },
-        select: { id: true },
-      })
-    )
-      .map((r) => r.id)
-      .filter((id) => id !== itemId);
-    ids.splice(Math.max(0, Math.min(toIndex, ids.length)), 0, itemId);
-    return reorderScheduleItems(toDayId, ids);
-  }
-
-  const select = { id: true, order: true, startTime: true } as const;
-  const [sourceItems, targetItems] = await Promise.all([
-    prisma.scheduleItem.findMany({ where: { dayId: item.dayId }, select }),
-    prisma.scheduleItem.findMany({ where: { dayId: toDayId }, select }),
-  ]);
-  const { updates } = planCrossDayMove(
-    item,
-    sourceItems,
-    targetItems,
-    toDayId,
-    toIndex,
-  );
-  await prisma.$transaction(
-    updates.map((u) =>
-      prisma.scheduleItem.update({
-        where: { id: u.id },
-        data: { order: u.order, ...(u.dayId ? { dayId: u.dayId } : {}) },
-      }),
-    ),
-  );
-  revalidateTrip(item.day.tripId);
+  const res = await moveItemToDay(itemId, toDayId, toIndex);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
   return { ok: true };
 }
 

@@ -65,3 +65,44 @@ export function shiftStayIndicesForDeletedDay(
   if (checkOutDayIndex <= checkInDayIndex) return { kind: "collapsed" };
   return { kind: "shift", checkInDayIndex, checkOutDayIndex };
 }
+
+/** A stay's span as 1-based day positions: nights `checkIn .. checkOut - 1`. */
+export type StaySpan = { id: string; checkIn: number; checkOut: number };
+
+export type StayFollow =
+  | { id: string; kind: "move"; delta: number }
+  // Its nights' days no longer sit together in the same order, so there is
+  // no single shift that keeps the stay on them; it stays where it is.
+  | { id: string; kind: "split" };
+
+/**
+ * Lodging that should follow a day reorder. A stay follows the days whose
+ * nights it covers: if those days are still consecutive (and in the same
+ * order) after the reorder, the whole stay shifts by however far they moved.
+ * Stays whose days didn't move, or that cover no day of the trip, are left
+ * out. `oldOrder`/`newOrder` are the trip's day ids before and after.
+ */
+export function staysFollowingDays(
+  oldOrder: string[],
+  newOrder: string[],
+  stays: StaySpan[],
+): StayFollow[] {
+  const newPos = new Map(newOrder.map((id, i) => [id, i + 1]));
+  const out: StayFollow[] = [];
+  for (const stay of stays) {
+    const nights: number[] = [];
+    for (let p = Math.max(1, stay.checkIn); p < stay.checkOut && p <= oldOrder.length; p++) {
+      nights.push(p);
+    }
+    if (nights.length === 0) continue;
+    const moved = nights.map((p) => newPos.get(oldOrder[p - 1]) ?? -1);
+    const together = moved.every((p, i) => i === 0 || p === moved[i - 1] + 1);
+    if (!together) {
+      out.push({ id: stay.id, kind: "split" });
+      continue;
+    }
+    const delta = moved[0] - nights[0];
+    if (delta !== 0) out.push({ id: stay.id, kind: "move", delta });
+  }
+  return out;
+}
