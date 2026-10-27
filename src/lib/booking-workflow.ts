@@ -75,6 +75,27 @@ export function nextStep<S extends WorkflowStepLike>(
   return [...steps].sort((a, b) => a.sortOrder - b.sortOrder).find((s) => !done.has(s.id)) ?? null;
 }
 
+/**
+ * The step a booking is waiting on — what "Next: …" shows. The first step not
+ * done AFTER the latest done one (workflow order), so a step skipped on the way
+ * stays skipped, matching how the stage is the latest step done. Null when the
+ * booking is not needed or its last step is done.
+ */
+export function upcomingStep<S extends WorkflowStepLike>(
+  steps: S[],
+  completions: { stepId: string }[],
+  status: BookingStatus,
+): S | null {
+  if (status === "NOT_NEEDED") return null;
+  const done = new Set(completions.map((c) => c.stepId));
+  const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
+  let last = -1;
+  ordered.forEach((s, i) => {
+    if (done.has(s.id)) last = i;
+  });
+  return ordered.slice(last + 1).find((s) => !done.has(s.id)) ?? null;
+}
+
 /** A booking's workflow state as the control needs it (client-safe). */
 export type BookingProgressView = {
   // False for a venue engagement not created yet — the first touch creates it.

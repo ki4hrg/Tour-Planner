@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBookingProgress, nextStep } from "./booking-workflow";
+import { resolveBookingProgress, nextStep, upcomingStep } from "./booking-workflow";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -75,5 +75,29 @@ describe("nextStep", () => {
   });
   it("is null when every step is done", () => {
     expect(nextStep(steps, steps.map((s) => ({ stepId: s.id })))).toBeNull();
+  });
+});
+
+describe("upcomingStep", () => {
+  const done = (...ids: string[]) => ids.map((stepId) => ({ stepId }));
+  it("starts at the first step", () => {
+    expect(upcomingStep(steps, [], "PLANNED")?.id).toBe("contact");
+  });
+  it("is the step after the latest done one", () => {
+    expect(upcomingStep(steps, done("contact", "avail"), "IN_PROGRESS")?.label).toBe(
+      "Booking submitted",
+    );
+  });
+  it("leaves a skipped earlier step skipped", () => {
+    expect(upcomingStep(steps, done("contact", "conf"), "CONFIRMED")?.id).toBe("meal");
+  });
+  it("orders by sortOrder, not array order", () => {
+    expect(upcomingStep([...steps].reverse(), done("contact"), "IN_PROGRESS")?.id).toBe(
+      "avail",
+    );
+  });
+  it("is null once the last step is done, or when not needed", () => {
+    expect(upcomingStep(steps, done("meal"), "IN_PROGRESS")).toBeNull();
+    expect(upcomingStep(steps, [], "NOT_NEEDED")).toBeNull();
   });
 });
