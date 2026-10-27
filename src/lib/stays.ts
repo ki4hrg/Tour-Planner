@@ -36,29 +36,91 @@ export function stayNights(stay: StayLike): number {
   return nightsBetween(stay.checkIn, stay.checkOut);
 }
 
-/** Cost of a whole stay = perPersonPerNight × headcount × nights. Any missing
- * factor → 0 (the estimate simply doesn't count it). */
-export function stayTotal(stay: StayLike): number {
+/** Heads a stay is priced for: its own headcount, else the trip-level fallback
+ * (participants ?? capacity — `tripHeadcount` in costs.ts). Null when neither
+ * is known. */
+export function stayHeadcount(
+  stay: { headcount?: number | null },
+  fallbackHeadcount: number | null = null,
+): number | null {
+  return stay.headcount ?? fallbackHeadcount;
+}
+
+/** Cost of a whole stay = perPersonPerNight × headcount × nights, the headcount
+ * falling back to `fallbackHeadcount` when the stay has none of its own (most
+ * stays house the whole group). Any missing factor → 0 (the estimate simply
+ * doesn't count it). */
+export function stayTotal(
+  stay: StayLike,
+  fallbackHeadcount: number | null = null,
+): number {
   const perNight = stay.costPerPersonPerNight ?? 0;
-  const heads = stay.headcount ?? 0;
-  return perNight * heads * stayNights(stay);
+  const heads = stayHeadcount(stay, fallbackHeadcount) ?? 0;
+  return Math.round(perNight * heads * stayNights(stay) * 100) / 100;
 }
 
 export type StayCurrencyTotal = { currency: string; total: number };
 
+function sortedTotals(byCurrency: Map<string, number>): StayCurrencyTotal[] {
+  return [...byCurrency.entries()]
+    .map(([currency, total]) => ({ currency, total }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
 /** Per-currency sum of stay totals. Overlap is legitimate — do NOT dedupe nights
  * across stays (you really pay both the held base room and the excursion). */
-export function rollUpStays(stays: StayLike[]): StayCurrencyTotal[] {
+export function rollUpStays(
+  stays: StayLike[],
+  fallbackHeadcount: number | null = null,
+): StayCurrencyTotal[] {
   const byCurrency = new Map<string, number>();
   for (const s of stays) {
-    const total = stayTotal(s);
+    const total = stayTotal(s, fallbackHeadcount);
     if (total === 0) continue;
     const currency = s.currency ?? "USD";
     byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + total);
   }
-  return [...byCurrency.entries()]
-    .map(([currency, total]) => ({ currency, total }))
-    .sort((a, b) => a.currency.localeCompare(b.currency));
+  return sortedTotals(byCurrency);
+}
+
+export type LodgingEstimate = {
+  // Per-currency lodging total for the trip's cost estimate.
+  byCurrency: StayCurrencyTotal[];
+  // Lodging venues priced by their engagement's agreed total instead of the
+  // stays' nightly rates. That total covers the WHOLE engagement (sessions held
+  // there too), so the caller must leave these venues' catalog costs out.
+  agreedLocationIds: Set<string>;
+};
+
+/**
+ * Lodging's contribution to the trip cost estimate. Per venue: when its venue
+ * engagement has a known agreed total (resolve it with `agreedTotal`; omit the
+ * venue when that is null), the total counts once for the venue however many
+ * stays sit there. Otherwise each stay counts at its nightly rate (`stayTotal`,
+ * with the trip headcount fallback).
+ */
+export function estimateLodging(
+  stays: (StayLike & { locationId: string })[],
+  agreedByLocation: Map<string, { total: number; currency: string }>,
+  fallbackHeadcount: number | null = null,
+): LodgingEstimate {
+  const byCurrency = new Map<string, number>();
+  const add = (currency: string, total: number) => {
+    if (total === 0) return;
+    byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + total);
+  };
+  const agreedLocationIds = new Set<string>();
+  for (const s of stays) {
+    const agreed = agreedByLocation.get(s.locationId);
+    if (agreed) {
+      if (agreedLocationIds.has(s.locationId)) continue;
+      agreedLocationIds.add(s.locationId);
+      add(agreed.currency, agreed.total);
+    } else {
+      add(s.currency ?? "USD", stayTotal(s, fallbackHeadcount));
+    }
+  }
+  return { byCurrency: sortedTotals(byCurrency), agreedLocationIds };
 }
 
 /** True when a stay covers the night of date `night` (checkIn ≤ night < checkOut).
