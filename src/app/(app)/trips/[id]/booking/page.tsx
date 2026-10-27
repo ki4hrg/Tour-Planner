@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
+import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function BookingDashboardPage({
         select: {
           dayIndex: true,
           date: true,
+          plannedLocations: { select: { locationId: true } },
           scheduleItems: {
             orderBy: { order: "asc" },
             select: {
@@ -56,7 +58,7 @@ export default async function BookingDashboardPage({
                 select: {
                   id: true,
                   label: true,
-                  status: true,
+                  ...BOOKING_PROGRESS_SELECT,
                   confirmationRef: true,
                   bookedContact: { select: { name: true } },
                 },
@@ -71,7 +73,7 @@ export default async function BookingDashboardPage({
           id: true,
           locationId: true,
           label: true,
-          status: true,
+          ...BOOKING_PROGRESS_SELECT,
           confirmationRef: true,
           notes: true,
           bookedContactId: true,
@@ -107,6 +109,7 @@ export default async function BookingDashboardPage({
       ...trip.days.flatMap((d) =>
         d.scheduleItems.flatMap((i) => i.sites.map((s) => s.locationId)),
       ),
+      ...trip.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
       ...trip.stays.map((s) => s.locationId),
       ...trip.bookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
     ]),
@@ -119,6 +122,7 @@ export default async function BookingDashboardPage({
           name: true,
           bookable: true,
           bookingOpensLeadDays: true,
+          defaultWorkflowId: true,
           costs: true,
         },
       })

@@ -413,3 +413,25 @@ export async function mergeLocation(
     throw err;
   }
 }
+
+// The workflow new engagements at this venue start on (null = the global
+// default). Existing bookings keep theirs.
+export async function setLocationDefaultWorkflow(
+  locationId: string,
+  workflowId: string | null,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (workflowId) {
+    const wf = await prisma.bookingWorkflow.findUnique({
+      where: { id: workflowId },
+      select: { id: true },
+    });
+    if (!wf) return { error: "Workflow not found." };
+  }
+  await prisma.location.update({
+    where: { id: locationId },
+    data: { defaultWorkflowId: workflowId },
+  });
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Saved." };
+}

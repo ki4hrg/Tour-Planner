@@ -111,11 +111,9 @@ export function tripStillInPlayWhere(today: Date): Prisma.TripWhereInput {
 }
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
-  NOT_BOOKED: "Not booked",
-  REQUESTED: "Requested",
-  TENTATIVELY_CONFIRMED: "Tentatively confirmed",
+  PLANNED: "Planned",
+  IN_PROGRESS: "In progress",
   CONFIRMED: "Confirmed",
-  FINALIZED: "Finalized",
   NOT_NEEDED: "Not needed",
 };
 
@@ -125,15 +123,24 @@ export const BOOKING_STATUSES = Object.keys(
 
 // Tailwind classes for a booking-status pill (matches Badge usage).
 export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
-  NOT_BOOKED: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
-  REQUESTED: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
-  TENTATIVELY_CONFIRMED:
-    "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+  PLANNED: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+  IN_PROGRESS: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
   CONFIRMED:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
-  FINALIZED: "bg-emerald-600 text-white dark:bg-emerald-700 dark:text-emerald-50",
   NOT_NEEDED: "bg-muted text-muted-foreground",
 };
+
+/**
+ * What a booking's pill reads: its workflow stage ("Availability confirmed")
+ * when it has one, else the coarse status. NOT_NEEDED always wins.
+ */
+export function bookingStageText(b: {
+  status: BookingStatus;
+  stageLabel?: string | null;
+}): string {
+  if (b.status === "NOT_NEEDED") return BOOKING_STATUS_LABELS.NOT_NEEDED;
+  return b.stageLabel ?? BOOKING_STATUS_LABELS[b.status];
+}
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---
 
@@ -164,6 +171,7 @@ export type SerializedBooking = {
   locationId: string | null;
   label: string | null;
   status: BookingStatus;
+  stageLabel: string | null;
   bookedContactId: string | null;
   bookedContact: SerializedPerson | null;
   confirmationRef: string | null;
@@ -508,6 +516,7 @@ export function serializeBooking(b: BookingRow): SerializedBooking {
     locationId: b.locationId,
     label: b.label,
     status: b.status,
+    stageLabel: b.stageLabel ?? null,
     bookedContactId: b.bookedContactId,
     bookedContact: b.bookedContact
       ? { id: b.bookedContact.id, name: b.bookedContact.name }

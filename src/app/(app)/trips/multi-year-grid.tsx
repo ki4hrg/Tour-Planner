@@ -13,8 +13,7 @@ import { formatDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
-import { setVenueBookingStatus } from "./actions";
-import { StatusControl } from "./status-control";
+import { WorkflowControl } from "./workflow-control";
 
 export type YearColumn = { tripId: string; year: string; name: string };
 export type VenueLine = {
@@ -69,10 +68,11 @@ function Cell({
   }
   return (
     <div className={cn("space-y-1", row.needsInfo && "rounded p-1")}>
-      <StatusControl
-        status={row.status}
+      <WorkflowControl
+        target={{ tripId, locationId: row.locationId }}
+        progress={row.progress}
         canEdit={canEdit}
-        onSet={(status) => setVenueBookingStatus(tripId, row.locationId, status)}
+        showAge={false}
       />
       <div className="text-[11px] text-muted-foreground">
         {isBookingSecured(row.status)

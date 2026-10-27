@@ -15,6 +15,11 @@ const loc = (o: Partial<MergeableLocationFields> = {}): MergeableLocationFields 
   notes: null,
   website: null,
   mapUrl: null,
+  googlePlaceId: null,
+  lat: null,
+  lng: null,
+  placeIdCheckedAt: null,
+  placeIdNeedsReview: false,
   bookable: true,
   bookingOpensLeadDays: null,
   bookingNotes: null,
@@ -25,7 +30,7 @@ const loc = (o: Partial<MergeableLocationFields> = {}): MergeableLocationFields 
 });
 
 const booking = (o: Partial<MergeableBookingFields> = {}): MergeableBookingFields => ({
-  status: "NOT_BOOKED",
+  status: "PLANNED",
   label: null,
   bookedContactId: null,
   confirmationRef: null,
@@ -70,13 +75,51 @@ describe("mergeLocationFields", () => {
   it("is bookable if either was", () => {
     expect(mergeLocationFields(loc({ bookable: false }), loc()).bookable).toBe(true);
   });
+  it("adopts the source's place link and coordinates when the target has none", () => {
+    const checked = new Date("2026-03-01");
+    const m = mergeLocationFields(
+      loc({ placeIdNeedsReview: true }),
+      loc({ googlePlaceId: "ChIJsrc", placeIdCheckedAt: checked, lat: 53.5, lng: -0.8 }),
+    );
+    expect(m.googlePlaceId).toBe("ChIJsrc");
+    expect(m.placeIdCheckedAt).toBe(checked);
+    // The adopted link is a confirmed one; the target's stale flag goes with its missing ID.
+    expect(m.placeIdNeedsReview).toBe(false);
+    expect([m.lat, m.lng]).toEqual([53.5, -0.8]);
+  });
+  it("keeps the target's place link and coordinates as units", () => {
+    const tChecked = new Date("2026-01-01");
+    const m = mergeLocationFields(
+      loc({ googlePlaceId: "ChIJtgt", placeIdCheckedAt: tChecked, lat: 51.5, lng: -0.1 }),
+      loc({
+        googlePlaceId: "ChIJsrc",
+        placeIdCheckedAt: new Date("2026-06-01"),
+        placeIdNeedsReview: true,
+        lat: 53.5,
+        lng: -0.8,
+      }),
+    );
+    expect(m.googlePlaceId).toBe("ChIJtgt");
+    expect(m.placeIdCheckedAt).toBe(tChecked);
+    expect(m.placeIdNeedsReview).toBe(false);
+    expect([m.lat, m.lng]).toEqual([51.5, -0.1]);
+  });
+  it("never mixes coordinates across sides", () => {
+    // A half-set target pair (invalid, but defensive) falls back to the source pair whole.
+    const m = mergeLocationFields(loc({ lat: 10 }), loc({ lat: 53.5, lng: -0.8 }));
+    expect([m.lat, m.lng]).toEqual([53.5, -0.8]);
+    expect(mergeLocationFields(loc(), loc({ lat: 1 }))).toMatchObject({ lat: null, lng: null });
+  });
+  it("keeps an open review flag when neither side is linked", () => {
+    expect(mergeLocationFields(loc(), loc({ placeIdNeedsReview: true })).placeIdNeedsReview).toBe(true);
+  });
 });
 
 describe("mergeBookingFields", () => {
   it("keeps the further-along status; NOT_NEEDED never beats a real booking", () => {
-    expect(mergeBookingFields(booking({ status: "REQUESTED" }), booking({ status: "CONFIRMED" })).status).toBe("CONFIRMED");
-    expect(mergeBookingFields(booking({ status: "NOT_NEEDED" }), booking()).status).toBe("NOT_BOOKED");
-    expect(mergeBookingFields(booking({ status: "FINALIZED" }), booking({ status: "REQUESTED" })).status).toBe("FINALIZED");
+    expect(mergeBookingFields(booking({ status: "IN_PROGRESS" }), booking({ status: "CONFIRMED" })).status).toBe("CONFIRMED");
+    expect(mergeBookingFields(booking({ status: "NOT_NEEDED" }), booking()).status).toBe("PLANNED");
+    expect(mergeBookingFields(booking({ status: "CONFIRMED" }), booking({ status: "IN_PROGRESS" })).status).toBe("CONFIRMED");
   });
   it("carries the agreed price as a unit", () => {
     const m = mergeBookingFields(

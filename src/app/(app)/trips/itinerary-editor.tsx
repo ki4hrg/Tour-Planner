@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,8 +20,6 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import {
-  BOOKING_STATUS_LABELS,
-  BOOKING_STATUSES,
   TRAVEL_METHOD_LABELS,
   effectivePresenters,
   scheduleItemPrimaryLabel,
@@ -36,7 +35,7 @@ import {
   CategoryChip,
   TravelMethodIcon,
 } from "./itinerary-timeline";
-import type { BookingStatus, TravelMethod } from "@prisma/client";
+import type { TravelMethod } from "@prisma/client";
 import type { FormState } from "@/lib/forms";
 import {
   addDay,
@@ -46,7 +45,9 @@ import {
   addScheduleItem,
   updateScheduleItem,
   deleteScheduleItem,
-  reorderScheduleItems,
+  moveScheduleItem,
+  movePlannedLocation,
+  previewDayReorderAction,
   addPlannedLocation,
   removePlannedLocation,
   promotePlannedLocation,
@@ -64,7 +65,33 @@ import {
   type CreatedPresentation,
 } from "./actions";
 
+import {
+  ItineraryDndProvider,
+  inLowerHalf,
+  useItineraryDnd,
+  type ItineraryDrag,
+  type ItineraryDrop,
+} from "./itinerary-dnd";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { applyItineraryMove, type ItineraryMove } from "@/lib/itinerary-moves";
+import type { StayFollowLine } from "@/lib/itinerary-mutations";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
 const NONE = "__none__";
+
+// A day as the "Move to day…" menu lists it.
+type DayOption = { id: string; label: string };
 
 type Location = {
   id: string;
@@ -212,15 +239,93 @@ export function ItineraryEditor({
     return res.presentation;
   };
 
+  // Moves (drag, arrows, "Move to day…") show immediately and settle when the
+  // revalidated days arrive.
+  const [shownDays, preview] = useOptimistic<SerializedDay[], ItineraryMove>(
+    days,
+    applyItineraryMove,
+  );
+  const [, startMove] = useTransition();
+  const commit = (move: ItineraryMove, fn: () => Promise<FormState>) =>
+    startMove(async () => {
+      preview(move);
+      const res = await fn();
+      if (res.error) toast.error(res.error);
+    });
+
+  // A day reorder that moves nights with lodging on them asks first whether
+  // the stays should follow their days (the server lists which, and where to).
+  const [lodgingPrompt, setLodgingPrompt] = useState<{
+    ids: string[];
+    stays: StayFollowLine[];
+  } | null>(null);
+  const applyDayOrder = (ids: string[], moveStays: boolean) => {
+    setLodgingPrompt(null);
+    commit({ kind: "days", orderedIds: ids }, async () => {
+      const res = await reorderDays(tripId, ids, { moveStays });
+      if (res.message) toast.success(res.message);
+      return res;
+    });
+  };
+  const reorderDayIds = (ids: string[]) =>
+    startMove(async () => {
+      const preview = await previewDayReorderAction(tripId, ids);
+      if ("error" in preview) {
+        toast.error(preview.error);
+        return;
+      }
+      if (preview.stays.length > 0) setLodgingPrompt({ ids, stays: preview.stays });
+      else applyDayOrder(ids, false);
+    });
+
   const moveDay = (index: number, dir: -1 | 1) => {
-    const next = [...days];
+    const next = shownDays.map((d) => d.id);
     const target = index + dir;
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]];
-    run(() => reorderDays(tripId, next.map((d) => d.id)));
+    reorderDayIds(next);
   };
 
+  // `toIndex` is the position among the target day's OTHER items.
+  const moveItemTo = (itemId: string, toDayId: string, toIndex: number) =>
+    commit({ kind: "item", itemId, toDayId, toIndex }, () =>
+      moveScheduleItem(itemId, toDayId, toIndex),
+    );
+
+  const onDrop = (drag: ItineraryDrag, over: ItineraryDrop) => {
+    if (drag.kind === "day" && over.kind === "day") {
+      const ids = shownDays.map((d) => d.id).filter((id) => id !== drag.id);
+      const at = ids.indexOf(over.dayId);
+      if (at < 0) return; // dropped on itself
+      ids.splice(over.after ? at + 1 : at, 0, drag.id);
+      if (ids.join() !== shownDays.map((d) => d.id).join()) reorderDayIds(ids);
+    } else if (drag.kind === "item" && over.kind === "item") {
+      // `over.index` is a gap in the full list; drop the dragged item's own
+      // slot from the count when it moves down within its day.
+      let index = over.index;
+      if (drag.dayId === over.dayId) {
+        const from = shownDays
+          .find((d) => d.id === over.dayId)
+          ?.items.findIndex((it) => it.id === drag.id);
+        if (from == null || from < 0) return;
+        if (index > from) index--;
+        if (index === from) return;
+      }
+      moveItemTo(drag.id, over.dayId, index);
+    } else if (drag.kind === "planned" && over.kind === "planned") {
+      commit({ kind: "planned", id: drag.id, toDayId: over.dayId }, () =>
+        movePlannedLocation(drag.id, over.dayId),
+      );
+    }
+  };
+
+  const dayOptions: DayOption[] = shownDays.map((d) => ({
+    id: d.id,
+    label: `Day ${d.dayIndex}${d.title ? ` — ${d.title}` : ""}`,
+  }));
+
   return (
+    <ItineraryDndProvider onDrop={onDrop}>
     <div className="space-y-4">
       {!hasStartDate && !isTemplate ? (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
@@ -228,12 +333,14 @@ export function ItineraryEditor({
         </p>
       ) : null}
 
-      {days.map((day, i) => (
+      {shownDays.map((day, i) => (
         <DayCard
           key={day.id}
           day={day}
           index={i}
-          total={days.length}
+          total={shownDays.length}
+          dayOptions={dayOptions}
+          onMoveItemTo={moveItemTo}
           canEdit={canEdit}
           categories={categories}
           locations={locations}
@@ -247,7 +354,7 @@ export function ItineraryEditor({
         />
       ))}
 
-      {days.length === 0 ? (
+      {shownDays.length === 0 ? (
         <p className="text-sm text-muted-foreground">No days.</p>
       ) : null}
 
@@ -260,7 +367,55 @@ export function ItineraryEditor({
           + Add day
         </Button>
       ) : null}
+      <Dialog
+        open={lodgingPrompt != null}
+        onOpenChange={(o) => !o && setLodgingPrompt(null)}
+      >
+        {lodgingPrompt ? (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move lodging with these days?</DialogTitle>
+            </DialogHeader>
+            <ul className="space-y-2 text-sm">
+              {lodgingPrompt.stays.map((st) => (
+                <li key={st.stayId}>
+                  <p className="font-medium">{st.name}</p>
+                  <p className="text-muted-foreground">
+                    {st.to ? (
+                      <>
+                        {st.from} → <span className="text-foreground">{st.to}</span>
+                      </>
+                    ) : (
+                      <>{st.from} · stays put (its nights are no longer together)</>
+                    )}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setLodgingPrompt(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => applyDayOrder(lodgingPrompt.ids, false)}
+              >
+                Keep lodging dates
+              </Button>
+              {lodgingPrompt.stays.some((st) => st.to) ? (
+                <Button onClick={() => applyDayOrder(lodgingPrompt.ids, true)}>
+                  Move lodging
+                </Button>
+              ) : null}
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
+    </ItineraryDndProvider>
   );
 }
 
@@ -268,6 +423,8 @@ function DayCard({
   day,
   index,
   total,
+  dayOptions,
+  onMoveItemTo,
   canEdit,
   categories,
   locations,
@@ -282,6 +439,8 @@ function DayCard({
   day: SerializedDay;
   index: number;
   total: number;
+  dayOptions: DayOption[];
+  onMoveItemTo: (itemId: string, toDayId: string, toIndex: number) => void;
   canEdit: boolean;
   categories: Category[];
   locations: Location[];
@@ -313,17 +472,70 @@ function DayCard({
   const cityName = cities.find((c) => c.id === day.cityRegionId)?.name;
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
-    const next = [...day.items];
     const target = itemIndex + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[itemIndex], next[target]] = [next[target], next[itemIndex]];
-    run(() => reorderScheduleItems(day.id, next.map((s) => s.id)));
+    if (target < 0 || target >= day.items.length) return;
+    onMoveItemTo(day.items[itemIndex].id, day.id, target);
   };
 
+  const dnd = useItineraryDnd();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const over = dnd.over?.dayId === day.id ? dnd.over : null;
+  // A drag anywhere over the card: days drop before/after it, items append to
+  // its route (rows refine the spot), planned locations join its cluster.
+  const onCardDragOver = (e: React.DragEvent) => {
+    const drag = dnd.current();
+    if (!drag) return;
+    if (drag.kind === "day") {
+      dnd.hover(e, { kind: "day", dayId: day.id, after: inLowerHalf(e) });
+    } else if (drag.kind === "item") {
+      dnd.hover(e, { kind: "item", dayId: day.id, index: day.items.length });
+    } else {
+      dnd.hover(
+        e,
+        drag.dayId === day.id ? null : { kind: "planned", dayId: day.id },
+      );
+    }
+  };
+  const itemLineAt = over?.kind === "item" ? over.index : null;
+
   return (
-    <div className="rounded-lg border bg-card">
+    <div
+      ref={cardRef}
+      id={`day-${day.id}`}
+      onDragOver={canEdit ? onCardDragOver : undefined}
+      onDrop={canEdit ? dnd.drop : undefined}
+      className={cn(
+        "relative rounded-lg border bg-card transition-opacity",
+        dnd.drag?.kind === "day" && dnd.drag.id === day.id && "opacity-50",
+        over?.kind === "planned" && "ring-2 ring-primary/50",
+      )}
+    >
+      {over?.kind === "day" ? (
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-x-0 h-1 rounded bg-primary",
+            over.after ? "-bottom-2.5" : "-top-2.5",
+          )}
+        />
+      ) : null}
       <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1">
+          {canEdit ? (
+            <span
+              draggable
+              onDragStart={(e) =>
+                dnd.begin(e, { kind: "day", id: day.id }, cardRef.current)
+              }
+              onDragEnd={dnd.end}
+              className="-ml-2 shrink-0 cursor-grab rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing"
+              title="Drag to reorder"
+              aria-hidden
+            >
+              <GripVertical className="size-4" />
+            </span>
+          ) : null}
+          <div className="min-w-0">
           <span className="font-medium">Day {day.dayIndex}</span>
           {day.title ? <span> — {day.title}</span> : null}
           {cityName ? (
@@ -338,6 +550,7 @@ function DayCard({
               · {formatDate(day.date)}
             </span>
           ) : null}
+          </div>
         </div>
         {canEdit ? (
           <div className="flex shrink-0 items-center gap-1">
@@ -485,16 +698,33 @@ function DayCard({
           get the grouped venue-run layout (location once per run). */}
       <div className="px-4 py-3">
         {day.items.length === 0 ? (
-          <p className="py-1 text-sm text-muted-foreground">No items.</p>
+          <p
+            className={cn(
+              "py-1 text-sm text-muted-foreground",
+              itemLineAt != null && "rounded bg-primary/10 px-2 text-foreground",
+            )}
+          >
+            No items.
+          </p>
         ) : canEdit ? (
           <ol className="relative ml-2 space-y-1.5 border-l-2 border-border/60">
             {day.items.map((item, si) => (
               <ItemRow
                 key={item.id}
                 tripId={day.tripId}
+                dayId={day.id}
                 item={item}
                 index={si}
                 total={day.items.length}
+                dropLine={
+                  itemLineAt === si
+                    ? "before"
+                    : itemLineAt === day.items.length && si === day.items.length - 1
+                      ? "after"
+                      : null
+                }
+                dayOptions={dayOptions}
+                onMoveToDay={(toDayId) => onMoveItemTo(item.id, toDayId, Number.MAX_SAFE_INTEGER)}
                 canEdit={canEdit}
                 categories={categories}
                 locations={locations}
@@ -592,6 +822,7 @@ function PlannedLocations({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const dnd = useItineraryDnd();
   const [pick, setPick] = useState<string>(NONE);
   const [note, setNote] = useState("");
 
@@ -620,7 +851,15 @@ function PlannedLocations({
           {planned.map((p) => (
             <li
               key={p.id}
-              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm"
+              draggable={canEdit}
+              onDragStart={(e) => dnd.begin(e, { kind: "planned", id: p.id, dayId })}
+              onDragEnd={dnd.end}
+              title={canEdit ? "Drag to another day" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm",
+                canEdit && "cursor-grab active:cursor-grabbing",
+                dnd.drag?.kind === "planned" && dnd.drag.id === p.id && "opacity-50",
+              )}
             >
               <span>{p.name}</span>
               {p.note ? (
@@ -714,9 +953,13 @@ function Marker({ item }: { item: SerializedScheduleItem }) {
 
 function ItemRow({
   tripId,
+  dayId,
   item,
   index,
   total,
+  dropLine,
+  dayOptions,
+  onMoveToDay,
   canEdit,
   categories,
   locations,
@@ -728,9 +971,14 @@ function ItemRow({
   onCreatePresentation,
 }: {
   tripId: string;
+  dayId: string;
   item: SerializedScheduleItem;
   index: number;
   total: number;
+  // Drop indicator for an item being dragged here (above / below this row).
+  dropLine: "before" | "after" | null;
+  dayOptions: DayOption[];
+  onMoveToDay: (toDayId: string) => void;
   canEdit: boolean;
   categories: Category[];
   locations: Location[];
@@ -746,6 +994,8 @@ function ItemRow({
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
+  const dnd = useItineraryDnd();
+  const rowRef = useRef<HTMLLIElement>(null);
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
@@ -756,7 +1006,31 @@ function ItemRow({
 
   return (
     // Anchor target for deep links from the day view's quick-edit ("All options →").
-    <li id={`item-${item.id}`} className="relative scroll-mt-20 pl-5">
+    <li
+      ref={rowRef}
+      id={`item-${item.id}`}
+      className={cn(
+        "relative scroll-mt-20 pl-5",
+        dnd.drag?.kind === "item" && dnd.drag.id === item.id && "opacity-50",
+      )}
+      onDragOver={(e) => {
+        if (dnd.current()?.kind !== "item") return;
+        dnd.hover(e, {
+          kind: "item",
+          dayId,
+          index: inLowerHalf(e) ? index + 1 : index,
+        });
+      }}
+    >
+      {dropLine ? (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute -left-px right-0 h-0.5 rounded bg-primary",
+            dropLine === "before" ? "-top-1" : "-bottom-1",
+          )}
+        />
+      ) : null}
       <Marker item={item} />
       <div className="flex items-start justify-between gap-3 py-1.5">
         <div className="min-w-0 flex-1">
@@ -882,6 +1156,18 @@ function ItemRow({
 
         {canEdit && !editing ? (
           <div className="flex shrink-0 items-center gap-1">
+            <span
+              draggable
+              onDragStart={(e) =>
+                dnd.begin(e, { kind: "item", id: item.id, dayId }, rowRef.current)
+              }
+              onDragEnd={dnd.end}
+              className="cursor-grab rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+              title="Drag to move"
+              aria-hidden
+            >
+              <GripVertical className="size-4" />
+            </span>
             <Button
               variant="ghost"
               size="sm"
@@ -900,6 +1186,24 @@ function ItemRow({
             >
               ↓
             </Button>
+            {dayOptions.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    Move
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto max-w-72">
+                  {dayOptions
+                    .filter((d) => d.id !== dayId)
+                    .map((d) => (
+                      <DropdownMenuItem key={d.id} onSelect={() => onMoveToDay(d.id)}>
+                        <span className="truncate">{d.label}</span>
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
               Edit
             </Button>
@@ -1964,9 +2268,6 @@ function BookingFields({
     initial?.locationId ?? NONE,
   );
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [status, setStatus] = useState<BookingStatus>(
-    initial?.status ?? "NOT_BOOKED",
-  );
   const [bookedContactId, setBookedContactId] = useState<string>(
     initial?.bookedContactId ?? NONE,
   );
@@ -1980,7 +2281,6 @@ function BookingFields({
       {
         locationId: locationId === NONE ? undefined : locationId,
         label: label.trim() || undefined,
-        status,
         bookedContactId: bookedContactId === NONE ? undefined : bookedContactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -1989,7 +2289,6 @@ function BookingFields({
         if (!initial) {
           setLocationId(NONE);
           setLabel("");
-          setStatus("NOT_BOOKED");
           setBookedContactId(NONE);
           setConfirmationRef("");
           setNotes("");
@@ -2024,24 +2323,6 @@ function BookingFields({
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Coach"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Status</Label>
-          <Select
-            value={status}
-            onValueChange={(v) => setStatus(v as BookingStatus)}
-          >
-            <SelectTrigger size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BOOKING_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {BOOKING_STATUS_LABELS[s]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Booked with</Label>

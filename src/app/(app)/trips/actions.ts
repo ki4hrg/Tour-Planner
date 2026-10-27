@@ -21,11 +21,12 @@ import {
   installmentRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
-import { parseDateInput, computeDayDate } from "@/lib/dates";
+import { parseDateInput, computeDayDate, todayUtc } from "@/lib/dates";
 import {
   applyStartDateChange,
   assertBookable,
   deleteItineraryDay,
+  ensureVenueEngagement,
   seedScheduleFromLocation,
   toScheduleSeed,
   type LocationScheduleSeed,
@@ -38,10 +39,24 @@ import {
   type InstantiatedVenueBooking,
 } from "@/lib/templates";
 import { timedInsertIndex } from "@/lib/schedule-order";
+import {
+  moveItemToDay,
+  movePlannedLocationTo,
+  previewDayReorder,
+  reorderDayItems,
+  reorderTripDays,
+  type StayFollowLine,
+} from "@/lib/itinerary-mutations";
 import { travelLegCreateData } from "@/lib/travel";
-import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
+import {
+  seedWorkflowFor,
+  setBookingStage,
+  setBookingStatusDirect,
+  setBookingStep,
+  setBookingWorkflow,
+} from "@/lib/booking-workflow-sync";
 import { createProject } from "@/lib/todoist";
 
 // --- Trip CRUD ---
@@ -98,7 +113,9 @@ const TEMPLATE_DAYS_SELECT = {
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
-      bookings: { select: { locationId: true, label: true, notes: true } },
+      bookings: {
+        select: { locationId: true, label: true, notes: true, workflowId: true },
+      },
       travel: {
         select: {
           method: true,
@@ -128,6 +145,7 @@ const TEMPLATE_VENUE_BOOKING_SELECT = {
   locationId: true,
   label: true,
   notes: true,
+  workflowId: true,
   paymentSchedule: {
     select: {
       label: true,
@@ -196,8 +214,10 @@ export async function createTrip(
     daysCreate = instantiateDays(template.days, data.startDate);
     // Template schedule wins; where a copied engagement carries none, fall back
     // to the venue's standing terms (GH #86). Both beat an empty schedule.
-    venueBookingsCreate = await applyLocationScheduleDefaults(
-      instantiateVenueBookings(template.bookings),
+    venueBookingsCreate = await applyLocationWorkflowDefaults(
+      await applyLocationScheduleDefaults(
+        instantiateVenueBookings(template.bookings),
+      ),
     );
     // Day-relative template stays resolve to dates against the new startDate (or
     // stay day-relative when the new trip is itself a date-less template).
@@ -257,7 +277,7 @@ export async function updateTrip(
 }
 
 // Snapshot an existing trip as a reusable template: deep-copy its itinerary
-// (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
+// (bookings reset to PLANNED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 // One-click close-out from the wrap-up card. Status only — everything else on
 // the trip is left alone. (Complete is derived from dates; Archived is the
@@ -449,42 +469,38 @@ export async function deleteDay(dayId: string): Promise<FormState> {
   };
 }
 
+// Reorder a trip's days. `moveStays` also shifts lodging whose nights moved
+// together (the editor asks first — previewDayReorder lists what would move).
 export async function reorderDays(
   tripId: string,
   orderedDayIds: string[],
+  opts: { moveStays?: boolean } = {},
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
-    select: { startDate: true, days: { select: { id: true } } },
-  });
-  if (!trip) return { error: "Trip not found." };
-
-  // The ids must be exactly this trip's days — no foreign ids (which would
-  // renumber another trip's days), no omissions, no duplicates.
-  const own = new Set(trip.days.map((d) => d.id));
-  if (
-    orderedDayIds.length !== own.size ||
-    new Set(orderedDayIds).size !== orderedDayIds.length ||
-    !orderedDayIds.every((id) => own.has(id))
-  ) {
-    return { error: "Day list out of date." };
-  }
-
-  // Stays are left where they are: a drag-reorder has no unambiguous mapping
-  // for lodging (does the hotel follow the moved day or the night?), so the
-  // planner re-anchors them in the Lodging panel if needed.
-  await prisma.$transaction(
-    orderedDayIds.map((id, i) =>
-      prisma.itineraryDay.update({
-        where: { id, tripId },
-        data: { dayIndex: i + 1, date: computeDayDate(trip.startDate, i + 1) },
-      }),
-    ),
-  );
-
+  const res = await reorderTripDays(tripId, orderedDayIds, opts);
+  if ("error" in res) return { error: res.error };
   revalidateTrip(tripId);
-  return { ok: true };
+  if (!opts.moveStays) return { ok: true };
+  const { movedStays: n, splitStays: k } = res;
+  return {
+    ok: true,
+    message: [
+      n ? `Moved ${n} stay${n === 1 ? "" : "s"} with ${n === 1 ? "its" : "their"} days.` : null,
+      k ? `${k} stay${k === 1 ? "" : "s"} left in place.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined,
+  };
+}
+
+// The lodging a proposed day order would affect — feeds the editor's
+// "move lodging too?" prompt before anything is written.
+export async function previewDayReorderAction(
+  tripId: string,
+  orderedDayIds: string[],
+): Promise<{ error: string } | { ok: true; stays: StayFollowLine[] }> {
+  await assertRole("PLANNER");
+  return previewDayReorder(tripId, orderedDayIds);
 }
 
 // --- Rough-plan day locations (GH #9) ---
@@ -518,6 +534,19 @@ export async function addPlannedLocation(
   const tripId = await tripIdForDay(dayId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Planned location added." };
+}
+
+// Move a rough-plan location to another day of the same trip (a duplicate on
+// the target day collapses into it — see movePlannedLocationTo).
+export async function movePlannedLocation(
+  id: string,
+  toDayId: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const res = await movePlannedLocationTo(id, toDayId);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
+  return { ok: true };
 }
 
 export async function removePlannedLocation(id: string): Promise<FormState> {
@@ -829,24 +858,24 @@ export async function reorderScheduleItems(
   orderedItemIds: string[],
 ): Promise<FormState> {
   await assertRole("PLANNER");
-  // Reorder carries the times with it: a moved item keeps its own duration while the
-  // day's anchor + free-time gaps are preserved, so the visible sequence and the clock
-  // never disagree. See cascadeReorderedTimes for the exact model.
-  const items = await prisma.scheduleItem.findMany({
-    where: { dayId },
-    select: { id: true, startTime: true, endTime: true },
-  });
-  const reordered = cascadeReorderedTimes(items, orderedItemIds);
-  await prisma.$transaction(
-    reordered.map((it) =>
-      prisma.scheduleItem.update({
-        where: { id: it.id },
-        data: { order: it.order, startTime: it.startTime, endTime: it.endTime },
-      }),
-    ),
-  );
-  const tripId = await tripIdForDay(dayId);
-  if (tripId) revalidateTrip(tripId);
+  const res = await reorderDayItems(dayId, orderedItemIds);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
+  return { ok: true };
+}
+
+// Move an item to another day or position (the itinerary's drag, or "Move to
+// day…"). `toIndex` is 0-based among the target day's other items; see
+// moveItemToDay for how times behave.
+export async function moveScheduleItem(
+  itemId: string,
+  toDayId: string,
+  toIndex: number,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const res = await moveItemToDay(itemId, toDayId, toIndex);
+  if ("error" in res) return { error: res.error };
+  revalidateTrip(res.tripId);
   return { ok: true };
 }
 
@@ -902,7 +931,8 @@ export async function shiftDaySchedule(
 export type BookingInputData = {
   locationId?: string;
   label?: string;
-  status: string;
+  // Ignored — the status control / workflow steps own a booking's status.
+  status?: string;
   bookedContactId?: string;
   confirmationRef?: string;
   notes?: string;
@@ -916,7 +946,6 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
   return {
     locationId: d.locationId || null,
     label: d.label || null,
-    status: d.status as BookingStatus,
     bookedContactId: d.bookedContactId || null,
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
@@ -951,12 +980,28 @@ export async function addBooking(
   }
 
   await prisma.booking.create({
-    data: { scheduleItemId: itemId, ...toBookingScalars(parsed.data) },
+    data: {
+      scheduleItemId: itemId,
+      ...toBookingScalars(parsed.data),
+      ...(await seedWorkflowFor(null)),
+    },
   });
 
   const tripId = await tripIdForItem(itemId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Booking added." };
+}
+
+// Engagements copied without a workflow fall back to the venue's default
+// workflow (else the global default) — the template's own choice wins.
+async function applyLocationWorkflowDefaults(
+  bookings: InstantiatedVenueBooking[],
+): Promise<InstantiatedVenueBooking[]> {
+  return Promise.all(
+    bookings.map(async (b) =>
+      b.workflowId ? b : { ...b, ...(await seedWorkflowFor(b.locationId)) },
+    ),
+  );
 }
 
 // Fill each instantiated engagement that carries NO schedule with its location's
@@ -1002,22 +1047,20 @@ export async function upsertVenueBooking(
   const notBookable = await assertBookable(locationId);
   if (notBookable) return { error: notBookable };
 
-  const scalars = { ...toBookingScalars(parsed.data), locationId };
-  // Status is owned by the one-click control (setVenueBookingStatus). The
-  // details form submits the status it rendered with, which can be stale by
-  // the time it saves — so on UPDATE never write it, or a just-made quick
-  // status change would be silently reverted. On CREATE it seeds the row.
-  const { status, ...detailScalars } = scalars;
+  // Status is owned by the status control / workflow steps, never the details
+  // form (its rendered status could be stale by save time).
+  const detailScalars = { ...toBookingScalars(parsed.data), locationId };
   // Nested create only fires on the create branch of the upsert (an existing
-  // engagement's schedule is left untouched), so seeding the location default
+  // engagement's schedule is left untouched), so seeding the location defaults
   // here is safe even when this call ends up updating.
   const schedule = await seedScheduleFromLocation(locationId);
+  const workflow = await seedWorkflowFor(locationId);
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
     create: {
       tripId,
       ...detailScalars,
-      status,
+      ...workflow,
       ...(schedule ? { paymentSchedule: schedule } : {}),
     },
     update: detailScalars,
@@ -1027,41 +1070,165 @@ export async function upsertVenueBooking(
   return { ok: true, message: "Booking saved." };
 }
 
-// The one-click status control on the dashboard — upsert the engagement with just a
-// status (defaults the rest on first create). Other fields are managed via the
-// expandable row (upsertVenueBooking) so a quick status change never clears them.
+// What a status/workflow control acts on: a venue engagement by (trip,
+// location) — created on first touch, seeded like every other create — or an
+// existing booking by id (a site-less item booking).
+export type BookingTarget =
+  | { tripId: string; locationId: string }
+  | { bookingId: string };
+
+async function resolveBookingTarget(
+  target: BookingTarget,
+): Promise<{ error: string } | { bookingId: string; tripId: string | null }> {
+  if ("bookingId" in target) {
+    return {
+      bookingId: target.bookingId,
+      tripId: await tripIdForBooking(target.bookingId),
+    };
+  }
+  // An existing engagement is used as-is (even at a since-archived venue);
+  // only a first touch goes through the create-time checks + seeding.
+  const existing = await prisma.booking.findUnique({
+    where: {
+      tripId_locationId: { tripId: target.tripId, locationId: target.locationId },
+    },
+    select: { id: true },
+  });
+  if (existing) return { bookingId: existing.id, tripId: target.tripId };
+  const res = await ensureVenueEngagement(target.tripId, target.locationId);
+  if ("error" in res) return res;
+  return { bookingId: res.bookingId, tripId: target.tripId };
+}
+
+// Set the coarse status directly. On a workflow booking only "Not needed" (and
+// leaving it) is manual — the steps own the rest (setBookingStepAction).
 export async function setVenueBookingStatus(
   tripId: string,
   locationId: string,
   status: BookingStatus,
 ): Promise<FormState> {
-  await assertRole("PLANNER");
-  const notBookable = await assertBookable(locationId);
-  if (notBookable) return { error: notBookable };
-  // First status set on a venue also creates the engagement — pre-fill its
-  // schedule from the location's standing terms (GH #86). Ignored on update.
-  const schedule = await seedScheduleFromLocation(locationId);
-  await prisma.booking.upsert({
-    where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, locationId, status, ...(schedule ? { paymentSchedule: schedule } : {}) },
-    update: { status },
-  });
-
-  revalidateTrip(tripId);
-  return { ok: true, message: "Status updated." };
+  return setTargetStatus({ tripId, locationId }, status);
 }
 
-// Quick status set for an existing booking by id (the dashboard's one-click control
-// on a site-less item booking, which always already exists).
 export async function setBookingStatus(
   bookingId: string,
   status: BookingStatus,
 ): Promise<FormState> {
+  return setTargetStatus({ bookingId }, status);
+}
+
+async function setTargetStatus(
+  target: BookingTarget,
+  status: BookingStatus,
+): Promise<FormState> {
   await assertRole("PLANNER");
-  await prisma.booking.update({ where: { id: bookingId }, data: { status } });
-  const tripId = await tripIdForBooking(bookingId);
-  if (tripId) revalidateTrip(tripId);
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStatusDirect(t.bookingId, status);
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
   return { ok: true, message: "Status updated." };
+}
+
+// Tick (or untick) one workflow step on a booking. `completedOn` back-dates it
+// ("yyyy-mm-dd"; defaults to today); re-sending a done step just re-dates it.
+export async function setBookingStepAction(
+  target: BookingTarget,
+  stepId: string,
+  done: boolean,
+  completedOn?: string,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const on = completedOn ? parseDateInput(completedOn) : todayUtc();
+  if (!on) return { error: "Use a real yyyy-mm-dd date." };
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStep({
+    bookingId: t.bookingId,
+    stepId,
+    done,
+    completedOn: on,
+    userId: user.id,
+  });
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true };
+}
+
+// Tick (or untick) a step on several bookings at once — the progress view's
+// bulk action ("booking forms went out for all three venues"). Each entry names
+// its own step, since the bookings may follow different workflows. Applies what
+// it can and reports the rest.
+export async function setBookingStepsBulk(
+  entries: { target: BookingTarget; stepId: string }[],
+  done: boolean,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const on = todayUtc();
+  const tripIds = new Set<string>();
+  let updated = 0;
+  const failed: string[] = [];
+  for (const { target, stepId } of entries) {
+    const t = await resolveBookingTarget(target);
+    if ("error" in t) {
+      failed.push(t.error);
+      continue;
+    }
+    const res = await setBookingStep({
+      bookingId: t.bookingId,
+      stepId,
+      done,
+      completedOn: on,
+      userId: user.id,
+    });
+    if ("error" in res) {
+      failed.push(res.error);
+      continue;
+    }
+    updated++;
+    if (t.tripId) tripIds.add(t.tripId);
+  }
+  for (const id of tripIds) revalidateTrip(id);
+  const msg = `Updated ${updated} booking${updated === 1 ? "" : "s"}.`;
+  if (failed.length) {
+    return { error: `${msg} ${failed.length} failed: ${[...new Set(failed)].join(" ")}` };
+  }
+  return { ok: true, message: msg };
+}
+
+// Move a booking straight to a workflow stage (the board's drag between step
+// columns): ticks `stepId` and clears every later step; null = not started.
+export async function setBookingStageAction(
+  target: BookingTarget,
+  stepId: string | null,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStage({
+    bookingId: t.bookingId,
+    stepId,
+    completedOn: todayUtc(),
+    userId: user.id,
+  });
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true };
+}
+
+// Put a booking on another workflow (null = none, status set by hand). Clears
+// the old workflow's step completions.
+export async function setBookingWorkflowAction(
+  target: BookingTarget,
+  workflowId: string | null,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingWorkflow(t.bookingId, workflowId);
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true, message: "Workflow changed." };
 }
 
 // Resolve the owning trip whether the booking is a venue engagement or a site-less

@@ -18,7 +18,7 @@ import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import { mapHref } from "@/lib/maps";
 import {
-  BOOKING_STATUS_LABELS,
+  bookingStageText,
   BOOKING_STATUS_CLASSES,
   effectivePresenters,
   groupItemsByVenue,
@@ -424,7 +424,7 @@ export function BookingPill({
           BOOKING_STATUS_CLASSES[booking.status],
         )}
       >
-        {BOOKING_STATUS_LABELS[booking.status]}
+        {bookingStageText(booking)}
       </span>
       {what ? <span className="text-muted-foreground">{what}</span> : null}
       {booking.bookedContact ? (

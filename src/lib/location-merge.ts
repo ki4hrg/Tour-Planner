@@ -17,6 +17,8 @@
 // No revalidatePath here — MCP-safe; web callers revalidate themselves.
 
 import type { BookingStatus, CostUnit, Prisma } from "@prisma/client";
+import { BOOKING_STATUS_RANK } from "./booking-workflow";
+import { recomputeBooking } from "./booking-workflow-sync";
 import { prisma } from "@/lib/db";
 
 // Join two free-text fields: keep both when they differ, never duplicate.
@@ -38,6 +40,11 @@ export type MergeableLocationFields = {
   notes: string | null;
   website: string | null;
   mapUrl: string | null;
+  googlePlaceId: string | null;
+  lat: number | null;
+  lng: number | null;
+  placeIdCheckedAt: Date | null;
+  placeIdNeedsReview: boolean;
   bookable: boolean;
   bookingOpensLeadDays: number | null;
   bookingNotes: string | null;
@@ -48,10 +55,18 @@ export type MergeableLocationFields = {
 
 // Target wins; the source fills gaps. Long-form text concatenates so nothing
 // written about the duplicate is lost. The merged record is live if either was.
+// The Google place link travels as a unit (ID + its check date + review flag),
+// and so do the coordinates (DB CHECK location_coordinates: both or neither).
 export function mergeLocationFields(
   target: MergeableLocationFields,
   source: MergeableLocationFields,
 ): MergeableLocationFields {
+  const place = target.googlePlaceId
+    ? target
+    : source.googlePlaceId
+      ? source
+      : null;
+  const coords = target.lat != null && target.lng != null ? target : source;
   return {
     regionId: target.regionId ?? source.regionId,
     address: target.address || source.address,
@@ -59,6 +74,16 @@ export function mergeLocationFields(
     notes: joinText(target.notes, source.notes),
     website: target.website || source.website,
     mapUrl: target.mapUrl || source.mapUrl,
+    googlePlaceId: place?.googlePlaceId ?? null,
+    placeIdCheckedAt: place
+      ? place.placeIdCheckedAt
+      : (target.placeIdCheckedAt ?? source.placeIdCheckedAt),
+    // Neither side linked: an open "re-link by hand" flag on either survives.
+    placeIdNeedsReview: place
+      ? place.placeIdNeedsReview
+      : target.placeIdNeedsReview || source.placeIdNeedsReview,
+    lat: coords.lat != null && coords.lng != null ? coords.lat : null,
+    lng: coords.lat != null && coords.lng != null ? coords.lng : null,
     bookable: target.bookable || source.bookable,
     bookingOpensLeadDays:
       target.bookingOpensLeadDays ?? source.bookingOpensLeadDays,
@@ -73,16 +98,10 @@ export function mergeLocationFields(
   };
 }
 
-// How far along an engagement is; NOT_NEEDED ranks lowest so a real booking on
-// either side always survives the merge.
-const STATUS_RANK: Record<BookingStatus, number> = {
-  NOT_NEEDED: 0,
-  NOT_BOOKED: 1,
-  REQUESTED: 2,
-  TENTATIVELY_CONFIRMED: 3,
-  CONFIRMED: 4,
-  FINALIZED: 5,
-};
+// How far along an engagement is (BOOKING_STATUS_RANK); NOT_NEEDED ranks
+// lowest so a real booking on either side always survives the merge. A workflow
+// booking's status is then re-derived from its merged step completions.
+const STATUS_RANK = BOOKING_STATUS_RANK;
 
 export type MergeableBookingFields = {
   status: BookingStatus;
@@ -180,12 +199,18 @@ async function loadPair(db: Db, sourceId: string, targetId: string) {
     notes: true,
     website: true,
     mapUrl: true,
+    googlePlaceId: true,
+    lat: true,
+    lng: true,
+    placeIdCheckedAt: true,
+    placeIdNeedsReview: true,
     bookable: true,
     bookingOpensLeadDays: true,
     bookingNotes: true,
     scheduleLimitations: true,
     primaryContactId: true,
     archivedAt: true,
+    defaultWorkflowId: true,
     hostSite: true,
     contacts: { select: { id: true } },
     tripTypes: { select: { id: true } },
@@ -329,11 +354,29 @@ export async function mergeLocations(
       if (tb._count.paymentSchedule === 0) {
         await tx.paymentScheduleItem.updateMany(move);
       }
+      // Workflow progress: the target's workflow wins (adopting the source's
+      // when it has none); source completions on that workflow's steps move
+      // over unless the target already ticked the same step.
+      const workflowId = tb.workflowId ?? sb.workflowId;
+      if (workflowId && sb.workflowId === workflowId) {
+        const done = await tx.bookingStepCompletion.findMany({
+          where: { bookingId: tb.id },
+          select: { stepId: true },
+        });
+        await tx.bookingStepCompletion.updateMany({
+          where: {
+            bookingId: sb.id,
+            stepId: { notIn: done.map((d) => d.stepId) },
+          },
+          data: { bookingId: tb.id },
+        });
+      }
       await tx.booking.update({
         where: { id: tb.id },
-        data: mergeBookingFields(tb, sb),
+        data: { ...mergeBookingFields(tb, sb), workflowId },
       });
       await tx.booking.delete({ where: { id: sb.id } });
+      await recomputeBooking(tb.id, tx);
     }
     await tx.booking.updateMany({ ...fromSource, ...toTarget });
 
@@ -358,6 +401,12 @@ export async function mergeLocations(
     });
     if (target._count.defaultPaymentSchedule === 0) {
       await tx.locationPaymentScheduleItem.updateMany({ ...fromSource, ...toTarget });
+    }
+    if (!target.defaultWorkflowId && source.defaultWorkflowId) {
+      await tx.location.update({
+        where: { id: targetId },
+        data: { defaultWorkflowId: source.defaultWorkflowId },
+      });
     }
 
     // Host-site extension (1:1).

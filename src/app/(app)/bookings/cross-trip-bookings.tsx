@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Mail, Search } from "lucide-react";
-import type { BookingStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,8 +34,7 @@ import {
   type VenueGroup,
   type VenueTripRow,
 } from "@/lib/cross-trip-bookings";
-import { setBookingStatus, setVenueBookingStatus } from "../trips/actions";
-import { StatusControl } from "../trips/status-control";
+import { WorkflowControl } from "../trips/workflow-control";
 import { PriceCell, WindowCell, coverageLine } from "../trips/booking-row";
 
 const FILTER_LABELS: { key: keyof AttentionFilters; label: string }[] = [
@@ -373,12 +371,10 @@ function VenueStatus({
   canEdit: boolean;
 }) {
   return (
-    <StatusControl
-      status={row.status}
+    <WorkflowControl
+      target={{ tripId: trip.id, locationId: row.locationId }}
+      progress={row.progress}
       canEdit={canEdit}
-      onSet={(status: BookingStatus) =>
-        setVenueBookingStatus(trip.id, row.locationId, status)
-      }
     />
   );
 }
@@ -428,12 +424,10 @@ function OtherBookings({
                     </span>
                   </span>
                   <span className="shrink-0">
-                    <StatusControl
-                      status={r.status}
+                    <WorkflowControl
+                      target={{ bookingId: r.bookingId }}
+                      progress={r.progress}
                       canEdit={canEdit}
-                      onSet={(status: BookingStatus) =>
-                        setBookingStatus(r.bookingId, status)
-                      }
                     />
                   </span>
                 </li>

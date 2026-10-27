@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { SquareKanban, Table2 } from "lucide-react";
+import { ListChecks, SquareKanban, Table2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
@@ -17,8 +17,9 @@ import type { SerializedDocument } from "@/lib/documents";
 import { isBookingSecured } from "@/lib/booking";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
 import { BookingBoard } from "./booking-board";
+import { BookingProgress } from "./booking-progress";
 
-export type DashboardView = "table" | "board";
+export type DashboardView = "table" | "board" | "progress";
 
 type ContactOption = { id: string; name: string };
 
@@ -71,17 +72,18 @@ export function BookingDashboard({
   // visible and that venue expanded + scrolled into view.
   focusLocationId?: string | null;
 }) {
-  // The view lives in the URL (`?view=board`) so a reload or shared link opens
+  // The view lives in the URL (`?view=board|progress`) so a reload or shared link opens
   // the same one. history.replaceState keeps useSearchParams in sync without a
   // server round trip (router.replace would re-run the whole page's queries).
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const param = searchParams.get("view");
   const view: DashboardView =
-    searchParams.get("view") === "board" ? "board" : "table";
+    param === "board" || param === "progress" ? param : "table";
   const switchView = (next: DashboardView) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "board") params.set("view", "board");
-    else params.delete("view");
+    if (next === "table") params.delete("view");
+    else params.set("view", next);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
@@ -136,6 +138,7 @@ export function BookingDashboard({
         [
           ["table", "Table", Table2],
           ["board", "Board", SquareKanban],
+          ["progress", "Progress", ListChecks],
         ] as const
       ).map(([value, label, Icon]) => (
         <button
@@ -156,6 +159,20 @@ export function BookingDashboard({
       ))}
     </div>
   );
+
+  if (view === "progress") {
+    return (
+      <div className="space-y-3">
+        <div className="flex justify-end">{viewToggle}</div>
+        <BookingProgress
+          tripId={tripId}
+          canEdit={canEdit}
+          venueRows={venueRows}
+          itemRows={itemRows}
+        />
+      </div>
+    );
+  }
 
   if (view === "board") {
     return (

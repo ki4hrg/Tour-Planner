@@ -24,12 +24,15 @@ enum TripStatus {
   CANCELLED
 }
 
+// A booking's coarse state. With a workflow assigned it is DERIVED from the
+// completed steps (each step names the status it reaches — see
+// src/lib/booking-workflow.ts) and stored so filters stay plain column reads;
+// without one the planner sets it directly. NOT_NEEDED is always a manual
+// override that step changes leave alone.
 enum BookingStatus {
-  NOT_BOOKED
-  REQUESTED
-  TENTATIVELY_CONFIRMED
-  CONFIRMED
-  FINALIZED
+  PLANNED // nothing done yet
+  IN_PROGRESS // underway: contacted, availability held, form submitted...
+  CONFIRMED // secured — the planner no longer needs to chase it
   NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 
@@ -74,19 +77,20 @@ enum CalendarFeedScope {
 }
 
 model User {
-  id                   String                @id @default(cuid())
-  email                String                @unique
+  id                   String                  @id @default(cuid())
+  email                String                  @unique
   name                 String?
   passwordHash         String
-  role                 Role                  @default(PLANNER)
-  createdAt            DateTime              @default(now())
-  trips                Trip[]                @relation("CreatedTrips")
-  authoredNotes        Note[]                @relation("AuthoredNotes")
+  role                 Role                    @default(PLANNER)
+  createdAt            DateTime                @default(now())
+  trips                Trip[]                  @relation("CreatedTrips")
+  authoredNotes        Note[]                  @relation("AuthoredNotes")
   todoistConnection    TodoistConnection?
   tripTodoistLinks     TripTodoistLink[]
   tripTypeTodoistLinks TripTypeTodoistLink[]
-  calendarFeeds        CalendarFeed[]        @relation("CreatedCalendarFeeds")
-  uploadedDocuments    Document[]            @relation("UploadedDocuments")
+  calendarFeeds        CalendarFeed[]          @relation("CreatedCalendarFeeds")
+  uploadedDocuments    Document[]              @relation("UploadedDocuments")
+  bookingStepsDone     BookingStepCompletion[] @relation("BookingStepCompletedBy")
 }
 
 // API key for server-to-server export access. Keys are opaque tpk_* tokens;
@@ -223,6 +227,8 @@ model Location {
   documents              Document[]                    @relation("LocationDocuments") // venue paperwork reusable across trips
   primaryForDays         ItineraryDay[]                @relation("DayPrimaryLocation") // days that default new items here
   plannedForDays         ItineraryDayLocation[]        @relation("PlannedDayLocations") // rough-plan day assignments (GH #9)
+  defaultWorkflow        BookingWorkflow?              @relation("LocationDefaultWorkflow", fields: [defaultWorkflowId], references: [id], onDelete: SetNull)
+  defaultWorkflowId      String? // seeds new engagements here (else the global default workflow)
   travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
   travelsTo              TravelLeg[]                   @relation("TravelTo") // travel legs arriving here
   travelStops            TravelStop[]                  @relation("TravelStopLocation") // en-route stops here
@@ -231,6 +237,7 @@ model Location {
 
   @@index([regionId])
   @@index([primaryContactId])
+  @@index([defaultWorkflowId])
 }
 
 model Contact {
@@ -457,38 +464,100 @@ model ScheduleItemSite {
 // (DB CHECKs in the migration: num_nonnulls(scheduleItemId, tripId)=1, and
 // tripId ⇒ locationId). One engagement per (trip, location) — see @@unique below.
 model Booking {
-  id              String                @id @default(cuid())
-  scheduleItem    ScheduleItem?         @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  id              String                  @id @default(cuid())
+  scheduleItem    ScheduleItem?           @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
   scheduleItemId  String? // set for a site-less / single-session item booking
-  trip            Trip?                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip            Trip?                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
   tripId          String? // set for a venue-engagement booking (with locationId)
-  location        Location?             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location        Location?               @relation(fields: [locationId], references: [id], onDelete: Cascade)
   locationId      String? // the engaged venue (required when tripId is set)
   label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
-  status          BookingStatus         @default(NOT_BOOKED)
-  bookedContact   Contact?              @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
+  status          BookingStatus           @default(PLANNED)
+  bookedContact   Contact?                @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
   bookedContactId String?
   confirmationRef String?
   notes           String?
   // When the engagement was booked — the anchor date for BOOKING-relative payment
   // installments (GH #86). Planner-set; resolution falls back to createdAt when null.
-  bookedOn        DateTime?             @db.Date
+  bookedOn        DateTime?               @db.Date
   // The negotiated price for THIS engagement (the location cost catalog is the
   // asking price; this is what was actually agreed). Settled when payments cover it.
-  agreedAmount    Decimal?              @db.Decimal(10, 2)
-  agreedCurrency  String                @default("USD")
+  agreedAmount    Decimal?                @db.Decimal(10, 2)
+  agreedCurrency  String                  @default("USD")
   agreedUnit      CostUnit?
   payments        Payment[]
   paymentSchedule PaymentScheduleItem[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  notesLog        Note[]                @relation("BookingNotes")
-  documents       Document[]            @relation("BookingDocuments") // signed contracts, invoices, confirmations
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  notesLog        Note[]                  @relation("BookingNotes")
+  documents       Document[]              @relation("BookingDocuments") // signed contracts, invoices, confirmations
+  // Admin-defined workflow this booking moves through (null = status set by hand).
+  workflow        BookingWorkflow?        @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId      String?
+  stepCompletions BookingStepCompletion[]
+  // Denormalized from the workflow progress (recomputed on every step / workflow
+  // change, like `status`): the furthest completed step's label and date, so
+  // every status pill reads "Availability confirmed · 3 Nov" without a join.
+  stageLabel      String?
+  stageOn         DateTime?               @db.Date
 
   @@unique([tripId, locationId]) // one engagement per venue per trip (NULL tripId rows are distinct)
   @@index([scheduleItemId])
   @@index([tripId])
   @@index([locationId])
+  @@index([workflowId])
+}
+
+// An admin-defined booking workflow — "Booking agreement", "Tickets only",
+// "Site visit with meal". Its ordered steps are milestones a planner ticks off
+// on each booking that follows it. One workflow may be the global default
+// (`isDefault`) that seeds new bookings when the venue names none.
+model BookingWorkflow {
+  id                  String                @id @default(cuid())
+  name                String
+  isDefault           Boolean               @default(false)
+  sortOrder           Int                   @default(0)
+  steps               BookingWorkflowStep[]
+  bookings            Booking[]
+  defaultForLocations Location[]            @relation("LocationDefaultWorkflow")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+}
+
+// A milestone in a workflow. `status` is the coarse BookingStatus a booking
+// reaches once this step is done (IN_PROGRESS or CONFIRMED — DB CHECK
+// booking_workflow_step_status); a booking's status is the furthest any of its
+// completed steps reaches.
+model BookingWorkflowStep {
+  id          String                  @id @default(cuid())
+  workflow    BookingWorkflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId  String
+  label       String
+  sortOrder   Int                     @default(0)
+  status      BookingStatus           @default(IN_PROGRESS)
+  completions BookingStepCompletion[]
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([workflowId])
+}
+
+// A step done on a booking — the row's existence means done. `completedOn` is
+// planner-editable (back-date "I emailed them last Tuesday").
+model BookingStepCompletion {
+  id            String              @id @default(cuid())
+  booking       Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     String
+  step          BookingWorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  stepId        String
+  completedOn   DateTime            @db.Date
+  completedBy   User?               @relation("BookingStepCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  completedById String?
+  createdAt     DateTime            @default(now())
+
+  @@unique([bookingId, stepId])
+  @@index([stepId])
+  @@index([completedById])
 }
 
 // A payment logged against a booking's agreed price. An engagement is settled

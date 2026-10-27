@@ -21,14 +21,28 @@ import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
 import type { FormState } from "@/lib/forms";
 import { DocumentsPanel } from "../documents/documents-panel";
-import { StatusControl } from "./status-control";
+import { WorkflowControl } from "./workflow-control";
+import { useBookingWorkflows } from "@/components/booking-workflows";
+import { BOOKING_STATUS_RANK } from "@/lib/booking-workflow";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   VenueDetails,
   WindowCell,
   PriceCell,
   coverageLine,
 } from "./booking-row";
-import { setVenueBookingStatus, setBookingStatus } from "./actions";
+import {
+  setVenueBookingStatus,
+  setBookingStatus,
+  setBookingStageAction,
+  type BookingTarget,
+} from "./actions";
 
 type ContactOption = { id: string; name: string };
 
@@ -41,11 +55,27 @@ const DRAG_TYPE = "application/x-tour-booking";
 // DOM id of a card ("board-v-<locationId>" / "board-i-<bookingId>").
 const cardDomId = (key: string) => `board-${key.replace(":", "-")}`;
 
-// Kanban view of the booking dashboard: one column per status, a card per
-// bookable venue engagement or site-less item booking. Moving a card (drag, or
-// the status control on the card for touch/keyboard) sets its status through
-// the same actions as the table; the move shows immediately and settles when
-// the revalidated rows arrive.
+// Kanban view of the booking dashboard: a card per bookable venue engagement or
+// site-less item booking. Two layouts:
+// - "Status": one column per coarse status. Dragging sets the status of a
+//   booking without a workflow; a workflow booking only moves in and out of
+//   "Not needed" this way (its steps own the rest).
+// - one workflow: a column per step of that workflow (a card sits under the
+//   latest step it has done), plus "Not started" and "Not needed". Dragging to
+//   a step column ticks that step and clears later ones. Cards on other
+//   workflows are hidden.
+// The status control on each card does the same on touch and keyboard. Moves
+// show immediately and settle when the revalidated rows arrive.
+const STATUS_VIEW = "__status__";
+
+type Column = {
+  key: string; // "status:<S>" | "step:<id>" | "start" | "skip"
+  label: string;
+  status: BookingStatus; // colours the header pill
+};
+
+type CardState = { status: BookingStatus; completions: string[] };
+
 export function BookingBoard({
   tripId,
   canEdit,
@@ -65,6 +95,8 @@ export function BookingBoard({
   docsFor: (bookingId: string | null) => SerializedDocument[];
   focusLocationId: string | null;
 }) {
+  const workflows = useBookingWorkflows();
+  const globalDefault = workflows.find((w) => w.isDefault)?.id ?? null;
   // Walk-by stops are never booked, so they have no place on a status board.
   const walkBys = venueRows.filter((r) => !r.bookable).length;
   const cards: BoardCard[] = [
@@ -73,28 +105,116 @@ export function BookingBoard({
       .map((row) => ({ key: `v:${row.locationId}`, kind: "venue" as const, row })),
     ...itemRows.map((row) => ({ key: `i:${row.bookingId}`, kind: "item" as const, row })),
   ];
+  // The workflow each card follows (a venue not engaged yet: the one its first
+  // touch will seed).
+  const workflowOf = (c: BoardCard): string | null =>
+    c.row.progress.exists
+      ? c.row.progress.workflowId
+      : (c.row.progress.locationDefaultWorkflowId ?? globalDefault);
+  const usedWorkflows = workflows.filter((w) =>
+    cards.some((c) => workflowOf(c) === w.id),
+  );
+  const allOnOne =
+    usedWorkflows.length === 1 && cards.every((c) => workflowOf(c) === usedWorkflows[0].id);
+  const [view, setView] = useState<string>(
+    allOnOne ? usedWorkflows[0].id : STATUS_VIEW,
+  );
+  const workflow = workflows.find((w) => w.id === view) ?? null;
 
   const [, start] = useTransition();
-  const [statuses, setOptimistic] = useOptimistic(
-    new Map(cards.map((c) => [c.key, c.row.status])),
-    (prev, move: { key: string; status: BookingStatus }) =>
-      new Map(prev).set(move.key, move.status),
+  const [states, setOptimistic] = useOptimistic(
+    new Map<string, CardState>(
+      cards.map((c) => [
+        c.key,
+        {
+          status: c.row.status,
+          completions: c.row.progress.completions.map((x) => x.stepId),
+        },
+      ]),
+    ),
+    (prev, move: { key: string; state: CardState }) =>
+      new Map(prev).set(move.key, move.state),
   );
   const [dragKey, setDragKey] = useState<string | null>(null);
-  const [overColumn, setOverColumn] = useState<BookingStatus | null>(null);
+  const [overColumn, setOverColumn] = useState<string | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
 
-  const setStatus = (card: BoardCard, status: BookingStatus): Promise<FormState> =>
+  const targetOf = (card: BoardCard): BookingTarget =>
     card.kind === "venue"
-      ? setVenueBookingStatus(tripId, card.row.locationId, status)
-      : setBookingStatus(card.row.bookingId, status);
+      ? { tripId, locationId: card.row.locationId }
+      : { bookingId: card.row.bookingId };
 
-  const move = (key: string, status: BookingStatus) => {
+  const columns: Column[] = workflow
+    ? [
+        { key: "start", label: "Not started", status: "PLANNED" },
+        ...workflow.steps.map((s) => ({
+          key: `step:${s.id}`,
+          label: s.label,
+          status: s.status,
+        })),
+        { key: "skip", label: BOOKING_STATUS_LABELS.NOT_NEEDED, status: "NOT_NEEDED" },
+      ]
+    : BOOKING_STATUSES.map((s) => ({
+        key: `status:${s}`,
+        label: BOOKING_STATUS_LABELS[s],
+        status: s,
+      }));
+
+  const columnOf = (card: BoardCard): string => {
+    const st = states.get(card.key) ?? { status: card.row.status, completions: [] };
+    if (!workflow) return `status:${st.status}`;
+    if (st.status === "NOT_NEEDED") return "skip";
+    // The latest step done, in workflow order.
+    const done = new Set(st.completions);
+    const last = [...workflow.steps].reverse().find((s) => done.has(s.id));
+    return last ? `step:${last.id}` : "start";
+  };
+
+  const shown = workflow ? cards.filter((c) => workflowOf(c) === workflow.id) : cards;
+  const hidden = cards.length - shown.length;
+
+  const move = (key: string, columnKey: string) => {
     const card = cards.find((c) => c.key === key);
-    if (!card || !canEdit || statuses.get(key) === status) return;
+    if (!card || !canEdit || columnOf(card) === columnKey) return;
+    const prev = states.get(key) ?? { status: card.row.status, completions: [] };
+    const target = targetOf(card);
+    let next: CardState;
+    let call: () => Promise<FormState>;
+    if (columnKey === "skip" || columnKey === "status:NOT_NEEDED") {
+      next = { ...prev, status: "NOT_NEEDED" };
+      call = () => setBookingStatusFor(target, "NOT_NEEDED");
+    } else if (workflow && (columnKey === "start" || columnKey.startsWith("step:"))) {
+      const stepId = columnKey === "start" ? null : columnKey.slice(5);
+      const at = stepId ? workflow.steps.findIndex((s) => s.id === stepId) : -1;
+      const keep = new Set(workflow.steps.slice(0, at + 1).map((s) => s.id));
+      next = {
+        status: "PLANNED", // re-derived from the steps on the server
+        completions: [
+          ...prev.completions.filter((id) => keep.has(id)),
+          ...(stepId && !prev.completions.includes(stepId) ? [stepId] : []),
+        ],
+      };
+      const reached = workflow.steps
+        .filter((s) => next.completions.includes(s.id))
+        .reduce<BookingStatus>(
+          (acc, s) => (BOOKING_STATUS_RANK[s.status] > BOOKING_STATUS_RANK[acc] ? s.status : acc),
+          "PLANNED",
+        );
+      next.status = reached;
+      call = () => setBookingStageAction(target, stepId);
+    } else {
+      const status = columnKey.slice(7) as BookingStatus;
+      if (workflowOf(card) && prev.status !== "NOT_NEEDED") {
+        toast.error("Set by workflow steps.");
+        return;
+      }
+      // Leaving "Not needed" on a workflow booking re-derives from its steps.
+      next = { ...prev, status };
+      call = () => setBookingStatusFor(target, status);
+    }
     start(async () => {
-      setOptimistic({ key, status });
-      const res = await setStatus(card, status);
+      setOptimistic({ key, state: next });
+      const res = await call();
       if (res.error) toast.error(res.error);
       else if (res.message) toast.success(res.message);
     });
@@ -122,22 +242,37 @@ export function BookingBoard({
 
   return (
     <div className="space-y-2">
+      {usedWorkflows.length > 0 ? (
+        <Select value={view} onValueChange={setView}>
+          <SelectTrigger size="sm" className="w-auto" aria-label="Board columns">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STATUS_VIEW}>Status</SelectItem>
+            {usedWorkflows.map((w) => (
+              <SelectItem key={w.id} value={w.id}>
+                {w.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
       <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:snap-none">
-        {BOOKING_STATUSES.map((status) => {
-          const column = cards.filter((c) => statuses.get(c.key) === status);
+        {columns.map((col) => {
+          const column = shown.filter((c) => columnOf(c) === col.key);
           return (
             <section
-              key={status}
-              aria-label={BOOKING_STATUS_LABELS[status]}
+              key={col.key}
+              aria-label={col.label}
               className={cn(
                 "flex min-w-[80%] flex-1 basis-0 snap-start flex-col rounded-lg border bg-muted/30 transition-colors sm:min-w-48",
-                overColumn === status && "border-primary bg-primary/5",
+                overColumn === col.key && "border-primary bg-primary/5",
               )}
               onDragOver={(e) => {
                 if (!canEdit || !e.dataTransfer.types.includes(DRAG_TYPE)) return;
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
-                if (overColumn !== status) setOverColumn(status);
+                if (overColumn !== col.key) setOverColumn(col.key);
               }}
               onDragLeave={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node | null))
@@ -150,17 +285,17 @@ export function BookingBoard({
                 // never fire — clear the drag state here too.
                 setDragKey(null);
                 const key = e.dataTransfer.getData(DRAG_TYPE);
-                if (key) move(key, status);
+                if (key) move(key, col.key);
               }}
             >
               <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-xs font-medium",
-                    BOOKING_STATUS_CLASSES[status],
+                    BOOKING_STATUS_CLASSES[col.status],
                   )}
                 >
-                  {BOOKING_STATUS_LABELS[status]}
+                  {col.label}
                 </span>
                 <span className="text-xs text-muted-foreground">{column.length}</span>
               </header>
@@ -169,7 +304,8 @@ export function BookingBoard({
                   <li key={card.key}>
                     <BoardCardView
                       card={card}
-                      status={statuses.get(card.key) ?? card.row.status}
+                      target={targetOf(card)}
+                      status={states.get(card.key)?.status ?? card.row.status}
                       canEdit={canEdit}
                       dragging={dragKey === card.key}
                       focused={
@@ -178,7 +314,6 @@ export function BookingBoard({
                       }
                       documentCount={docsFor(card.row.bookingId).length}
                       onOpen={() => setOpenKey(card.key)}
-                      onMove={(s) => move(card.key, s)}
                       onDragStart={(e) => {
                         e.dataTransfer.setData(DRAG_TYPE, card.key);
                         e.dataTransfer.effectAllowed = "move";
@@ -196,9 +331,18 @@ export function BookingBoard({
           );
         })}
       </div>
-      {walkBys > 0 ? (
+      {walkBys > 0 || hidden > 0 ? (
         <p className="text-xs text-muted-foreground">
-          {walkBys} walk-by stop{walkBys === 1 ? "" : "s"} hidden.
+          {[
+            walkBys > 0
+              ? `${walkBys} walk-by stop${walkBys === 1 ? "" : "s"} hidden.`
+              : null,
+            hidden > 0
+              ? `${hidden} on other workflows hidden.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
         </p>
       ) : null}
 
@@ -211,13 +355,10 @@ export function BookingBoard({
                   ? openCard.row.locationName
                   : openCard.row.label}
               </DialogTitle>
-              <StatusControl
-                status={statuses.get(openCard.key) ?? openCard.row.status}
+              <WorkflowControl
+                target={targetOf(openCard)}
+                progress={openCard.row.progress}
                 canEdit={canEdit}
-                onSet={async (s) => {
-                  move(openCard.key, s);
-                  return {};
-                }}
               />
             </DialogHeader>
             {openCard.kind === "venue" ? (
@@ -246,26 +387,32 @@ export function BookingBoard({
   );
 }
 
+function setBookingStatusFor(target: BookingTarget, status: BookingStatus) {
+  return "bookingId" in target
+    ? setBookingStatus(target.bookingId, status)
+    : setVenueBookingStatus(target.tripId, target.locationId, status);
+}
+
 function BoardCardView({
   card,
+  target,
   status,
   canEdit,
   dragging,
   focused,
   documentCount,
   onOpen,
-  onMove,
   onDragStart,
   onDragEnd,
 }: {
   card: BoardCard;
+  target: BookingTarget;
   status: BookingStatus;
   canEdit: boolean;
   dragging: boolean;
   focused: boolean;
   documentCount: number;
   onOpen: () => void;
-  onMove: (status: BookingStatus) => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -332,16 +479,7 @@ function BoardCardView({
 
       {/* Drag is mouse-only; the status control moves a card on touch and
           keyboard too. */}
-      {canEdit ? (
-        <StatusControl
-          status={status}
-          canEdit
-          onSet={async (s) => {
-            onMove(s);
-            return {};
-          }}
-        />
-      ) : null}
+      <WorkflowControl target={target} progress={card.row.progress} canEdit={canEdit} />
     </article>
   );
 }

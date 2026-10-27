@@ -2,7 +2,7 @@ import type { BookingStatus } from "@prisma/client";
 import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isBookingSecured } from "@/lib/booking";
-import { BOOKING_STATUS_CLASSES, BOOKING_STATUS_LABELS } from "@/lib/trips";
+import { BOOKING_STATUS_CLASSES, bookingStageText } from "@/lib/trips";
 
 // Short night label — the year is noise in a strip of consecutive nights.
 const NIGHT_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -22,9 +22,10 @@ export type NightCell = {
   label: string;
   stayId: string | null;
   venue: string | null;
-  // The venue engagement's status; null (shown as Not booked) when the stay's
+  // The venue engagement's status; null (shown as Planned) when the stay's
   // venue has no engagement yet.
   status: BookingStatus | null;
+  stageLabel: string | null; // the engagement's workflow stage, when it has one
   // Stays covering this night (>1 = an overlap worth a second look).
   covering: number;
 };
@@ -74,10 +75,13 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
                   <span
                     className={cn(
                       "mt-1 inline-block rounded-full px-1.5 text-[10px] font-medium",
-                      BOOKING_STATUS_CLASSES[n.status ?? "NOT_BOOKED"],
+                      BOOKING_STATUS_CLASSES[n.status ?? "PLANNED"],
                     )}
                   >
-                    {BOOKING_STATUS_LABELS[n.status ?? "NOT_BOOKED"]}
+                    {bookingStageText({
+                      status: n.status ?? "PLANNED",
+                      stageLabel: n.stageLabel,
+                    })}
                   </span>
                   {n.covering > 1 ? (
                     <span className="block text-[10px] text-muted-foreground">

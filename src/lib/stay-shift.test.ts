@@ -3,6 +3,7 @@ import {
   shiftStayDates,
   shiftStayIndicesForDeletedDay,
   startDateShiftDays,
+  staysFollowingDays,
 } from "./stay-shift";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -68,5 +69,44 @@ describe("shiftStayIndicesForDeletedDay", () => {
     expect(
       shiftStayIndicesForDeletedDay({ checkInDayIndex: 3, checkOutDayIndex: 4 }, 3),
     ).toEqual({ kind: "collapsed" });
+  });
+});
+
+describe("staysFollowingDays", () => {
+  const old = ["d1", "d2", "d3", "d4", "d5"];
+
+  it("shifts a stay whose nights moved together", () => {
+    // Nights on days 2–3 (checkout day 4); days 2–3 move to the end.
+    const next = ["d1", "d4", "d5", "d2", "d3"];
+    expect(
+      staysFollowingDays(old, next, [{ id: "s", checkIn: 2, checkOut: 4 }]),
+    ).toEqual([{ id: "s", kind: "move", delta: 2 }]);
+  });
+
+  it("leaves stays on days that didn't move", () => {
+    const next = ["d1", "d2", "d4", "d3", "d5"];
+    expect(
+      staysFollowingDays(old, next, [{ id: "s", checkIn: 1, checkOut: 3 }]),
+    ).toEqual([]);
+  });
+
+  it("follows a single swapped night", () => {
+    const next = ["d1", "d2", "d4", "d3", "d5"];
+    expect(
+      staysFollowingDays(old, next, [{ id: "s", checkIn: 3, checkOut: 4 }]),
+    ).toEqual([{ id: "s", kind: "move", delta: 1 }]);
+  });
+
+  it("reports a stay whose nights were pulled apart", () => {
+    const next = ["d2", "d1", "d4", "d5", "d3"];
+    expect(
+      staysFollowingDays(old, next, [{ id: "s", checkIn: 2, checkOut: 4 }]),
+    ).toEqual([{ id: "s", kind: "split" }]);
+  });
+
+  it("ignores stays outside the trip's days", () => {
+    expect(
+      staysFollowingDays(old, [...old].reverse(), [{ id: "s", checkIn: -2, checkOut: 1 }]),
+    ).toEqual([]);
   });
 });

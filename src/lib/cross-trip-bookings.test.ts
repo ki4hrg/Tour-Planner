@@ -22,7 +22,15 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     locationName: "Epworth Rectory",
     bookable: true,
     bookingId: null,
-    status: "NOT_BOOKED",
+    status: "PLANNED",
+    progress: {
+      exists: false,
+      status: "PLANNED",
+      stageLabel: null,
+      stageOn: null,
+      workflowId: null,
+      completions: [],
+    },
     label: null,
     confirmationRef: null,
     notes: null,
@@ -111,7 +119,7 @@ describe("rowMatchesFilters / rowNeedsAttention", () => {
   it("attention = window open, overdue or missing price — not merely unconfirmed", () => {
     expect(rowNeedsAttention(row())).toBe(false);
     expect(
-      rowNeedsAttention(row({ overdueAmount: 50, status: "FINALIZED" })),
+      rowNeedsAttention(row({ overdueAmount: 50, status: "CONFIRMED" })),
     ).toBe(true);
     expect(rowNeedsAttention(row({ isMissingCost: true }))).toBe(true);
   });
@@ -257,7 +265,16 @@ describe("buildVenueEmail", () => {
         trip: trip("a", "2026-07-06", "2026-07-12"),
         venueRows: [
           row({
-            status: "REQUESTED",
+            status: "IN_PROGRESS",
+            // The workflow stage is what the venue email reports.
+            progress: {
+              exists: true,
+              status: "IN_PROGRESS",
+              stageLabel: "Requested",
+              stageOn: "2026-05-01",
+              workflowId: "wf",
+              completions: [],
+            },
             confirmationRef: "R-1",
             nightCount: 2,
             sessions: [
@@ -358,7 +375,7 @@ describe("actionItems", () => {
           row({
             locationId: "loc-c",
             locationName: "Quiet",
-            status: "REQUESTED",
+            status: "IN_PROGRESS",
           }),
           row({
             locationId: "loc-d",
@@ -392,7 +409,7 @@ describe("actionItems", () => {
     ]);
     expect(items[0].text).toBe("£40.00 overdue");
     expect(items[1].text).toBe(
-      "Booking window open since Thu, 15 Jan 2026 · not booked",
+      "Booking window open since Thu, 15 Jan 2026 · planned",
     );
     expect(items[3].text).toBe("No price agreed");
     expect(items[0].href).toBe("/trips/t2/booking?venue=loc-a");
