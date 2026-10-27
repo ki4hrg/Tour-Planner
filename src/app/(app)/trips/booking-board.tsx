@@ -186,13 +186,10 @@ export function BookingBoard({
     } else if (workflow && (columnKey === "start" || columnKey.startsWith("step:"))) {
       const stepId = columnKey === "start" ? null : columnKey.slice(5);
       const at = stepId ? workflow.steps.findIndex((s) => s.id === stepId) : -1;
-      const keep = new Set(workflow.steps.slice(0, at + 1).map((s) => s.id));
+      // Reaching a stage means every step up to it is done.
       next = {
         status: "PLANNED", // re-derived from the steps on the server
-        completions: [
-          ...prev.completions.filter((id) => keep.has(id)),
-          ...(stepId && !prev.completions.includes(stepId) ? [stepId] : []),
-        ],
+        completions: workflow.steps.slice(0, at + 1).map((s) => s.id),
       };
       const reached = workflow.steps
         .filter((s) => next.completions.includes(s.id))

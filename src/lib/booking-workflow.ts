@@ -6,9 +6,10 @@ import { toDateInput } from "./dates";
 // the client control resolve progress the same way.
 //
 // A step names the coarse status a booking reaches once it is done; the
-// booking's status is the furthest any completed step reaches, so steps may be
-// ticked out of order (a "Booking submitted" that this venue never needed can
-// simply be skipped). The stage is the latest step done, by workflow order.
+// booking's status is the furthest any completed step reaches. Steps are
+// sequential: a step can be done only once every step before it is
+// (stepGate), and undone only while no later step is — a venue that skips a
+// step belongs on a workflow without it. The stage is the latest step done.
 
 export const BOOKING_STATUS_RANK: Record<BookingStatus, number> = {
   NOT_NEEDED: 0,
@@ -73,6 +74,48 @@ export function nextStep<S extends WorkflowStepLike>(
 ): S | null {
   const done = new Set(completions.map((c) => c.stepId));
   return [...steps].sort((a, b) => a.sortOrder - b.sortOrder).find((s) => !done.has(s.id)) ?? null;
+}
+
+export type StepGate = { canComplete: boolean; canUndo: boolean };
+
+/**
+ * What each step allows given the steps already done: complete = not done and
+ * every earlier step done (the prerequisites); undo = done and no later step
+ * done (undo from the top down). Re-dating a done step is always allowed.
+ */
+export function stepGate<S extends { id: string; sortOrder: number }>(
+  steps: S[],
+  done: ReadonlySet<string>,
+): Map<string, StepGate> {
+  const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
+  const gate = new Map<string, StepGate>();
+  ordered.forEach((s, i) => {
+    const isDone = done.has(s.id);
+    gate.set(s.id, {
+      canComplete: !isDone && ordered.slice(0, i).every((p) => done.has(p.id)),
+      canUndo: isDone && ordered.slice(i + 1).every((n) => !done.has(n.id)),
+    });
+  });
+  return gate;
+}
+
+/** Why a step can't be set — null when it can (client + server share it). */
+export function stepGateError<S extends { id: string; label: string; sortOrder: number }>(
+  steps: S[],
+  done: ReadonlySet<string>,
+  stepId: string,
+  markDone: boolean,
+): string | null {
+  const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
+  const i = ordered.findIndex((s) => s.id === stepId);
+  if (i < 0) return "That step isn't part of this booking's workflow.";
+  if (markDone) {
+    if (done.has(stepId)) return null; // re-dating
+    const open = ordered.slice(0, i).find((p) => !done.has(p.id));
+    return open ? `"${open.label}" isn't done yet.` : null;
+  }
+  const later = ordered.slice(i + 1).findLast((n) => done.has(n.id));
+  return later ? `"${later.label}" is done — undo it first.` : null;
 }
 
 /** A booking's workflow state as the control needs it (client-safe). */

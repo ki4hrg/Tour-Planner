@@ -538,7 +538,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Set Booking Workflow Step",
       description:
-        "Mark one workflow step done (or not done) on a booking — e.g. 'Initial contact' when the venue was emailed. Needs bookingId (from list-bookings) and stepId (from list-bookings' steps or list-booking-workflows; it must belong to the booking's workflow). completedOn (YYYY-MM-DD) back-dates it; default today. Steps may be ticked out of order. Returns the booking's resulting status and stage.",
+        "Mark one workflow step done (or not done) on a booking — e.g. 'Initial contact' when the venue was emailed. Needs bookingId (from list-bookings) and stepId (from list-bookings' steps or list-booking-workflows; it must belong to the booking's workflow). completedOn (YYYY-MM-DD) back-dates it; default today. Steps go in order: a step can be marked done only once every earlier step is, and undone only while no later step is done (the error names the blocking step). Returns the booking's resulting status and stage.",
       inputSchema: {
         bookingId: z.string(),
         stepId: z.string(),

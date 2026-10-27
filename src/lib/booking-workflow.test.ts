@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBookingProgress, nextStep } from "./booking-workflow";
+import { resolveBookingProgress, nextStep, stepGate, stepGateError } from "./booking-workflow";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -75,5 +75,46 @@ describe("nextStep", () => {
   });
   it("is null when every step is done", () => {
     expect(nextStep(steps, steps.map((s) => ({ stepId: s.id })))).toBeNull();
+  });
+});
+
+describe("stepGate", () => {
+  const done = new Set(["contact", "avail"]);
+  const gate = stepGate(steps, done);
+  it("opens only the next step for completion", () => {
+    expect(steps.filter((s) => gate.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["form"]);
+  });
+  it("opens only the last done step for undo", () => {
+    expect(steps.filter((s) => gate.get(s.id)!.canUndo).map((s) => s.id)).toEqual(["avail"]);
+  });
+  it("opens the first step on a fresh booking, nothing to undo", () => {
+    const fresh = stepGate(steps, new Set());
+    expect(steps.filter((s) => fresh.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["contact"]);
+    expect(steps.some((s) => fresh.get(s.id)!.canUndo)).toBe(false);
+  });
+  it("lets a gap (a step inserted after bookings moved on) be filled", () => {
+    const gap = stepGate(steps, new Set(["contact", "form"]));
+    expect(gap.get("avail")!.canComplete).toBe(true);
+    expect(gap.get("conf")!.canComplete).toBe(false);
+  });
+});
+
+describe("stepGateError", () => {
+  const done = new Set(["contact"]);
+  it("names the first open prerequisite", () => {
+    expect(stepGateError(steps, done, "conf", true)).toBe('"Availability confirmed" isn\'t done yet.');
+  });
+  it("names the latest later step done when undoing", () => {
+    expect(stepGateError(steps, new Set(["contact", "avail", "form"]), "contact", false)).toBe(
+      '"Booking submitted" is done — undo it first.',
+    );
+  });
+  it("allows the next step, undoing the last, and re-dating a done step", () => {
+    expect(stepGateError(steps, done, "avail", true)).toBeNull();
+    expect(stepGateError(steps, done, "contact", false)).toBeNull();
+    expect(stepGateError(steps, new Set(["contact", "avail"]), "contact", true)).toBeNull();
+  });
+  it("rejects a step from another workflow", () => {
+    expect(stepGateError(steps, done, "nope", true)).toMatch(/isn't part/);
   });
 });
