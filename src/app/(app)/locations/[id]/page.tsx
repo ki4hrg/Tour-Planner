@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
+import { agreedTotal, tripHeadcount } from "@/lib/costs";
 import { bookingStageText } from "@/lib/trips";
 import { BOOKING_PROGRESS_SELECT, progressView } from "@/lib/booking-workflow";
 import { LocationWorkflowSelect } from "../location-workflow-select";
@@ -268,16 +269,30 @@ export default async function LocationDetailPage({
           createdAt: true,
           agreedAmount: true,
           agreedCurrency: true,
+          agreedUnit: true,
           payments: { select: { amount: true } },
           paymentSchedule: true,
-          trip: { select: { id: true, name: true, startDate: true } },
+          trip: {
+            select: {
+              id: true,
+              name: true,
+              startDate: true,
+              participantCount: true,
+              capacity: true,
+            },
+          },
         },
       })
     : [];
   const engagements = engagementRows
     .filter((b) => b.trip != null)
     .map((b) => {
-      const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      const rate = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      // Per-person rates × the trip's headcount; null when that's unknown.
+      const agreed = agreedTotal(
+        { agreedAmount: rate, agreedUnit: b.agreedUnit },
+        tripHeadcount(b.trip!),
+      );
       const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
       const resolved = resolveSchedule(
         b.paymentSchedule.map(serializeInstallment),
@@ -298,6 +313,8 @@ export default async function LocationDetailPage({
         status: b.status,
         stageLabel: b.stageLabel,
         currency: b.agreedCurrency,
+        // Set only for a per-person rate whose trip has no headcount.
+        unresolvedRate: rate != null && agreed == null ? rate : null,
         agreed,
         paid,
         outstanding: agreed == null ? null : Math.max(0, agreed - paid),
@@ -507,7 +524,12 @@ export default async function LocationDetailPage({
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">
-                    {e.agreed == null ? (
+                    {e.unresolvedRate != null ? (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        {formatMoney(e.unresolvedRate, e.currency)}/person · no
+                        headcount
+                      </span>
+                    ) : e.agreed == null ? (
                       <span className="text-muted-foreground">no agreed price</span>
                     ) : (
                       <>

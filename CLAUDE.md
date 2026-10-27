@@ -58,7 +58,7 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
+incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
 engagement — refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
 `update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
@@ -304,8 +304,17 @@ npm test                          # vitest
   (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
   the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
   in `src/app/(app)/trips/actions.ts`.
+- **Agreed price**: `Booking.agreedAmount` is the engagement TOTAL unless
+  `agreedUnit = PER_PERSON`, where it's a rate × the trip headcount
+  (`participantCount ?? capacity`, `tripHeadcount`). Legacy `PER_GROUP` and null both
+  mean total (the form offers only total / per person and saves total as null). Every
+  balance / settled / schedule-percent / Money-panel / MCP calculation goes through
+  `agreedTotal()` in `src/lib/costs.ts` (unit-tested) — null for a per-person rate
+  with no headcount, treated like no agreed price and flagged "no headcount" in the
+  UI. Never use `agreedAmount` as a total directly. Dashboard rows carry both
+  `agreedAmount` (as entered) and `agreedTotal`.
 - **Payment schedules (GH #51, anchors #86)**: a booking may carry `PaymentScheduleItem`
-  installments — EITHER a `percent` of the agreed price OR a `fixedAmount` (DB CHECK
+  installments — EITHER a `percent` of the agreed price (`agreedTotal`) OR a `fixedAmount` (DB CHECK
   `payment_schedule_amount`). The due date is `offsetValue` `offsetUnit`s
   (DAY/WEEK/MONTH, calendar-aware) from a selectable `anchor` (DB CHECK
   `payment_schedule_anchor`: NONE ⇒ offset null, else both set):

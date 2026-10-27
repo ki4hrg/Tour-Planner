@@ -24,7 +24,7 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
-import { rollUpCosts } from "@/lib/costs";
+import { agreedTotal, rollUpCosts } from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
   serializeDocument,
@@ -280,9 +280,11 @@ export default async function TripOverviewPage({
   // or next-due installment, so a payment problem is visible from the trip page
   // without opening the booking dashboard. Templates have no dates, so their
   // installments never resolve — the panel is dated-trip only.
+  // `unknown` counts per-person prices with no headcount to multiply: their
+  // total (and so their balance) is unknown, which the panel says outright.
   const moneyByCurrency = new Map<
     string,
-    { agreed: number; paid: number; outstanding: number }
+    { agreed: number; paid: number; outstanding: number; unknown: number }
   >();
   const moneyAttention: {
     venue: string;
@@ -295,14 +297,20 @@ export default async function TripOverviewPage({
   }[] = [];
   const moneyToday = todayUtc();
   for (const b of engagementBookings) {
-    const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+    const rate = b.agreedAmount == null ? null : Number(b.agreedAmount);
+    const agreed = agreedTotal(
+      { agreedAmount: rate, agreedUnit: b.agreedUnit },
+      estimateHeadcount,
+    );
     const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (agreed != null || paid > 0) {
+    if (rate != null || paid > 0) {
       const row = moneyByCurrency.get(b.agreedCurrency) ?? {
         agreed: 0,
         paid: 0,
         outstanding: 0,
+        unknown: 0,
       };
+      if (rate != null && agreed == null) row.unknown++;
       row.agreed += agreed ?? 0;
       row.paid += paid;
       row.outstanding += agreed != null ? Math.max(0, agreed - paid) : 0;
@@ -429,8 +437,14 @@ export default async function TripOverviewPage({
         // Engagements not yet financially/administratively closed.
         openEngagements: engagementBookings
           .map((b) => {
-            const agreed =
-              b.agreedAmount == null ? null : Number(b.agreedAmount);
+            const agreed = agreedTotal(
+              {
+                agreedAmount:
+                  b.agreedAmount == null ? null : Number(b.agreedAmount),
+                agreedUnit: b.agreedUnit,
+              },
+              estimateHeadcount,
+            );
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
             const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
             // Open until every workflow step is ticked (or, without a
@@ -830,8 +844,17 @@ export default async function TripOverviewPage({
                         <dd className="text-right font-medium">
                           {r.outstanding > 0
                             ? `${formatMoney(r.outstanding, r.currency)} left`
-                            : "settled"}
+                            : r.unknown > 0
+                              ? "—"
+                              : "settled"}
                         </dd>
+                        {r.unknown > 0 ? (
+                          <dd className="col-span-3 text-xs text-amber-700 dark:text-amber-300">
+                            {r.unknown} per-person price
+                            {r.unknown === 1 ? " has" : "s have"} no total: the
+                            trip has no headcount.
+                          </dd>
+                        ) : null}
                       </div>
                     ))}
                   </dl>

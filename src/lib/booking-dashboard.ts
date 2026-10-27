@@ -21,6 +21,7 @@ import {
   type SerializedCost,
   type SerializedPayment,
 } from "./money";
+import { agreedTotal as resolveAgreedTotal } from "./costs";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { stayNights } from "./stays";
 import { progressView, type BookingProgressView } from "./booking-workflow";
@@ -61,11 +62,17 @@ export type VenueBookingRow = {
   nightCount: number;
   costs: SerializedCost[];
   bookedOn: string | null; // planner-set booking date (anchors BOOKING installments)
-  // The engagement's negotiated price + payment log. `unpaidBalance` is null
-  // until an agreed amount is set; `settled` means payments cover it.
+  // The engagement's negotiated price + payment log. `agreedAmount` is the
+  // stored figure — a per-person RATE when `agreedUnit` is PER_PERSON; the
+  // balance, settled state and schedule run off `agreedTotal` (rate × headcount
+  // for per person, else the amount itself; null when a per-person rate has no
+  // headcount to multiply). `unpaidBalance` is null until that total is known;
+  // `settled` means payments cover it.
   agreedAmount: number | null;
   agreedCurrency: string;
   agreedUnit: CostUnit | null;
+  agreedTotal: number | null;
+  headcount: number | null; // trip participants ?? capacity
   payments: SerializedPayment[];
   paidTotal: number;
   unpaidBalance: number | null;
@@ -203,6 +210,9 @@ export type DashboardData = {
   // Anchors EVENT_START payment installments (offset counts back from this);
   // null (template / undated trip) leaves those installments "unscheduled".
   tripStartDate?: Date | null;
+  // Multiplies PER_PERSON agreed prices (`tripHeadcount(trip)`); null/absent
+  // leaves a per-person total unknown.
+  headcount?: number | null;
 };
 
 type VenueAccum = { sessions: CoveredSession[]; dates: Date[]; nights: number };
@@ -312,14 +322,19 @@ export function buildDashboardRows(data: DashboardData): {
     // without one does the (possibly stale) catalog price leave the row "missing".
     const agreedAmount =
       eng?.agreedAmount == null ? null : Number(eng.agreedAmount);
+    const headcount = data.headcount ?? null;
+    const agreedTotal = resolveAgreedTotal(
+      { agreedAmount, agreedUnit: eng?.agreedUnit ?? null },
+      headcount,
+    );
     const payments = (eng?.payments ?? []).map(serializePayment);
     const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
     const unpaidBalance =
-      agreedAmount == null ? null : Math.max(0, agreedAmount - paidTotal);
+      agreedTotal == null ? null : Math.max(0, agreedTotal - paidTotal);
     const schedule = resolveSchedule(
       (eng?.paymentSchedule ?? []).map(serializeInstallment),
       {
-        agreedAmount,
+        agreedAmount: agreedTotal,
         paidTotal,
         tripStartDate: data.tripStartDate ?? null,
         bookingDate: eng?.bookedOn ?? eng?.createdAt ?? null,
@@ -370,10 +385,12 @@ export function buildDashboardRows(data: DashboardData): {
       agreedAmount,
       agreedCurrency: eng?.agreedCurrency ?? "USD",
       agreedUnit: eng?.agreedUnit ?? null,
+      agreedTotal,
+      headcount,
       payments,
       paidTotal,
       unpaidBalance,
-      settled: agreedAmount != null && paidTotal >= agreedAmount,
+      settled: agreedTotal != null && paidTotal >= agreedTotal,
       schedule,
       overdueAmount: inPlay ? overdueAmount : 0,
       nextDue,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rollUpCosts, type CostLike } from "./costs";
+import { agreedTotal, rollUpCosts, tripHeadcount, type CostLike } from "./costs";
 
 const costs: CostLike[] = [
   { amount: 10, currency: "GBP", unit: "PER_PERSON" },
@@ -31,5 +31,37 @@ describe("rollUpCosts", () => {
 
   it("returns an empty array for no costs", () => {
     expect(rollUpCosts([], 10)).toEqual([]);
+  });
+});
+
+describe("tripHeadcount", () => {
+  it("prefers participants, falls back to capacity, else null", () => {
+    expect(tripHeadcount({ participantCount: 32, capacity: 40 })).toBe(32);
+    expect(tripHeadcount({ participantCount: null, capacity: 40 })).toBe(40);
+    expect(tripHeadcount({ participantCount: 0, capacity: 40 })).toBe(0);
+    expect(tripHeadcount({})).toBeNull();
+  });
+});
+
+describe("agreedTotal", () => {
+  it("null or PER_GROUP unit is already the total", () => {
+    expect(agreedTotal({ agreedAmount: 600, agreedUnit: null }, 40)).toBe(600);
+    expect(agreedTotal({ agreedAmount: 600 }, null)).toBe(600);
+    expect(agreedTotal({ agreedAmount: 600, agreedUnit: "PER_GROUP" }, 40)).toBe(600);
+  });
+
+  it("PER_PERSON multiplies the rate by headcount", () => {
+    expect(agreedTotal({ agreedAmount: 15, agreedUnit: "PER_PERSON" }, 40)).toBe(600);
+    expect(agreedTotal({ agreedAmount: 12.5, agreedUnit: "PER_PERSON" }, 3)).toBe(37.5);
+    expect(agreedTotal({ agreedAmount: 0.1, agreedUnit: "PER_PERSON" }, 3)).toBe(0.3);
+  });
+
+  it("PER_PERSON with unknown headcount has no known total", () => {
+    expect(agreedTotal({ agreedAmount: 15, agreedUnit: "PER_PERSON" }, null)).toBeNull();
+  });
+
+  it("no agreed amount is no total", () => {
+    expect(agreedTotal({ agreedAmount: null, agreedUnit: "PER_PERSON" }, 40)).toBeNull();
+    expect(agreedTotal({ agreedAmount: null }, 40)).toBeNull();
   });
 });

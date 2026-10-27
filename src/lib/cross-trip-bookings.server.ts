@@ -4,6 +4,7 @@ import { toDateInput, todayUtc } from "./dates";
 import { tripStillInPlayWhere } from "./trips";
 import { regionPath, type RegionNode } from "./regions";
 import { buildDashboardRows } from "./booking-dashboard";
+import { tripHeadcount } from "./costs";
 import {
   groupRowsByVenue,
   type TripItemBookings,
@@ -46,6 +47,8 @@ const TRIP_SELECT = {
   name: true,
   startDate: true,
   endDate: true,
+  participantCount: true,
+  capacity: true,
   tripType: { select: { name: true } },
   days: {
     orderBy: { dayIndex: "asc" },
@@ -203,6 +206,7 @@ export async function loadCrossTripBookings({
       stays: t.stays,
       locations,
       tripStartDate: t.startDate,
+      headcount: tripHeadcount(t),
     });
     return { trip, venueRows, itemRows };
   });
