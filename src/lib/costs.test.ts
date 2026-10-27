@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { agreedTotal, rollUpCosts, tripHeadcount, type CostLike } from "./costs";
+import {
+  agreedTotal,
+  listPriceSuggestion,
+  rollUpCosts,
+  tripHeadcount,
+  type CostLike,
+} from "./costs";
 
 const costs: CostLike[] = [
   { amount: 10, currency: "GBP", unit: "PER_PERSON" },
@@ -63,5 +69,42 @@ describe("agreedTotal", () => {
   it("no agreed amount is no total", () => {
     expect(agreedTotal({ agreedAmount: null, agreedUnit: "PER_PERSON" }, 40)).toBeNull();
     expect(agreedTotal({ agreedAmount: null }, 40)).toBeNull();
+  });
+});
+
+describe("listPriceSuggestion", () => {
+  const cost = (label: string, amount: number, unit: "PER_PERSON" | "PER_GROUP", currency = "GBP") => ({
+    label,
+    amount,
+    unit,
+    currency,
+  });
+
+  it("sums per-person lines into a per-person rate", () => {
+    const s = listPriceSuggestion([cost("Admission", 12, "PER_PERSON"), cost("Lunch", 20, "PER_PERSON")], 40);
+    expect(s).toMatchObject({ amount: 32, perPerson: true, currency: "GBP" });
+  });
+
+  it("totals a mix of per-person and per-group lines with the headcount", () => {
+    const s = listPriceSuggestion(
+      [cost("Admission", 12, "PER_PERSON"), cost("Lunch", 20, "PER_PERSON"), cost("Group charge", 90, "PER_GROUP")],
+      40,
+    );
+    expect(s).toMatchObject({ amount: 1370, perPerson: false });
+    expect(s?.groupLines).toEqual([{ label: "Group charge", amount: 90 }]);
+  });
+
+  it("can't total a mixed set without a headcount", () => {
+    expect(
+      listPriceSuggestion([cost("Admission", 12, "PER_PERSON"), cost("Guide", 90, "PER_GROUP")], null),
+    ).toBeNull();
+  });
+
+  it("sums per-group lines as a total and skips other currencies", () => {
+    const s = listPriceSuggestion(
+      [cost("Hall", 200, "PER_GROUP"), cost("Guide", 90, "PER_GROUP"), cost("Parking", 30, "PER_GROUP", "USD")],
+      null,
+    );
+    expect(s).toMatchObject({ amount: 290, perPerson: false, currency: "GBP", skipped: 1 });
   });
 });

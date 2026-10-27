@@ -22,7 +22,7 @@ import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
-import { agreedTotal } from "@/lib/costs";
+import { agreedTotal, listPriceSuggestion } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -143,6 +143,57 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
       ))}
       <PaymentState row={row} />
     </div>
+  );
+}
+
+// "Use list price": fills the agreed-price fields from the venue's cost lines,
+// with the working shown — "Admission £12 + Lunch £20 per person × 40 + Group
+// charge £90 = £1,370". Mixed per-person + per-group lines can only be totalled
+// against a headcount, so without one there is nothing to fill.
+function ListPriceFill({
+  suggestion,
+  onApply,
+}: {
+  suggestion: ReturnType<typeof listPriceSuggestion>;
+  onApply: () => void;
+}) {
+  if (!suggestion) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        List price
+        <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+          no headcount
+        </span>
+      </p>
+    );
+  }
+  const { currency, perPersonLines, groupLines, headcount, amount } = suggestion;
+  const join = (ls: { label: string; amount: number }[]) =>
+    ls.map((l) => `${l.label} ${formatMoney(l.amount, currency)}`).join(" + ");
+  const parts: string[] = [];
+  if (perPersonLines.length) {
+    parts.push(
+      `${join(perPersonLines)} per person` +
+        (groupLines.length ? ` × ${headcount}` : ""),
+    );
+  }
+  if (groupLines.length) parts.push(join(groupLines));
+  const multi = perPersonLines.length + groupLines.length > 1;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
+      <button type="button" className="link-quiet text-foreground" onClick={onApply}>
+        Use list price
+      </button>
+      <span>
+        {parts.join(" + ")}
+        {multi
+          ? ` = ${formatMoney(amount, currency)}${suggestion.perPerson ? " per person" : ""}`
+          : ""}
+      </span>
+      {suggestion.skipped ? (
+        <span>· {suggestion.skipped} in other currencies left out</span>
+      ) : null}
+    </p>
   );
 }
 
@@ -275,6 +326,14 @@ export function VenueDetails({
   const [bookedOn, setBookedOn] = useState(row.bookedOn ?? "");
   // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
   const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
+  // Pre-fill from the venue's list prices (admission + meal + group charge…).
+  const suggestion = listPriceSuggestion(row.costs, row.headcount);
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    setAgreedAmount(String(suggestion.amount));
+    setAgreedCurrency(suggestion.currency);
+    setAgreedUnit(suggestion.perPerson ? "PER_PERSON" : NONE);
+  };
 
   // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
@@ -412,6 +471,12 @@ export function VenueDetails({
                   headcount={row.headcount}
                 />
               </p>
+            ) : null}
+            {row.costs.length > 0 ? (
+              <ListPriceFill
+                suggestion={suggestion}
+                onApply={applySuggestion}
+              />
             ) : null}
           </div>
           <div className="space-y-1">
