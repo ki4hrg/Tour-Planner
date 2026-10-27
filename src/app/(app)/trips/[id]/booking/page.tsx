@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
+import { tripHeadcount } from "@/lib/costs";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
@@ -29,6 +30,8 @@ export default async function BookingDashboardPage({
       name: true,
       currencies: true,
       startDate: true,
+      participantCount: true,
+      capacity: true,
       days: {
         orderBy: { dayIndex: "asc" },
         select: {
@@ -157,6 +160,7 @@ export default async function BookingDashboardPage({
     stays: trip.stays,
     locations,
     tripStartDate: trip.startDate,
+    headcount: tripHeadcount(trip),
   });
 
   return (

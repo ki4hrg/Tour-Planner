@@ -50,3 +50,36 @@ export function rollUpCosts(
     }))
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
+
+/**
+ * The trip's headcount for per-person pricing: confirmed participants, else
+ * capacity (the same fallback the trip overview's cost estimate uses). Null when
+ * neither is set.
+ */
+export function tripHeadcount(trip: {
+  participantCount?: number | null;
+  capacity?: number | null;
+}): number | null {
+  return trip.participantCount ?? trip.capacity ?? null;
+}
+
+/**
+ * The agreed engagement TOTAL a booking's balance, settled state and payment
+ * schedule are measured against. `agreedAmount` is the total unless the unit is
+ * PER_PERSON, in which case it is a rate multiplied by the trip headcount.
+ * PER_GROUP (legacy) and null both mean "already the total". Returns null when
+ * there is no agreed price, or a per-person rate with no known headcount — the
+ * total is then unknown, and callers treat it like no agreed price.
+ */
+export function agreedTotal(
+  price: {
+    agreedAmount: number | null;
+    agreedUnit?: CostUnit | null;
+  },
+  headcount: number | null,
+): number | null {
+  if (price.agreedAmount == null) return null;
+  if (price.agreedUnit !== "PER_PERSON") return price.agreedAmount;
+  if (headcount == null) return null;
+  return Math.round(price.agreedAmount * headcount * 100) / 100;
+}

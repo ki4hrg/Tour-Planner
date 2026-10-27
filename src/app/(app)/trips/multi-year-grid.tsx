@@ -32,7 +32,7 @@ function MoneyLine({ row }: { row: VenueBookingRow }) {
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </div>
     );
-  if (row.agreedAmount == null) return null;
+  if (row.agreedTotal == null) return null;
   if (row.settled)
     return (
       <div className="text-[11px] text-emerald-700 dark:text-emerald-300">

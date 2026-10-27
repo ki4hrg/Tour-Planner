@@ -21,6 +21,7 @@ import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
+import { agreedTotal } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -84,16 +85,13 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (row.agreedAmount != null) {
     return (
       <div className="space-y-0.5">
-        <div className="flex items-center gap-1.5">
-          <span>
-            {formatMoney(row.agreedAmount, row.agreedCurrency)}
-            {row.agreedUnit ? (
-              <span className="text-muted-foreground">
-                {" "}
-                {COST_UNIT_LABELS[row.agreedUnit]}
-              </span>
-            ) : null}
-          </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <AgreedPrice
+            amount={row.agreedAmount}
+            currency={row.agreedCurrency}
+            perPerson={row.agreedUnit === "PER_PERSON"}
+            headcount={row.headcount}
+          />
           <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
             agreed
           </span>
@@ -135,6 +133,47 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   );
 }
 
+// The agreed price as entered, with the total it implies: a total reads as
+// itself; a per-person rate as "£15 × 40 = £600" against the trip headcount, or
+// "£15/person" + a "no headcount" chip when there's none to multiply (the total
+// — and so the balance — is then unknown).
+function AgreedPrice({
+  amount,
+  currency,
+  perPerson,
+  headcount,
+}: {
+  amount: number;
+  currency: string;
+  perPerson: boolean;
+  headcount: number | null;
+}) {
+  if (!perPerson) return <span>{formatMoney(amount, currency)}</span>;
+  const total = agreedTotal(
+    { agreedAmount: amount, agreedUnit: "PER_PERSON" },
+    headcount,
+  );
+  if (total == null)
+    return (
+      <>
+        <span>
+          {formatMoney(amount, currency)}
+          <span className="text-muted-foreground">/person</span>
+        </span>
+        <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+          no headcount
+        </span>
+      </>
+    );
+  return (
+    <span>
+      {formatMoney(amount, currency)}
+      <span className="text-muted-foreground"> × {headcount} = </span>
+      {formatMoney(total, currency)}
+    </span>
+  );
+}
+
 // Settled / unpaid chip under an agreed price, sharpened by the payment
 // schedule when one exists: overdue beats everything, then the next due date.
 function PaymentState({ row }: { row: VenueBookingRow }) {
@@ -144,7 +183,8 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </span>
     );
-  if (row.agreedAmount == null) return null;
+  // No agreed price, or a per-person rate with no headcount: no known total.
+  if (row.agreedTotal == null) return null;
   if (row.settled)
     return (
       <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -209,7 +249,16 @@ export function VenueDetails({
     row.agreedAmount != null ? String(row.agreedAmount) : "",
   );
   const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
-  const [agreedUnit, setAgreedUnit] = useState<string>(row.agreedUnit ?? NONE);
+  // Total (stored null) or per person (× trip headcount). Legacy PER_GROUP
+  // already means the total, so it opens as — and saves back as — total.
+  const [agreedUnit, setAgreedUnit] = useState<string>(
+    row.agreedUnit === "PER_PERSON" ? "PER_PERSON" : NONE,
+  );
+  const agreedRate = Number(agreedAmount);
+  const showAgreedTotal =
+    agreedUnit === "PER_PERSON" &&
+    agreedAmount.trim() !== "" &&
+    Number.isFinite(agreedRate);
   const [bookedOn, setBookedOn] = useState(row.bookedOn ?? "");
   // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
   const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
@@ -321,16 +370,25 @@ export function VenueDetails({
                 </SelectContent>
               </Select>
               <Select value={agreedUnit} onValueChange={setAgreedUnit}>
-                <SelectTrigger size="sm" className="flex-1">
+                <SelectTrigger size="sm" className="flex-1" aria-label="Price basis">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>— flat —</SelectItem>
+                  <SelectItem value={NONE}>total</SelectItem>
                   <SelectItem value="PER_PERSON">per person</SelectItem>
-                  <SelectItem value="PER_GROUP">per group</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {showAgreedTotal ? (
+              <p className="flex flex-wrap items-center gap-1.5 text-xs">
+                <AgreedPrice
+                  amount={agreedRate}
+                  currency={agreedCurrency}
+                  perPerson
+                  headcount={row.headcount}
+                />
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Point of contact</Label>
@@ -718,10 +776,10 @@ function PaymentLog({
     <div className="space-y-2 border-t pt-2">
       <p className="text-xs font-medium text-muted-foreground">
         Payments
-        {row.agreedAmount != null ? (
+        {row.agreedTotal != null ? (
           <span className="ml-2 font-normal">
             {formatMoney(row.paidTotal, row.agreedCurrency)} of{" "}
-            {formatMoney(row.agreedAmount, row.agreedCurrency)} paid
+            {formatMoney(row.agreedTotal, row.agreedCurrency)} paid
           </span>
         ) : null}
       </p>

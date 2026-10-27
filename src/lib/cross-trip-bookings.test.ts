@@ -45,6 +45,8 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     agreedAmount: 100,
     agreedCurrency: "GBP",
     agreedUnit: null,
+    agreedTotal: 100,
+    headcount: null,
     payments: [],
     paidTotal: 0,
     unpaidBalance: 100,

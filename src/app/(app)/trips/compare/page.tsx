@@ -5,6 +5,7 @@ import { requireUser, hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toDateInput } from "@/lib/dates";
 import { buildDashboardRows, type VenueBookingRow } from "@/lib/booking-dashboard";
+import { tripHeadcount } from "@/lib/costs";
 import {
   MultiYearGrid,
   type YearColumn,
@@ -19,6 +20,8 @@ const TRIP_SELECT = {
   id: true,
   name: true,
   startDate: true,
+  participantCount: true,
+  capacity: true,
   days: {
     orderBy: { dayIndex: "asc" as const },
     select: {
@@ -61,6 +64,7 @@ const TRIP_SELECT = {
       bookedOn: true,
       createdAt: true,
       agreedAmount: true,
+      agreedUnit: true,
       agreedCurrency: true,
       payments: true,
       paymentSchedule: true,
@@ -133,6 +137,7 @@ export default async function CompareYearsPage({
       stays: t.stays,
       locations,
       tripStartDate: t.startDate,
+      headcount: tripHeadcount(t),
     });
     for (const row of venueRows) {
       let line = venueMap.get(row.locationId);

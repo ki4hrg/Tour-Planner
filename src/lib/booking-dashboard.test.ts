@@ -109,3 +109,68 @@ describe("buildDashboardRows — planned visits + workflow progress", () => {
     });
   });
 });
+
+describe("buildDashboardRows — per-person agreed price", () => {
+  const build = (
+    agreedUnit: "PER_PERSON" | "PER_GROUP" | null,
+    headcount: number | null,
+    paid: number,
+  ) =>
+    buildDashboardRows({
+      days: [],
+      engagements: [
+        {
+          id: "b1",
+          locationId: "epworth",
+          label: null,
+          status: "IN_PROGRESS",
+          confirmationRef: null,
+          notes: null,
+          bookedContactId: null,
+          bookedContact: null,
+          agreedAmount: 15,
+          agreedCurrency: "GBP",
+          agreedUnit,
+          payments: paid
+            ? [
+                {
+                  id: "p1",
+                  bookingId: "b1",
+                  amount: paid,
+                  currency: "GBP",
+                  paidOn: d("2026-10-01"),
+                  method: null,
+                  note: null,
+                  createdAt: d("2026-10-01"),
+                } as never,
+              ]
+            : [],
+        },
+      ],
+      stays: [],
+      locations: [loc("epworth")],
+      headcount,
+    }).venueRows[0];
+
+  it("multiplies a per-person rate by headcount for balance + settled", () => {
+    const row = build("PER_PERSON", 40, 15);
+    expect(row.agreedAmount).toBe(15);
+    expect(row.agreedTotal).toBe(600);
+    expect(row.unpaidBalance).toBe(585);
+    expect(row.settled).toBe(false);
+    expect(build("PER_PERSON", 40, 600).settled).toBe(true);
+  });
+
+  it("leaves the total unknown without a headcount", () => {
+    const row = build("PER_PERSON", null, 15);
+    expect(row.agreedTotal).toBeNull();
+    expect(row.unpaidBalance).toBeNull();
+    expect(row.settled).toBe(false);
+    expect(row.isMissingCost).toBe(false);
+  });
+
+  it("treats PER_GROUP and null as the total", () => {
+    expect(build("PER_GROUP", 40, 15).settled).toBe(true);
+    expect(build(null, 40, 0).agreedTotal).toBe(15);
+  });
+});
