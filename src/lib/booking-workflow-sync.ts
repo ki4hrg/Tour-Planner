@@ -9,7 +9,11 @@
 
 import type { BookingStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { resolveBookingProgress, WORKFLOW_STEP_SELECT } from "@/lib/booking-workflow";
+import {
+  resolveBookingProgress,
+  stepGateError,
+  WORKFLOW_STEP_SELECT,
+} from "@/lib/booking-workflow";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -94,8 +98,9 @@ export async function recomputeWorkflowBookings(workflowId: string, db: Db = pri
 
 /**
  * Mark a step done (dated `completedOn`) or not done on a booking. The step
- * must belong to the booking's current workflow. Re-marking a done step just
- * re-dates it.
+ * must belong to the booking's current workflow, and the order holds: done
+ * needs every earlier step done, undone needs no later step done (stepGate).
+ * Re-marking a done step just re-dates it.
  */
 export async function setBookingStep(
   args: {
@@ -108,14 +113,22 @@ export async function setBookingStep(
   db: Db = prisma,
 ): Promise<{ error: string } | { ok: true }> {
   const { bookingId, stepId, done, completedOn, userId } = args;
-  const [booking, step] = await Promise.all([
-    db.booking.findUnique({ where: { id: bookingId }, select: { workflowId: true } }),
-    db.bookingWorkflowStep.findUnique({ where: { id: stepId }, select: { workflowId: true } }),
-  ]);
+  const booking = await db.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      workflow: { select: { steps: STEPS_ORDER } },
+      stepCompletions: { select: { stepId: true } },
+    },
+  });
   if (!booking) return { error: "Booking not found." };
-  if (!step || step.workflowId !== booking.workflowId) {
-    return { error: "That step isn't part of this booking's workflow." };
-  }
+  if (!booking.workflow) return { error: "This booking has no workflow." };
+  const blocked = stepGateError(
+    booking.workflow.steps,
+    new Set(booking.stepCompletions.map((c) => c.stepId)),
+    stepId,
+    done,
+  );
+  if (blocked) return { error: blocked };
   if (done) {
     await db.bookingStepCompletion.upsert({
       where: { bookingId_stepId: { bookingId, stepId } },
@@ -193,8 +206,8 @@ export async function setBookingStatusDirect(
 
 /**
  * Move a booking to a stage in one go (the board's drag between step
- * columns): `stepId` and every step before it keep whatever they had, the step
- * itself is marked done today (unless already done), and every LATER step is
+ * columns): `stepId` and every step before it are done — steps already done
+ * keep their dates, the rest are dated `completedOn` — and every LATER step is
  * cleared. `stepId: null` clears them all ("not started"). Moving a not-needed
  * booking onto a stage puts it back in play.
  */
@@ -217,11 +230,15 @@ export async function setBookingStage(
   await db.bookingStepCompletion.deleteMany({
     where: { bookingId, stepId: { in: steps.slice(at + 1).map((s) => s.id) } },
   });
-  if (stepId) {
-    await db.bookingStepCompletion.upsert({
-      where: { bookingId_stepId: { bookingId, stepId } },
-      create: { bookingId, stepId, completedOn, completedById: userId ?? null },
-      update: {},
+  if (at >= 0) {
+    await db.bookingStepCompletion.createMany({
+      data: steps.slice(0, at + 1).map((s) => ({
+        bookingId,
+        stepId: s.id,
+        completedOn,
+        completedById: userId ?? null,
+      })),
+      skipDuplicates: true, // @@unique([bookingId, stepId]) keeps existing dates
     });
   }
   if (booking.status === "NOT_NEEDED") {

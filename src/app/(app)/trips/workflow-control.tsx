@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { daysSince, formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import {
   resolveBookingProgress,
+  stepGate,
   type BookingProgressView,
 } from "@/lib/booking-workflow";
 import {
@@ -207,6 +208,7 @@ export function WorkflowControl({
   };
 
   const doneOn = new Map(state.completions.map((c) => [c.stepId, c.completedOn]));
+  const gate = stepGate(workflow?.steps ?? [], new Set(doneOn.keys()));
   const notNeeded = state.status === "NOT_NEEDED";
 
   return (
@@ -247,12 +249,14 @@ export function WorkflowControl({
                 {workflow.steps.map((s) => {
                   const on = doneOn.get(s.id);
                   const id = `${uid}-${s.id}`;
+                  const g = gate.get(s.id);
+                  const locked = on != null ? !g?.canUndo : !g?.canComplete;
                   return (
                     <li key={s.id} className="flex items-center gap-2">
                       <Checkbox
                         id={id}
                         checked={on != null}
-                        disabled={pending}
+                        disabled={pending || locked}
                         onCheckedChange={(v) => setStep(s.id, v === true)}
                       />
                       <Label
@@ -260,6 +264,7 @@ export function WorkflowControl({
                         className={cn(
                           "flex-1 text-sm font-normal",
                           s.status === "CONFIRMED" && "font-medium",
+                          on == null && locked && "text-muted-foreground",
                         )}
                       >
                         {s.label}

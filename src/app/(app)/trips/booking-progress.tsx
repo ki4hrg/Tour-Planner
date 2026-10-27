@@ -20,6 +20,7 @@ import {
   type WorkflowStepOption,
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
+import { stepGate } from "@/lib/booking-workflow";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import {
   daysWaiting,
@@ -71,6 +72,7 @@ function StepChip({
   done,
   doneOn,
   isNext,
+  locked = false,
   canEdit,
   pending,
   onToggle,
@@ -80,6 +82,9 @@ function StepChip({
   done: boolean;
   doneOn?: string;
   isNext: boolean; // the upcoming step — outlined, amber when it's ours
+  // Steps go in order (stepGate): locked = can't be done yet (an earlier step
+  // is open) or undone yet (a later step is done).
+  locked?: boolean;
   canEdit: boolean;
   pending: boolean;
   onToggle: () => void;
@@ -88,7 +93,7 @@ function StepChip({
   return (
     <button
       type="button"
-      disabled={!canEdit || pending}
+      disabled={!canEdit || pending || locked}
       aria-pressed={done}
       title={[
         step.label,
@@ -107,7 +112,7 @@ function StepChip({
               ? "border-foreground/30 text-muted-foreground"
               : cn("font-medium", OURS_CHIP_CLASSES)
             : "border-dashed text-muted-foreground",
-        canEdit && !done && "hover:border-foreground/60",
+        canEdit && !locked && !done && "hover:border-foreground/60",
       )}
     >
       {done ? <Check className="size-3" aria-hidden /> : null}
@@ -141,6 +146,7 @@ export function StepStrip({
     [...done].map((stepId) => ({ stepId })),
     status,
   );
+  const gate = stepGate(steps, done);
   return (
     <ol className="flex min-w-0 flex-1 flex-wrap gap-1" aria-label={`${name} steps`}>
       {steps.map((s) => (
@@ -150,6 +156,9 @@ export function StepStrip({
             done={done.has(s.id)}
             doneOn={doneOn.get(s.id)}
             isNext={s.id === next?.id}
+            locked={
+              !(done.has(s.id) ? gate.get(s.id)?.canUndo : gate.get(s.id)?.canComplete)
+            }
             canEdit={canEdit}
             pending={pending}
             onToggle={() => onToggle(s.id)}
@@ -370,28 +379,35 @@ export function ProgressList({
   const label = bulkLabels.find((l) => normalize(l) === normalize(bulkLabel))
     ? bulkLabel
     : "";
-  const bulkEntries = (on: boolean) =>
-    chosen.flatMap((l) => {
-      const step = workflowByKey
-        .get(l.key)
-        ?.steps.find((s) => normalize(s.label) === normalize(label));
-      if (!step) return [];
-      // Skip rows already in the requested state.
-      if (done.get(l.key)?.has(step.id) === on) return [];
-      return [{ line: l, stepId: step.id }];
-    });
-
   const runBulk = (on: boolean) => {
-    const entries = bulkEntries(on);
-    const lacking = chosen.filter(
-      (l) =>
-        !workflowByKey
-          .get(l.key)
-          ?.steps.some((st) => normalize(st.label) === normalize(label)),
-    ).length;
-    const lackingNote = lacking
-      ? ` ${lacking} ${lacking === 1 ? "has" : "have"} no "${label}" step.`
-      : "";
+    const entries: { line: ProgressLine; stepId: string }[] = [];
+    let lacking = 0;
+    let blocked = 0;
+    for (const l of chosen) {
+      const steps = workflowByKey.get(l.key)?.steps ?? [];
+      const step = steps.find((s) => normalize(s.label) === normalize(label));
+      if (!step) {
+        lacking++;
+        continue;
+      }
+      const rowDone = done.get(l.key) ?? new Set<string>();
+      if (rowDone.has(step.id) === on) continue; // already there
+      // Steps go in order: skip rows whose earlier steps are open (done) or
+      // whose later steps are done (clear).
+      const g = stepGate(steps, rowDone).get(step.id);
+      if (!(on ? g?.canComplete : g?.canUndo)) {
+        blocked++;
+        continue;
+      }
+      entries.push({ line: l, stepId: step.id });
+    }
+    const notes = [
+      lacking ? `${lacking} ${lacking === 1 ? "has" : "have"} no "${label}" step.` : "",
+      blocked
+        ? `${blocked} skipped: ${on ? "earlier steps not done" : "later steps done"}.`
+        : "",
+    ];
+    const lackingNote = notes.filter(Boolean).map((n) => ` ${n}`).join("");
     if (entries.length === 0) {
       toast.success(`Nothing to change.${lackingNote}`);
       return;

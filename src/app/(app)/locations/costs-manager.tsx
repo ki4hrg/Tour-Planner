@@ -56,7 +56,9 @@ function CostFields({
   }, [state, onSuccess]);
 
   return (
-    <form action={formAction} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    // Two columns at every width: the form lives in the Location page's
+    // narrow side card, where a viewport-sized four-column grid collided.
+    <form action={formAction} className="grid grid-cols-2 gap-3 [&>div]:min-w-0">
       <input type="hidden" name="locationId" value={locationId} />
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <div className="col-span-2 space-y-1.5">
@@ -77,7 +79,7 @@ function CostFields({
       <div className="space-y-1.5">
         <Label className="text-xs">Currency</Label>
         <Select name="currency" defaultValue={initial?.currency ?? defaultCurrency}>
-          <SelectTrigger size="sm">
+          <SelectTrigger size="sm" className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -92,7 +94,7 @@ function CostFields({
       <div className="space-y-1.5">
         <Label className="text-xs">Unit</Label>
         <Select name="unit" defaultValue={initial?.unit ?? "PER_PERSON"}>
-          <SelectTrigger size="sm">
+          <SelectTrigger size="sm" className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -116,7 +118,7 @@ function CostFields({
         <Label className="text-xs">Notes</Label>
         <Input name="notes" defaultValue={initial?.notes ?? ""} />
       </div>
-      <div className="col-span-2 flex items-end sm:col-span-4">
+      <div className="col-span-2 flex items-end">
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
         </Button>
