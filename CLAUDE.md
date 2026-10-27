@@ -36,7 +36,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-49 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+52 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -54,10 +54,13 @@ recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedu
 schedule item, then drops it).
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + paid total), `add-booking` (P, upserts the `(trip, location)`
-engagement — refuses not-bookable venues, seeds standing terms on create; item target
+incl. agreed price + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
+engagement — refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
-`update-booking` (P, incl. `bookedOn`), `list-payments` (V, the payment log +
+`update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
+`list-booking-workflows` (V, resolves `workflowId`/`stepId`), `set-booking-step` (P, tick/untick
+one step, back-datable), `set-booking-workflow` (P, switch workflow; clears ticked steps),
+`list-payments` (V, the payment log +
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
@@ -103,6 +106,9 @@ this is how an agent files a generated participant itinerary), `update-document`
   `deleteContact` relies on `SetNull` FKs). Item/day/stay/booking deletes ARE exposed
   because they're scoped and low-blast-radius. Add the entity-level deletes only with
   the same archive-fallback behavior, not a bare `prisma.*.delete`.
+- **Booking workflow DEFINITIONS** (create/edit/delete a workflow or its steps) — ADMIN
+  config, web-only at `/admin/workflows`. Only the read side + moving a booking through
+  a workflow is exposed.
 - **Region / trip-type / schedule-category / user CREATION + admin ops.** These are
   ADMIN-managed catalog/config. Only the read side is exposed (`list-regions`,
   `list-trip-types`, `list-schedule-categories`) so write tools can resolve their IDs.
@@ -336,6 +342,29 @@ npm test                          # vitest
   `anchor`/`offsetValue`/`offsetUnit` shape (+ `location_payment_schedule_anchor`
   CHECK); a `BOOKING`/`NONE` term resolves per engagement once seeded onto a real
   booking, and like booking schedules a term is "unscheduled" until it lands on one.
+- **Booking workflows**: admin-defined milestone ladders (`BookingWorkflow` →
+  ordered `BookingWorkflowStep`s, edited at `/admin/workflows`) that a booking moves
+  through — "Booking agreement", "Tickets only", "Site visit with meal". A booking
+  has at most one (`Booking.workflowId`); ticking a step writes a dated
+  `BookingStepCompletion` (planner-editable `completedOn`). `BookingStatus` is now
+  coarse — `PLANNED | IN_PROGRESS | CONFIRMED | NOT_NEEDED` — and on a workflow
+  booking it is **derived**: each step names the status it reaches (DB CHECK
+  `booking_workflow_step_status`: IN_PROGRESS or CONFIRMED), the booking's status is
+  the furthest any completed step reaches, and `stageLabel`/`stageOn` = the latest
+  step done in workflow order (steps may be ticked out of order). Status + stage are
+  **stored** (so filters stay column reads) and recomputed by every write that
+  changes them — all such writes go through `src/lib/booking-workflow-sync.ts`
+  (MCP-safe; pure resolver `resolveBookingProgress` in `src/lib/booking-workflow.ts`,
+  unit-tested). `NOT_NEEDED` is a manual override steps never clear; a booking with
+  no workflow takes its status by hand. New bookings start on the location's
+  `defaultWorkflowId`, else the global `isDefault` workflow (`seedWorkflowFor`, at
+  every create point incl. `ensureVenueEngagement` + template instantiation, where
+  the template's own workflow wins and progress resets). The one status UI is
+  `WorkflowControl` (`trips/workflow-control.tsx`, catalog via
+  `BookingWorkflowsProvider` in the `(app)` layout); the board's per-workflow view
+  drags between step columns (`setBookingStage`). Rough-plan planned locations also
+  feed engagement rows (an untimed "planned" session) so a visit can be booked
+  before it has a slot.
 - **Location merge**: `src/lib/location-merge.ts` folds a duplicate SOURCE into
   the kept TARGET in one txn and deletes the source — web "Merge into…" in the
   Location page's danger zone (`MergeLocationPanel`) + `merge-locations` MCP tool,
@@ -344,7 +373,8 @@ npm test                          # vitest
   collisions are resolved, not failed: item/day already at the target drops the
   source row; same-trip engagements fold into the target's booking (payments/
   notes/docs move, further-along status kept, source schedule only if target has
-  none); host sites OR together; standing terms adopted only if target has none.
+  none, source step completions move when both follow the same workflow, then
+  status recomputes); host sites OR together; standing terms adopted only if target has none.
   **When adding a new FK to `Location`, repoint it in `mergeLocations`** or the
   cascade on delete will silently drop that data.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to

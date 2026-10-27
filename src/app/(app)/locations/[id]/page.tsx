@@ -11,7 +11,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
-import { BOOKING_STATUS_LABELS } from "@/lib/trips";
+import { bookingStageText } from "@/lib/trips";
+import { BOOKING_PROGRESS_SELECT, progressView } from "@/lib/booking-workflow";
+import { LocationWorkflowSelect } from "../location-workflow-select";
 import {
   resolveSchedule,
   scheduleAttention,
@@ -181,7 +183,7 @@ export default async function LocationDetailPage({
       name: true,
       startDate: true,
       endDate: true,
-      bookings: { where: { locationId: id }, select: { status: true } },
+      bookings: { where: { locationId: id }, select: BOOKING_PROGRESS_SELECT },
       stays: { where: { locationId: id }, select: { id: true } },
       days: {
         select: {
@@ -201,7 +203,7 @@ export default async function LocationDetailPage({
       .filter(Boolean)
       .join(" – "),
     ongoing: isOngoing(t.startDate, t.endDate),
-    bookingStatus: t.bookings[0]?.status ?? "NOT_BOOKED",
+    booking: progressView(t.bookings[0] ?? null, location.defaultWorkflowId),
     sessionCount: t.days.reduce((n, d) => n + d.scheduleItems.length, 0),
     plannedCount: t.days.reduce((n, d) => n + d.plannedLocations.length, 0),
     hasLodging: t.stays.length > 0,
@@ -261,6 +263,7 @@ export default async function LocationDetailPage({
         select: {
           id: true,
           status: true,
+          stageLabel: true,
           bookedOn: true,
           createdAt: true,
           agreedAmount: true,
@@ -293,6 +296,7 @@ export default async function LocationDetailPage({
         tripName: b.trip!.name,
         startDate: b.trip!.startDate,
         status: b.status,
+        stageLabel: b.stageLabel,
         currency: b.agreedCurrency,
         agreed,
         paid,
@@ -499,7 +503,7 @@ export default async function LocationDetailPage({
                     </Link>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {e.startDate ? formatDate(e.startDate) : "—"} ·{" "}
-                      {BOOKING_STATUS_LABELS[e.status]}
+                      {bookingStageText(e)}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">
@@ -701,6 +705,21 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {location.bookable ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Booking workflow</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LocationWorkflowSelect
+              locationId={location.id}
+              workflowId={location.defaultWorkflowId}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {location.bookable && (paymentTerms.length > 0 || canEdit) ? (
         <Card>

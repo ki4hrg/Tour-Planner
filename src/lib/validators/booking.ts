@@ -17,7 +17,7 @@ export const bookingSchema = z.object({
   // Which member location this booking is for (empty = the item as a whole).
   locationId: optionalId,
   label: z.string().trim().optional(),
-  status: z.enum(BOOKING_STATUSES as [string, ...string[]]),
+  status: z.enum(BOOKING_STATUSES as [string, ...string[]]).optional(),
   bookedContactId: optionalId,
   confirmationRef: z.string().trim().optional(),
   notes: z.string().trim().optional(),

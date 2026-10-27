@@ -7,6 +7,8 @@ vi.mock("@/lib/db", () => ({
     location: { findUnique: vi.fn() },
     locationPaymentScheduleItem: { findMany: vi.fn() },
     booking: { upsert: vi.fn(), findUnique: vi.fn() },
+    // No global default workflow → new engagements start without one.
+    bookingWorkflow: { findFirst: vi.fn().mockResolvedValue(null) },
     itineraryDay: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   },

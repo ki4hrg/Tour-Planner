@@ -19,8 +19,6 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import {
-  BOOKING_STATUS_LABELS,
-  BOOKING_STATUSES,
   TRAVEL_METHOD_LABELS,
   effectivePresenters,
   scheduleItemPrimaryLabel,
@@ -36,7 +34,7 @@ import {
   CategoryChip,
   TravelMethodIcon,
 } from "./itinerary-timeline";
-import type { BookingStatus, TravelMethod } from "@prisma/client";
+import type { TravelMethod } from "@prisma/client";
 import type { FormState } from "@/lib/forms";
 import {
   addDay,
@@ -1964,9 +1962,6 @@ function BookingFields({
     initial?.locationId ?? NONE,
   );
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [status, setStatus] = useState<BookingStatus>(
-    initial?.status ?? "NOT_BOOKED",
-  );
   const [bookedContactId, setBookedContactId] = useState<string>(
     initial?.bookedContactId ?? NONE,
   );
@@ -1980,7 +1975,6 @@ function BookingFields({
       {
         locationId: locationId === NONE ? undefined : locationId,
         label: label.trim() || undefined,
-        status,
         bookedContactId: bookedContactId === NONE ? undefined : bookedContactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -1989,7 +1983,6 @@ function BookingFields({
         if (!initial) {
           setLocationId(NONE);
           setLabel("");
-          setStatus("NOT_BOOKED");
           setBookedContactId(NONE);
           setConfirmationRef("");
           setNotes("");
@@ -2024,24 +2017,6 @@ function BookingFields({
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Coach"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Status</Label>
-          <Select
-            value={status}
-            onValueChange={(v) => setStatus(v as BookingStatus)}
-          >
-            <SelectTrigger size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BOOKING_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {BOOKING_STATUS_LABELS[s]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Booked with</Label>

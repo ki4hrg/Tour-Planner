@@ -13,6 +13,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { computeDayDate, dayIndexForDate } from "@/lib/dates";
+import { seedWorkflowFor } from "@/lib/booking-workflow-sync";
 import {
   shiftStayDates,
   shiftStayIndicesForDeletedDay,
@@ -111,6 +112,7 @@ export async function ensureVenueEngagement(
   if (!loc.bookable) return { error: "This site is marked not bookable." };
 
   const schedule = await seedScheduleFromLocation(locationId);
+  const workflow = await seedWorkflowFor(locationId);
   const where = { tripId_locationId: { tripId, locationId } };
   try {
     const booking = await prisma.booking.upsert({
@@ -118,6 +120,7 @@ export async function ensureVenueEngagement(
       create: {
         tripId,
         locationId,
+        ...workflow,
         ...(schedule ? { paymentSchedule: schedule } : {}),
       },
       update: {},

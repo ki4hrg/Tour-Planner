@@ -23,6 +23,7 @@ import {
 } from "./money";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { stayNights } from "./stays";
+import { progressView, type BookingProgressView } from "./booking-workflow";
 
 // Serialized, client-safe rows for the booking dashboard. A "venue" row is the
 // single engagement for a (trip, location) — it auto-covers every schedule item the
@@ -36,6 +37,9 @@ export type CoveredSession = {
   startTime: string | null;
   endTime: string | null;
   label: string;
+  // A rough-plan day assignment (GH #9), not a timed schedule item — the venue
+  // is on the itinerary but the visit has no slot yet.
+  planned?: boolean;
 };
 
 export type VenueBookingRow = {
@@ -45,6 +49,7 @@ export type VenueBookingRow = {
   bookable: boolean; // false = walk-by stop; never booked, no status control
   bookingId: string | null; // null until the engagement is first created
   status: BookingStatus;
+  progress: BookingProgressView; // workflow state for the status control
   label: string | null;
   confirmationRef: string | null;
   notes: string | null;
@@ -82,6 +87,7 @@ export type ItemBookingRow = {
   bookingId: string;
   label: string;
   status: BookingStatus;
+  progress: BookingProgressView;
   confirmationRef: string | null;
   contactName: string | null;
   dayIndex: number;
@@ -106,22 +112,49 @@ type ItemInput = {
     toLabel: string | null;
   } | null;
   sites: { locationId: string }[];
-  bookings: {
+  bookings: (ProgressInput & {
     id: string;
     label: string | null;
-    status: BookingStatus;
     confirmationRef: string | null;
     bookedContact: { name: string } | null;
-  }[];
+  })[];
 };
 
-type DayInput = { dayIndex: number; date: Date | null; scheduleItems: ItemInput[] };
+// Workflow fields (BOOKING_PROGRESS_SELECT); optional so callers that don't
+// load them still build rows (the control then shows the coarse status).
+type ProgressInput = {
+  status: BookingStatus;
+  stageLabel?: string | null;
+  stageOn?: Date | null;
+  workflowId?: string | null;
+  stepCompletions?: { stepId: string; completedOn: Date }[];
+};
 
-type EngagementInput = {
+const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
+  progressView(
+    b && {
+      status: b.status,
+      stageLabel: b.stageLabel ?? null,
+      stageOn: b.stageOn ?? null,
+      workflowId: b.workflowId ?? null,
+      stepCompletions: b.stepCompletions,
+    },
+    locationDefault,
+  );
+
+type DayInput = {
+  dayIndex: number;
+  date: Date | null;
+  scheduleItems: ItemInput[];
+  // Rough-plan day locations (GH #9): a venue on the itinerary before it has a
+  // timed slot still surfaces as an engagement to start booking.
+  plannedLocations?: { locationId: string }[];
+};
+
+type EngagementInput = ProgressInput & {
   id: string;
   locationId: string | null;
   label: string | null;
-  status: BookingStatus;
   confirmationRef: string | null;
   notes: string | null;
   bookedContactId: string | null;
@@ -157,6 +190,7 @@ type LocationInput = {
   id: string;
   name: string;
   bookable: boolean;
+  defaultWorkflowId?: string | null;
   bookingOpensLeadDays: number | null;
   costs: Cost[];
 };
@@ -225,12 +259,29 @@ export function buildDashboardRows(data: DashboardData): {
           bookingId: b.id,
           label: b.label ?? label,
           status: b.status,
+          progress: toProgress(b),
           confirmationRef: b.confirmationRef,
           contactName: b.bookedContact?.name ?? null,
           dayIndex: day.dayIndex,
           date: day.date ? toDateInput(day.date) : null,
         });
       }
+    }
+    // Planned visits: one untimed session per (day, venue) the day's schedule
+    // doesn't already cover.
+    for (const p of day.plannedLocations ?? []) {
+      const v = ensure(p.locationId);
+      if (v.sessions.some((s) => s.dayIndex === day.dayIndex)) continue;
+      v.sessions.push({
+        id: `planned:${day.dayIndex}:${p.locationId}`,
+        dayIndex: day.dayIndex,
+        date: day.date ? toDateInput(day.date) : null,
+        startTime: null,
+        endTime: null,
+        label: "Planned",
+        planned: true,
+      });
+      if (day.date) v.dates.push(day.date);
     }
   }
 
@@ -276,11 +327,14 @@ export function buildDashboardRows(data: DashboardData): {
       agreedAmount == null &&
       ((loc?.costs.length ?? 0) === 0 ||
         (loc?.costs.every((c) => isCostStale(c.confirmedAt)) ?? true));
-    const isMissingTime = v.sessions.some((s) => !s.startTime && !s.endTime);
+    // A planned (untimed) visit is a rough plan, not missing information.
+    const isMissingTime = v.sessions.some(
+      (s) => !s.planned && !s.startTime && !s.endTime,
+    );
 
     const earliest = earliestCoveredDate(v.dates);
     const win = bookingWindow(earliest, loc?.bookingOpensLeadDays ?? null);
-    const status: BookingStatus = eng?.status ?? "NOT_BOOKED";
+    const status: BookingStatus = eng?.status ?? "PLANNED";
     // Not-bookable sites and ones deliberately marked "not needed" never need attention.
     const inPlay = bookable && status !== "NOT_NEEDED";
 
@@ -297,6 +351,7 @@ export function buildDashboardRows(data: DashboardData): {
       bookable,
       bookingId: eng?.id ?? null,
       status,
+      progress: toProgress(eng, loc?.defaultWorkflowId),
       label: eng?.label ?? null,
       confirmationRef: eng?.confirmationRef ?? null,
       notes: eng?.notes ?? null,

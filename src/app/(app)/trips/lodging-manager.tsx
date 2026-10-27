@@ -20,12 +20,12 @@ import { stayNights, stayTotal } from "@/lib/stays";
 import { currencyOptions } from "@/lib/money";
 import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
-import { StatusControl } from "./status-control";
+import { WorkflowControl } from "./workflow-control";
+import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
 import {
   addStay,
   updateStay,
   deleteStay,
-  setVenueBookingStatus,
   type StayInputData,
 } from "./actions";
 
@@ -64,6 +64,7 @@ export function LodgingManager({
   stays,
   currencies,
   documentsByStay,
+  progressByLocation,
   suggestedSpan = null,
 }: {
   tripId: string;
@@ -80,6 +81,8 @@ export function LodgingManager({
   // The lodging CONTRACT belongs to the venue engagement, not here — a stay has
   // no booking of its own (see the booking dashboard).
   documentsByStay: Record<string, SerializedDocument[]>;
+  // Workflow state of each lodging venue's engagement (keyed by location).
+  progressByLocation: Record<string, BookingProgressView>;
   suggestedSpan?: SuggestedStaySpan | null;
 }) {
   const { pending, run } = useAction();
@@ -102,6 +105,7 @@ export function LodgingManager({
               locations={locations}
               currencies={currencies}
               documents={documentsByStay[stay.id] ?? []}
+              progress={progressByLocation[stay.locationId]}
             />
           ))}
         </div>
@@ -163,6 +167,7 @@ function StayRow({
   locations,
   currencies,
   documents,
+  progress,
 }: {
   tripId: string;
   stay: SerializedStay;
@@ -172,6 +177,7 @@ function StayRow({
   locations: Location[];
   currencies: string[];
   documents: SerializedDocument[];
+  progress: BookingProgressView | undefined;
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
@@ -241,12 +247,10 @@ function StayRow({
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {/* Lodging's booking state IS the venue engagement — set it
                     right here (the first status set creates the engagement). */}
-                <StatusControl
-                  status={stay.booking?.status ?? "NOT_BOOKED"}
+                <WorkflowControl
+                  target={{ tripId, locationId: stay.locationId }}
+                  progress={progress ?? progressView(null)}
                   canEdit={canEdit}
-                  onSet={(status) =>
-                    setVenueBookingStatus(tripId, stay.locationId, status)
-                  }
                 />
                 {stay.booking?.bookedContact ? (
                   <span className="text-xs text-muted-foreground">

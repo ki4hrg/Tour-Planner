@@ -1,14 +1,86 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { BookingStatus } from "@prisma/client";
+import { BOOKING_STATUSES } from "@/lib/trips";
+import {
+  seedWorkflowFor,
+  setBookingStatusDirect,
+  setBookingStep,
+  setBookingWorkflow,
+} from "@/lib/booking-workflow-sync";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
-import { todayUtc, parseDateInput } from "@/lib/dates";
+import { todayUtc, parseDateInput, toDateInput } from "@/lib/dates";
 import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
 import { assertBookable, seedScheduleFromLocation } from "@/lib/trip-mutations";
+
+const BOOKING_STATUSES_TUPLE = BOOKING_STATUSES as [BookingStatus, ...BookingStatus[]];
+
+// Workflow + step completions, for workflowProgress().
+const WORKFLOW_INCLUDE = {
+  workflow: {
+    select: {
+      id: true,
+      name: true,
+      steps: {
+        orderBy: { sortOrder: "asc" as const },
+        select: { id: true, label: true, status: true },
+      },
+    },
+  },
+  stepCompletions: { select: { stepId: true, completedOn: true } },
+};
+
+function workflowProgress(b: {
+  stageLabel: string | null;
+  stageOn: Date | null;
+  workflow: {
+    id: string;
+    name: string;
+    steps: { id: string; label: string; status: BookingStatus }[];
+  } | null;
+  stepCompletions: { stepId: string; completedOn: Date }[];
+}) {
+  if (!b.workflow) return { workflow: null };
+  const done = new Map(b.stepCompletions.map((c) => [c.stepId, c.completedOn]));
+  return {
+    workflow: { id: b.workflow.id, name: b.workflow.name },
+    stage: b.stageLabel,
+    stageOn: b.stageOn ? toDateInput(b.stageOn) : null,
+    steps: b.workflow.steps.map((s) => ({
+      id: s.id,
+      label: s.label,
+      reachesStatus: s.status,
+      done: done.has(s.id),
+      completedOn: done.has(s.id) ? toDateInput(done.get(s.id)!) : null,
+    })),
+  };
+}
+
+function toolError(text: string) {
+  return {
+    content: [{ type: "text" as const, text: `Error: ${text}` }],
+    isError: true,
+  };
+}
+
+async function bookingStateResult(bookingId: string) {
+  const b = await prisma.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    select: { id: true, status: true, stageLabel: true, stageOn: true, ...WORKFLOW_INCLUDE },
+  });
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({ id: b.id, status: b.status, ...workflowProgress(b) }, null, 2),
+      },
+    ],
+  };
+}
 
 export function registerBookingTools(server: McpServer, user: SessionUser) {
   // ── list-bookings (VIEWER+) ──────────────────────────────────────────
@@ -17,10 +89,10 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, location, contact, confirmation reference. Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference. Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
-        status: z.string().optional(),
+        status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -47,6 +119,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
             payments: { select: { amount: true } },
+            ...WORKFLOW_INCLUDE,
           },
         });
 
@@ -65,6 +138,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
             payments: { select: { amount: true } },
+            ...WORKFLOW_INCLUDE,
           },
         });
 
@@ -94,6 +168,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             id: b.id,
             label: b.label,
             status: b.status,
+            ...workflowProgress(b),
             confirmationRef: b.confirmationRef,
             notes: b.notes,
             location: b.location,
@@ -105,6 +180,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             id: b.id,
             label: b.label,
             status: b.status,
+            ...workflowProgress(b),
             confirmationRef: b.confirmationRef,
             notes: b.notes,
             scheduleItem: b.scheduleItem
@@ -145,13 +221,13 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule). Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
         locationId: z.string().optional(),
         label: z.string().optional(),
-        status: z.string(),
+        status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
@@ -225,7 +301,6 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const scalars = {
           locationId: locationId || null,
           label: label || null,
-          status: status as BookingStatus,
           bookedContactId: bookedContactId || null,
           confirmationRef: confirmationRef || null,
           notes: notes || null,
@@ -240,8 +315,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           // stop, and seed a NEW engagement's installment schedule from the
           // venue's standing payment terms (GH #86). The nested create only
           // fires on the create branch — an existing engagement keeps its
-          // schedule. Unlike the web details form, re-adding here DOES write
-          // status on update (documented tool behaviour).
+          // schedule. A passed status is applied after the write, through the
+          // same workflow rules as the web status control.
           const notBookable = await assertBookable(locationId!);
           if (notBookable) {
             return {
@@ -250,6 +325,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             };
           }
           const schedule = await seedScheduleFromLocation(locationId!);
+          const workflow = await seedWorkflowFor(locationId!);
           booking = await prisma.booking.upsert({
             where: {
               tripId_locationId: { tripId: tripId!, locationId: locationId! },
@@ -257,6 +333,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             create: {
               tripId,
               ...scalars,
+              ...workflow,
               ...(schedule ? { paymentSchedule: schedule } : {}),
             },
             update: scalars,
@@ -287,9 +364,10 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             };
           }
           booking = await prisma.booking.create({
-            data: { scheduleItemId, ...scalars },
+            data: { scheduleItemId, ...scalars, ...(await seedWorkflowFor(null)) },
           });
         }
+        if (status) await setBookingStatusDirect(booking.id, status);
 
         return {
           content: [
@@ -319,10 +397,10 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Booking",
       description:
-        "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; pass agreedAmount: 0 to keep, omit to leave unchanged). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: mark a booking as CONFIRMED with a confirmation reference number. Status options (workflow order): NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED (or NOT_NEEDED to skip).",
+        "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; pass agreedAmount: 0 to keep, omit to leave unchanged). bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: record a confirmation reference number. Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. To move a workflow booking along, use set-booking-step.",
       inputSchema: {
         bookingId: z.string(),
-        status: z.string().optional(),
+        status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
         bookedContactId: z.string().optional(),
         confirmationRef: z.string().optional(),
         notes: z.string().optional(),
@@ -366,7 +444,6 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         }
 
         const data: Record<string, unknown> = {};
-        if (status !== undefined) data.status = status as BookingStatus;
         if (bookedContactId !== undefined)
           data.bookedContactId = bookedContactId;
         if (confirmationRef !== undefined)
@@ -381,6 +458,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           where: { id: bookingId },
           data,
         });
+        if (status !== undefined) {
+          await setBookingStatusDirect(bookingId, status);
+        }
 
         return {
           content: [
@@ -400,6 +480,131 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           ],
           isError: true,
         };
+      }
+    },
+  );
+
+  // ── list-booking-workflows (VIEWER+) ─────────────────────────────────
+  server.registerTool(
+    "list-booking-workflows",
+    {
+      title: "List Booking Workflows",
+      description:
+        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      if (!hasRole(user.role, "VIEWER")) {
+        return toolError("Insufficient permissions. VIEWER role or higher required.");
+      }
+      const workflows = await prisma.bookingWorkflow.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          isDefault: true,
+          steps: {
+            orderBy: { sortOrder: "asc" },
+            select: { id: true, label: true, status: true },
+          },
+        },
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              workflows.map((w) => ({
+                ...w,
+                steps: w.steps.map((st) => ({
+                  id: st.id,
+                  label: st.label,
+                  reachesStatus: st.status,
+                })),
+              })),
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  // ── set-booking-step (PLANNER+) ──────────────────────────────────────
+  server.registerTool(
+    "set-booking-step",
+    {
+      title: "Set Booking Workflow Step",
+      description:
+        "Mark one workflow step done (or not done) on a booking — e.g. 'Initial contact' when the venue was emailed. Needs bookingId (from list-bookings) and stepId (from list-bookings' steps or list-booking-workflows; it must belong to the booking's workflow). completedOn (YYYY-MM-DD) back-dates it; default today. Steps may be ticked out of order. Returns the booking's resulting status and stage.",
+      inputSchema: {
+        bookingId: z.string(),
+        stepId: z.string(),
+        done: z.boolean().default(true),
+        completedOn: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ bookingId, stepId, done, completedOn }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return toolError("Insufficient permissions. PLANNER role or higher required.");
+        }
+        const on = completedOn ? parseDateInput(completedOn) : todayUtc();
+        if (!on) return toolError("completedOn must be a real YYYY-MM-DD date.");
+        const res = await setBookingStep({
+          bookingId,
+          stepId,
+          done,
+          completedOn: on,
+          userId: user.id,
+        });
+        if ("error" in res) return toolError(res.error);
+        return bookingStateResult(bookingId);
+      } catch (error) {
+        return toolError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  // ── set-booking-workflow (PLANNER+) ──────────────────────────────────
+  server.registerTool(
+    "set-booking-workflow",
+    {
+      title: "Set Booking Workflow",
+      description:
+        "Put a booking on a different workflow (workflowId from list-booking-workflows), or pass workflowId: null to take it off workflows (its status is then set directly with update-booking). Needs bookingId from list-bookings. Clears the steps ticked under the old workflow and restarts the status at PLANNED (unless NOT_NEEDED). Returns the booking's resulting status and stage.",
+      inputSchema: {
+        bookingId: z.string(),
+        workflowId: z.string().nullable(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ bookingId, workflowId }) => {
+      try {
+        if (!hasRole(user.role, "PLANNER")) {
+          return toolError("Insufficient permissions. PLANNER role or higher required.");
+        }
+        const res = await setBookingWorkflow(bookingId, workflowId);
+        if ("error" in res) return toolError(res.error);
+        return bookingStateResult(bookingId);
+      } catch (error) {
+        return toolError(error instanceof Error ? error.message : String(error));
       }
     },
   );

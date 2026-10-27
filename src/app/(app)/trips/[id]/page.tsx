@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
   TRIP_LIFECYCLE_LABELS,
-  BOOKING_STATUS_LABELS,
+  bookingStageText,
   deriveTripLifecycle,
   serializeStay,
   serializeDay,
@@ -23,6 +23,7 @@ import {
   TRAVEL_LEG_INCLUDE,
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
+import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
 import { rollUpCosts } from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
@@ -162,7 +163,7 @@ export default async function TripOverviewPage({
       { priority: "desc" },
     ],
     include: {
-      location: { select: { id: true, name: true } },
+      location: { select: { id: true, name: true, defaultWorkflowId: true } },
     },
   });
 
@@ -188,8 +189,19 @@ export default async function TripOverviewPage({
       location: { select: { name: true } },
       payments: { select: { amount: true } },
       paymentSchedule: true,
+      stepCompletions: { select: { stepId: true, completedOn: true } },
+      workflow: { select: { _count: { select: { steps: true } } } },
     },
   });
+  // Workflow state for each stay's status control (keyed by lodging venue).
+  const progressByLocation: Record<string, BookingProgressView> = {};
+  for (const s of stays) {
+    const eng = engagementBookings.find((b) => b.locationId === s.locationId);
+    progressByLocation[s.locationId] = progressView(
+      eng ?? null,
+      s.location.defaultWorkflowId,
+    );
+  }
   const bookingByLocation = bookingsByLocation(
     engagementBookings.map(serializeBooking),
   );
@@ -218,6 +230,9 @@ export default async function TripOverviewPage({
     venue: n.stay?.location.name ?? null,
     status: n.stay
       ? (bookingByLocation.get(n.stay.locationId)?.status ?? null)
+      : null,
+    stageLabel: n.stay
+      ? (bookingByLocation.get(n.stay.locationId)?.stageLabel ?? null)
       : null,
     covering: n.covering,
   }));
@@ -418,14 +433,20 @@ export default async function TripOverviewPage({
               b.agreedAmount == null ? null : Number(b.agreedAmount);
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
             const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
+            // Open until every workflow step is ticked (or, without a
+            // workflow, until confirmed); "not needed" is closed.
             const openStatus =
-              b.status !== "FINALIZED" && b.status !== "NOT_NEEDED";
+              b.status !== "NOT_NEEDED" &&
+              (b.workflow
+                ? b.stepCompletions.length < b.workflow._count.steps
+                : b.status !== "CONFIRMED");
             if (!unpaid && !openStatus) return null;
             return {
               id: b.id,
               href: venueBookingHref(id, b.locationId),
               name: b.location?.name ?? b.label ?? "Booking",
               status: b.status,
+              stageLabel: b.stageLabel,
               unpaid,
               currency: b.agreedCurrency,
             };
@@ -511,6 +532,7 @@ export default async function TripOverviewPage({
                   serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
                 )}
                 documentsByStay={documentsByStay}
+                progressByLocation={progressByLocation}
                 suggestedSpan={canEdit ? suggestedSpan : null}
               />
             </CardContent>
@@ -573,7 +595,7 @@ export default async function TripOverviewPage({
                           </Link>
                           <span className="text-muted-foreground">
                             {" "}
-                            — {BOOKING_STATUS_LABELS[e.status]}
+                            — {bookingStageText(e)}
                             {e.unpaid > 0
                               ? ` · ${formatMoney(e.unpaid, e.currency)} unpaid`
                               : ""}

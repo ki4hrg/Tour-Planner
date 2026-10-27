@@ -5,7 +5,7 @@ import type {
   VenueBookingRow,
 } from "./booking-dashboard";
 import { isBookingSecured } from "./booking";
-import { BOOKING_STATUS_LABELS } from "./trips";
+import { bookingStageText } from "./trips";
 import { formatDate } from "./dates";
 import { formatMoney } from "./money";
 
@@ -282,8 +282,11 @@ export function emailableRows(group: VenueGroup): VenueTripRow[] {
   return group.rows.filter((r) => rowInPlay(r.row));
 }
 
-function statusLine(status: BookingStatus): string {
-  return BOOKING_STATUS_LABELS[status];
+function statusLine(row: VenueBookingRow): string {
+  return bookingStageText({
+    status: row.status,
+    stageLabel: row.progress.stageLabel,
+  });
 }
 
 /**
@@ -331,7 +334,7 @@ export function buildVenueEmail(group: VenueGroup): {
         `   - Lodging: ${row.nightCount} night${row.nightCount === 1 ? "" : "s"}`,
       );
     const ref = row.confirmationRef ? ` (ref ${row.confirmationRef})` : "";
-    lines.push(`   Status: ${statusLine(row.status)}${ref}`);
+    lines.push(`   Status: ${statusLine(row)}${ref}`);
     lines.push("");
   });
   lines.push("Thank you,");
@@ -386,7 +389,10 @@ export function actionItems(groups: VenueGroup[]): ActionItem[] {
             ? "missingPrice"
             : null;
       if (!reason) continue;
-      const status = BOOKING_STATUS_LABELS[row.status].toLowerCase();
+      const status = bookingStageText({
+        status: row.status,
+        stageLabel: row.progress.stageLabel,
+      }).toLowerCase();
       const text =
         reason === "paymentOverdue"
           ? `${formatMoney(row.overdueAmount, row.agreedCurrency)} overdue`

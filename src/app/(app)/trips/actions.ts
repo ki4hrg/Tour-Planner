@@ -21,11 +21,12 @@ import {
   installmentRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
-import { parseDateInput, computeDayDate } from "@/lib/dates";
+import { parseDateInput, computeDayDate, todayUtc } from "@/lib/dates";
 import {
   applyStartDateChange,
   assertBookable,
   deleteItineraryDay,
+  ensureVenueEngagement,
   seedScheduleFromLocation,
   toScheduleSeed,
   type LocationScheduleSeed,
@@ -42,6 +43,13 @@ import { travelLegCreateData } from "@/lib/travel";
 import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
+import {
+  seedWorkflowFor,
+  setBookingStage,
+  setBookingStatusDirect,
+  setBookingStep,
+  setBookingWorkflow,
+} from "@/lib/booking-workflow-sync";
 import { createProject } from "@/lib/todoist";
 
 // --- Trip CRUD ---
@@ -98,7 +106,9 @@ const TEMPLATE_DAYS_SELECT = {
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
-      bookings: { select: { locationId: true, label: true, notes: true } },
+      bookings: {
+        select: { locationId: true, label: true, notes: true, workflowId: true },
+      },
       travel: {
         select: {
           method: true,
@@ -128,6 +138,7 @@ const TEMPLATE_VENUE_BOOKING_SELECT = {
   locationId: true,
   label: true,
   notes: true,
+  workflowId: true,
   paymentSchedule: {
     select: {
       label: true,
@@ -196,8 +207,10 @@ export async function createTrip(
     daysCreate = instantiateDays(template.days, data.startDate);
     // Template schedule wins; where a copied engagement carries none, fall back
     // to the venue's standing terms (GH #86). Both beat an empty schedule.
-    venueBookingsCreate = await applyLocationScheduleDefaults(
-      instantiateVenueBookings(template.bookings),
+    venueBookingsCreate = await applyLocationWorkflowDefaults(
+      await applyLocationScheduleDefaults(
+        instantiateVenueBookings(template.bookings),
+      ),
     );
     // Day-relative template stays resolve to dates against the new startDate (or
     // stay day-relative when the new trip is itself a date-less template).
@@ -257,7 +270,7 @@ export async function updateTrip(
 }
 
 // Snapshot an existing trip as a reusable template: deep-copy its itinerary
-// (bookings reset to NOT_BOOKED, calendar dates dropped — a template has none) and
+// (bookings reset to PLANNED, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 // One-click close-out from the wrap-up card. Status only — everything else on
 // the trip is left alone. (Complete is derived from dates; Archived is the
@@ -902,7 +915,8 @@ export async function shiftDaySchedule(
 export type BookingInputData = {
   locationId?: string;
   label?: string;
-  status: string;
+  // Ignored — the status control / workflow steps own a booking's status.
+  status?: string;
   bookedContactId?: string;
   confirmationRef?: string;
   notes?: string;
@@ -916,7 +930,6 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
   return {
     locationId: d.locationId || null,
     label: d.label || null,
-    status: d.status as BookingStatus,
     bookedContactId: d.bookedContactId || null,
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
@@ -951,12 +964,28 @@ export async function addBooking(
   }
 
   await prisma.booking.create({
-    data: { scheduleItemId: itemId, ...toBookingScalars(parsed.data) },
+    data: {
+      scheduleItemId: itemId,
+      ...toBookingScalars(parsed.data),
+      ...(await seedWorkflowFor(null)),
+    },
   });
 
   const tripId = await tripIdForItem(itemId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Booking added." };
+}
+
+// Engagements copied without a workflow fall back to the venue's default
+// workflow (else the global default) — the template's own choice wins.
+async function applyLocationWorkflowDefaults(
+  bookings: InstantiatedVenueBooking[],
+): Promise<InstantiatedVenueBooking[]> {
+  return Promise.all(
+    bookings.map(async (b) =>
+      b.workflowId ? b : { ...b, ...(await seedWorkflowFor(b.locationId)) },
+    ),
+  );
 }
 
 // Fill each instantiated engagement that carries NO schedule with its location's
@@ -1002,22 +1031,20 @@ export async function upsertVenueBooking(
   const notBookable = await assertBookable(locationId);
   if (notBookable) return { error: notBookable };
 
-  const scalars = { ...toBookingScalars(parsed.data), locationId };
-  // Status is owned by the one-click control (setVenueBookingStatus). The
-  // details form submits the status it rendered with, which can be stale by
-  // the time it saves — so on UPDATE never write it, or a just-made quick
-  // status change would be silently reverted. On CREATE it seeds the row.
-  const { status, ...detailScalars } = scalars;
+  // Status is owned by the status control / workflow steps, never the details
+  // form (its rendered status could be stale by save time).
+  const detailScalars = { ...toBookingScalars(parsed.data), locationId };
   // Nested create only fires on the create branch of the upsert (an existing
-  // engagement's schedule is left untouched), so seeding the location default
+  // engagement's schedule is left untouched), so seeding the location defaults
   // here is safe even when this call ends up updating.
   const schedule = await seedScheduleFromLocation(locationId);
+  const workflow = await seedWorkflowFor(locationId);
   await prisma.booking.upsert({
     where: { tripId_locationId: { tripId, locationId } },
     create: {
       tripId,
       ...detailScalars,
-      status,
+      ...workflow,
       ...(schedule ? { paymentSchedule: schedule } : {}),
     },
     update: detailScalars,
@@ -1027,41 +1054,124 @@ export async function upsertVenueBooking(
   return { ok: true, message: "Booking saved." };
 }
 
-// The one-click status control on the dashboard — upsert the engagement with just a
-// status (defaults the rest on first create). Other fields are managed via the
-// expandable row (upsertVenueBooking) so a quick status change never clears them.
+// What a status/workflow control acts on: a venue engagement by (trip,
+// location) — created on first touch, seeded like every other create — or an
+// existing booking by id (a site-less item booking).
+export type BookingTarget =
+  | { tripId: string; locationId: string }
+  | { bookingId: string };
+
+async function resolveBookingTarget(
+  target: BookingTarget,
+): Promise<{ error: string } | { bookingId: string; tripId: string | null }> {
+  if ("bookingId" in target) {
+    return {
+      bookingId: target.bookingId,
+      tripId: await tripIdForBooking(target.bookingId),
+    };
+  }
+  // An existing engagement is used as-is (even at a since-archived venue);
+  // only a first touch goes through the create-time checks + seeding.
+  const existing = await prisma.booking.findUnique({
+    where: {
+      tripId_locationId: { tripId: target.tripId, locationId: target.locationId },
+    },
+    select: { id: true },
+  });
+  if (existing) return { bookingId: existing.id, tripId: target.tripId };
+  const res = await ensureVenueEngagement(target.tripId, target.locationId);
+  if ("error" in res) return res;
+  return { bookingId: res.bookingId, tripId: target.tripId };
+}
+
+// Set the coarse status directly. On a workflow booking only "Not needed" (and
+// leaving it) is manual — the steps own the rest (setBookingStepAction).
 export async function setVenueBookingStatus(
   tripId: string,
   locationId: string,
   status: BookingStatus,
 ): Promise<FormState> {
-  await assertRole("PLANNER");
-  const notBookable = await assertBookable(locationId);
-  if (notBookable) return { error: notBookable };
-  // First status set on a venue also creates the engagement — pre-fill its
-  // schedule from the location's standing terms (GH #86). Ignored on update.
-  const schedule = await seedScheduleFromLocation(locationId);
-  await prisma.booking.upsert({
-    where: { tripId_locationId: { tripId, locationId } },
-    create: { tripId, locationId, status, ...(schedule ? { paymentSchedule: schedule } : {}) },
-    update: { status },
-  });
-
-  revalidateTrip(tripId);
-  return { ok: true, message: "Status updated." };
+  return setTargetStatus({ tripId, locationId }, status);
 }
 
-// Quick status set for an existing booking by id (the dashboard's one-click control
-// on a site-less item booking, which always already exists).
 export async function setBookingStatus(
   bookingId: string,
   status: BookingStatus,
 ): Promise<FormState> {
+  return setTargetStatus({ bookingId }, status);
+}
+
+async function setTargetStatus(
+  target: BookingTarget,
+  status: BookingStatus,
+): Promise<FormState> {
   await assertRole("PLANNER");
-  await prisma.booking.update({ where: { id: bookingId }, data: { status } });
-  const tripId = await tripIdForBooking(bookingId);
-  if (tripId) revalidateTrip(tripId);
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStatusDirect(t.bookingId, status);
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
   return { ok: true, message: "Status updated." };
+}
+
+// Tick (or untick) one workflow step on a booking. `completedOn` back-dates it
+// ("yyyy-mm-dd"; defaults to today); re-sending a done step just re-dates it.
+export async function setBookingStepAction(
+  target: BookingTarget,
+  stepId: string,
+  done: boolean,
+  completedOn?: string,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const on = completedOn ? parseDateInput(completedOn) : todayUtc();
+  if (!on) return { error: "Use a real yyyy-mm-dd date." };
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStep({
+    bookingId: t.bookingId,
+    stepId,
+    done,
+    completedOn: on,
+    userId: user.id,
+  });
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true };
+}
+
+// Move a booking straight to a workflow stage (the board's drag between step
+// columns): ticks `stepId` and clears every later step; null = not started.
+export async function setBookingStageAction(
+  target: BookingTarget,
+  stepId: string | null,
+): Promise<FormState> {
+  const user = await assertRole("PLANNER");
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingStage({
+    bookingId: t.bookingId,
+    stepId,
+    completedOn: todayUtc(),
+    userId: user.id,
+  });
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true };
+}
+
+// Put a booking on another workflow (null = none, status set by hand). Clears
+// the old workflow's step completions.
+export async function setBookingWorkflowAction(
+  target: BookingTarget,
+  workflowId: string | null,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const t = await resolveBookingTarget(target);
+  if ("error" in t) return { error: t.error };
+  const res = await setBookingWorkflow(t.bookingId, workflowId);
+  if ("error" in res) return { error: res.error };
+  if (t.tripId) revalidateTrip(t.tripId);
+  return { ok: true, message: "Workflow changed." };
 }
 
 // Resolve the owning trip whether the booking is a venue engagement or a site-less

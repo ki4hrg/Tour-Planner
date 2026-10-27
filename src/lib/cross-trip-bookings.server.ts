@@ -11,6 +11,7 @@ import {
   type VenueGroup,
   type VenueMeta,
 } from "./cross-trip-bookings";
+import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
 
 export type { TripItemBookings };
 
@@ -51,6 +52,7 @@ const TRIP_SELECT = {
     select: {
       dayIndex: true,
       date: true,
+      plannedLocations: { select: { locationId: true } },
       scheduleItems: {
         orderBy: { order: "asc" },
         select: {
@@ -73,7 +75,7 @@ const TRIP_SELECT = {
             select: {
               id: true,
               label: true,
-              status: true,
+              ...BOOKING_PROGRESS_SELECT,
               confirmationRef: true,
               bookedContact: { select: { name: true } },
             },
@@ -87,7 +89,7 @@ const TRIP_SELECT = {
       id: true,
       locationId: true,
       label: true,
-      status: true,
+      ...BOOKING_PROGRESS_SELECT,
       confirmationRef: true,
       notes: true,
       bookedContactId: true,
@@ -141,6 +143,7 @@ export async function loadCrossTripBookings({
         ...t.days.flatMap((d) =>
           d.scheduleItems.flatMap((i) => i.sites.map((s) => s.locationId)),
         ),
+        ...t.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
         ...t.stays.map((s) => s.locationId),
         ...t.bookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
       ]),
@@ -154,6 +157,7 @@ export async function loadCrossTripBookings({
           name: true,
           bookable: true,
           bookingOpensLeadDays: true,
+          defaultWorkflowId: true,
           costs: true,
           regionId: true,
           primaryContact: {

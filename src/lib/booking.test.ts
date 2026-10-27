@@ -69,7 +69,7 @@ describe("earliestCoveredDate", () => {
 
 describe("bookingNeedsInfo", () => {
   const base = {
-    status: "NOT_BOOKED" as const,
+    status: "PLANNED" as const,
     windowOpen: false,
     hasRef: true,
     isMissingCost: false,
@@ -80,15 +80,7 @@ describe("bookingNeedsInfo", () => {
   it("flags an open window that is not yet secured", () => {
     expect(bookingNeedsInfo({ ...base, windowOpen: true })).toBe(true);
     expect(
-      bookingNeedsInfo({ ...base, status: "REQUESTED", windowOpen: true }),
-    ).toBe(true);
-    // Tentatively confirmed is still in-flight until it is fully confirmed.
-    expect(
-      bookingNeedsInfo({
-        ...base,
-        status: "TENTATIVELY_CONFIRMED",
-        windowOpen: true,
-      }),
+      bookingNeedsInfo({ ...base, status: "IN_PROGRESS", windowOpen: true }),
     ).toBe(true);
   });
   it("does not flag an open window that is already secured", () => {
@@ -96,7 +88,7 @@ describe("bookingNeedsInfo", () => {
       bookingNeedsInfo({ ...base, status: "CONFIRMED", windowOpen: true }),
     ).toBe(false);
     expect(
-      bookingNeedsInfo({ ...base, status: "FINALIZED", windowOpen: true }),
+      bookingNeedsInfo({ ...base, status: "CONFIRMED", windowOpen: true }),
     ).toBe(false);
   });
   it("flags secured bookings missing a reference", () => {
@@ -106,10 +98,10 @@ describe("bookingNeedsInfo", () => {
     expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: true })).toBe(
       false,
     );
-    expect(bookingNeedsInfo({ ...base, status: "FINALIZED", hasRef: false })).toBe(
+    expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: false })).toBe(
       true,
     );
-    expect(bookingNeedsInfo({ ...base, status: "FINALIZED", hasRef: true })).toBe(
+    expect(bookingNeedsInfo({ ...base, status: "CONFIRMED", hasRef: true })).toBe(
       false,
     );
   });

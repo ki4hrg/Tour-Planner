@@ -18,6 +18,7 @@ export type TemplateBooking = {
   locationId: string | null;
   label: string | null;
   notes: string | null;
+  workflowId?: string | null;
 };
 
 // A travel leg copies verbatim (route + method + stops are all reusable plan,
@@ -76,6 +77,7 @@ export type InstantiatedBooking = {
   label: string | null;
   notes: string | null;
   status: BookingStatus;
+  workflowId: string | null;
 };
 
 export type InstantiatedScheduleItem = {
@@ -127,6 +129,8 @@ export type TemplateVenueBooking = {
   locationId: string | null;
   label: string | null;
   notes: string | null;
+  // The workflow the booking follows carries over; its progress does not.
+  workflowId?: string | null;
   paymentSchedule?: TemplateScheduleInstallment[];
 };
 
@@ -135,13 +139,14 @@ export type InstantiatedVenueBooking = {
   label: string | null;
   notes: string | null;
   status: BookingStatus;
+  workflowId: string | null;
   paymentSchedule?: { create: TemplateScheduleInstallment[] };
 };
 
 /**
  * Deep-copy a trip/template's venue-engagement bookings into trip-level create-data.
- * Status is reset to NOT_BOOKED and the instance actuals (contact, confirmationRef,
- * agreed price) are dropped — same reset policy as item bookings. The payment
+ * Status is reset to PLANNED (the workflow is kept, its step progress is not) and
+ * the instance actuals (contact, confirmationRef, agreed price) are dropped — same reset policy as item bookings. The payment
  * schedule is kept (fixed installment amounts included; the planner adjusts those
  * if the next negotiation differs). Rows without a location are skipped
  * (engagements require one).
@@ -157,7 +162,8 @@ export function instantiateVenueBookings(
       locationId: b.locationId,
       label: b.label,
       notes: b.notes,
-      status: "NOT_BOOKED" as BookingStatus,
+      status: "PLANNED" as BookingStatus,
+      workflowId: b.workflowId ?? null,
       ...(b.paymentSchedule?.length
         ? {
             paymentSchedule: {
@@ -184,8 +190,8 @@ export function instantiateVenueBookings(
  * - location links are carried over (re-ordered 0..n).
  * - rough-plan day locations (GH #9) carry over verbatim (re-ordered 0..n) as
  *   reusable planning intent, like schedule-item sites.
- * - bookings are carried over as planning intent but RESET: status → NOT_BOOKED
- *   and the instance-specific actuals (bookedContact, confirmationRef) are
+ * - bookings are carried over as planning intent but RESET: status → PLANNED
+ *   (workflow kept, step progress dropped) and the instance-specific actuals (bookedContact, confirmationRef) are
  *   dropped by omission. Reusable text (label, notes) is kept.
  *
  * Templates are snapshots: this copies values, so later edits to the template do
@@ -238,7 +244,8 @@ export function instantiateDays(
                   locationId: b.locationId,
                   label: b.label,
                   notes: b.notes,
-                  status: "NOT_BOOKED" as BookingStatus,
+                  status: "PLANNED" as BookingStatus,
+                  workflowId: b.workflowId ?? null,
                 })),
               },
               // The travel leg (route/method/stops) is reusable plan — copied

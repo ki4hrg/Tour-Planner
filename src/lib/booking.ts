@@ -76,13 +76,13 @@ export function earliestCoveredDate(dates: (Date | null | undefined)[]): Date | 
 }
 
 /**
- * Whether a booking is "locked in" — a reservation actually secured (confirmed or
- * finalized), so the planner no longer needs to chase it. Requested and
- * tentatively-confirmed still count as in-flight. Used to gate attention filters
- * and "Booked" labels across the dashboards.
+ * Whether a booking is "locked in" — a reservation actually secured, so the
+ * planner no longer needs to chase it (a workflow step that reaches CONFIRMED,
+ * or a hand-set CONFIRMED). Used to gate attention filters and "Booked" labels
+ * across the dashboards.
  */
 export function isBookingSecured(status: BookingStatus): boolean {
-  return status === "CONFIRMED" || status === "FINALIZED";
+  return status === "CONFIRMED";
 }
 
 /**

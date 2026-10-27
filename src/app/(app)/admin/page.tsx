@@ -14,6 +14,10 @@ const SECTIONS = [
     title: "Schedule categories",
   },
   {
+    href: "/admin/workflows",
+    title: "Booking workflows",
+  },
+  {
     href: "/admin/regions",
     title: "Regions",
   },

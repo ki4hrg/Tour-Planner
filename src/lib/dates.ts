@@ -95,3 +95,12 @@ export function formatDate(date: Date | string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "";
   return WEEKDAY_FMT.format(d);
 }
+
+/** Whole days from a date-only value until today (0 = today); null when unset.
+ * Reads "now" here so render stays pure (react-hooks/purity). */
+export function daysSince(date: Date | string | null | undefined): number | null {
+  if (!date) return null;
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.round((todayUtc().getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+}

@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import type { BookingStatus } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
-import { setVenueBookingStatus } from "../trips/actions";
-import { StatusControl } from "../trips/status-control";
+import type { BookingProgressView } from "@/lib/booking-workflow";
+import { WorkflowControl } from "../trips/workflow-control";
 
 // One row per trip that touches this venue right now or soon: the engagement's
 // one-click booking status, what the trip runs here, and a jump to today.
@@ -13,7 +12,7 @@ export type LocationTripRow = {
   tripName: string;
   dates: string; // preformatted "Mon, 6 Jul 2026 – …" (server-side, Date-free)
   ongoing: boolean;
-  bookingStatus: BookingStatus;
+  booking: BookingProgressView; // this venue's engagement on the trip
   sessionCount: number;
   plannedCount: number; // rough-plan day assignments with no set time
   hasLodging: boolean;
@@ -70,12 +69,10 @@ export function LocationTripsPanel({
               {coverage ? ` · ${coverage}` : ""}
             </p>
             {bookable ? (
-              <StatusControl
-                status={r.bookingStatus}
+              <WorkflowControl
+                target={{ tripId: r.tripId, locationId }}
+                progress={r.booking}
                 canEdit={canEdit}
-                onSet={(status) =>
-                  setVenueBookingStatus(r.tripId, locationId, status)
-                }
               />
             ) : null}
           </li>

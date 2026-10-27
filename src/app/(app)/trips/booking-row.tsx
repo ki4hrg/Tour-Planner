@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import type { BookingStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,14 +31,12 @@ import {
   type PaymentOffsetUnit,
 } from "@/lib/payment-schedule";
 import {
-  setVenueBookingStatus,
-  setBookingStatus,
   upsertVenueBooking,
   addPayment,
   deletePayment,
   setPaymentSchedule,
 } from "./actions";
-import { StatusControl } from "./status-control";
+import { WorkflowControl } from "./workflow-control";
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
@@ -171,10 +168,11 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
 }
 
 export function coverageLine(row: VenueBookingRow): string {
+  const planned = row.sessions.filter((s) => s.planned).length;
+  const timed = row.sessions.length - planned;
   return [
-    row.sessions.length
-      ? `${row.sessions.length} session${row.sessions.length === 1 ? "" : "s"}`
-      : null,
+    timed ? `${timed} session${timed === 1 ? "" : "s"}` : null,
+    planned ? `${planned} planned` : null,
     row.nightCount
       ? `${row.nightCount} night${row.nightCount === 1 ? "" : "s"}`
       : null,
@@ -896,12 +894,10 @@ export function VenueRow({
         </TableCell>
         <TableCell>
           {row.bookable ? (
-            <StatusControl
-              status={row.status}
+            <WorkflowControl
+              target={{ tripId, locationId: row.locationId }}
+              progress={row.progress}
               canEdit={canEdit}
-              onSet={(status) =>
-                setVenueBookingStatus(tripId, row.locationId, status)
-              }
             />
           ) : (
             <span className="text-xs italic text-muted-foreground">
@@ -985,12 +981,10 @@ export function VenueCard({
         </button>
         <span className="shrink-0">
           {row.bookable ? (
-            <StatusControl
-              status={row.status}
+            <WorkflowControl
+              target={{ tripId, locationId: row.locationId }}
+              progress={row.progress}
               canEdit={canEdit}
-              onSet={(status) =>
-                setVenueBookingStatus(tripId, row.locationId, status)
-              }
             />
           ) : (
             <span className="text-xs italic text-muted-foreground">
@@ -1081,10 +1075,10 @@ export function ItemRow({
         ) : null}
       </TableCell>
       <TableCell>
-        <StatusControl
-          status={row.status}
+        <WorkflowControl
+          target={{ bookingId: row.bookingId }}
+          progress={row.progress}
           canEdit={canEdit}
-          onSet={(status: BookingStatus) => setBookingStatus(row.bookingId, status)}
         />
       </TableCell>
     </TableRow>
@@ -1141,12 +1135,10 @@ export function ItemCard({
           </span>
         </span>
         <span className="shrink-0">
-          <StatusControl
-            status={row.status}
+          <WorkflowControl
+            target={{ bookingId: row.bookingId }}
+            progress={row.progress}
             canEdit={canEdit}
-            onSet={(status: BookingStatus) =>
-              setBookingStatus(row.bookingId, status)
-            }
           />
         </span>
       </div>

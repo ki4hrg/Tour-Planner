@@ -85,7 +85,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Trip Details",
       description:
-        "Get full details of a specific trip including day count, stay count, and booking status summary (counts by status across all items — NOT_BOOKED, REQUESTED, TENTATIVELY_CONFIRMED, CONFIRMED, FINALIZED, NOT_NEEDED). Use list-trips first to find the trip ID.",
+        "Get full details of a specific trip including day count, stay count, and booking status summary (counts by coarse status across all bookings — PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED; workflow stages via list-bookings). Use list-trips first to find the trip ID.",
       inputSchema: { tripId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
