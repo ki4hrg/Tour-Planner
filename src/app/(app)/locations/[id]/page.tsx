@@ -13,8 +13,13 @@ import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
 import { agreedTotal, tripHeadcount } from "@/lib/costs";
 import { bookingStageText } from "@/lib/trips";
-import { BOOKING_PROGRESS_SELECT, progressView } from "@/lib/booking-workflow";
+import {
+  BOOKING_PROGRESS_SELECT,
+  progressView,
+  upcomingStep,
+} from "@/lib/booking-workflow";
 import { LocationWorkflowSelect } from "../location-workflow-select";
+import { ProgressList, type ProgressLine } from "../../trips/booking-progress";
 import {
   resolveSchedule,
   scheduleAttention,
@@ -210,6 +215,49 @@ export default async function LocationDetailPage({
     hasLodging: t.stays.length > 0,
   }));
 
+  // Booking progress: this venue's engagement on every active trip that hasn't
+  // ended (or has no dates yet) and touches it — the one place to move the
+  // venue's bookings along across trips. A trip with no engagement yet shows
+  // the workflow its first tick will seed.
+  const progressTripRows = location.bookable
+    ? await prisma.trip.findMany({
+        where: {
+          isTemplate: false,
+          status: "ACTIVE",
+          OR: [{ endDate: null }, { endDate: { gte: today } }],
+          AND: {
+            OR: [
+              { bookings: { some: { locationId: id } } },
+              { stays: { some: { locationId: id } } },
+              {
+                days: {
+                  some: {
+                    scheduleItems: { some: { sites: { some: { locationId: id } } } },
+                  },
+                },
+              },
+              { days: { some: { plannedLocations: { some: { locationId: id } } } } },
+            ],
+          },
+        },
+        orderBy: [{ startDate: { sort: "asc", nulls: "last" } }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          bookings: { where: { locationId: id }, select: BOOKING_PROGRESS_SELECT },
+        },
+      })
+    : [];
+  const progressLines: ProgressLine[] = progressTripRows.map((t) => ({
+    key: t.id,
+    name: t.name,
+    href: bookingDashboardHref(t.id, id),
+    detail: t.startDate ? formatDate(t.startDate) : "No dates",
+    target: { tripId: t.id, locationId: id },
+    progress: progressView(t.bookings[0] ?? null, location.defaultWorkflowId),
+  }));
+
   // Visit history: which non-template trips this venue appears in, newest first.
   // Timed schedule-item stops and rough-plan (time-less) day assignments are
   // counted separately so an unfirmed plan still shows up here.
@@ -265,6 +313,15 @@ export default async function LocationDetailPage({
           id: true,
           status: true,
           stageLabel: true,
+          workflow: {
+            select: {
+              steps: {
+                orderBy: { sortOrder: "asc" },
+                select: { id: true, label: true, sortOrder: true, status: true },
+              },
+            },
+          },
+          stepCompletions: { select: { stepId: true } },
           bookedOn: true,
           createdAt: true,
           agreedAmount: true,
@@ -312,6 +369,9 @@ export default async function LocationDetailPage({
         startDate: b.trip!.startDate,
         status: b.status,
         stageLabel: b.stageLabel,
+        nextStep: b.workflow
+          ? (upcomingStep(b.workflow.steps, b.stepCompletions, b.status)?.label ?? null)
+          : null,
         currency: b.agreedCurrency,
         // Set only for a per-person rate whose trip has no headcount.
         unresolvedRate: rate != null && agreed == null ? rate : null,
@@ -409,6 +469,17 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {progressLines.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Booking progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProgressList lines={progressLines} canEdit={canEdit} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -520,7 +591,7 @@ export default async function LocationDetailPage({
                     </Link>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {e.startDate ? formatDate(e.startDate) : "—"} ·{" "}
-                      {bookingStageText(e)}
+                      {e.nextStep ? `Next: ${e.nextStep}` : bookingStageText(e)}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">

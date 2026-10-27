@@ -8,6 +8,8 @@ import {
 } from "@/lib/trips";
 import { regionOptions } from "@/lib/regions";
 import { ItineraryEditor } from "../../itinerary-editor";
+import { VenueEngagementsProvider } from "../../venue-engagements";
+import { loadVenueEngagements } from "@/lib/venue-engagements";
 
 export const dynamic = "force-dynamic";
 
@@ -101,26 +103,39 @@ export default async function ItineraryPage({
     name: regionName.get(o.id) ?? o.label,
   }));
 
+  // Each venue's (trip, location) engagement, shown beside the venue.
+  const engagements = await loadVenueEngagements(
+    trip.id,
+    trip.days.flatMap((d) =>
+      d.scheduleItems.flatMap((it) => it.sites.map((s) => s.locationId)),
+    ),
+  );
+
   return (
     <div className="space-y-6">
-
-      <ItineraryEditor
+      <VenueEngagementsProvider
         tripId={trip.id}
         canEdit={canEdit}
-        hasStartDate={trip.startDate != null}
-        isTemplate={trip.isTemplate}
-        days={trip.days.map(serializeDay)}
-        categories={categories}
-        locations={locations.map((l) => ({
-          id: l.id,
-          name: l.name,
-          region: l.region?.name ?? null,
-          tagged: l.tripTypes.length > 0,
-        }))}
-        contacts={contacts}
-        presentations={presentations}
-        cities={cities}
-      />
+        engagements={engagements}
+      >
+        <ItineraryEditor
+          tripId={trip.id}
+          canEdit={canEdit}
+          hasStartDate={trip.startDate != null}
+          isTemplate={trip.isTemplate}
+          days={trip.days.map(serializeDay)}
+          categories={categories}
+          locations={locations.map((l) => ({
+            id: l.id,
+            name: l.name,
+            region: l.region?.name ?? null,
+            tagged: l.tripTypes.length > 0,
+          }))}
+          contacts={contacts}
+          presentations={presentations}
+          cities={cities}
+        />
+      </VenueEngagementsProvider>
     </div>
   );
 }

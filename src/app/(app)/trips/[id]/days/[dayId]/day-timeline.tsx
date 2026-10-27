@@ -14,6 +14,7 @@ import type { DayLodgingSummary, SerializedScheduleItem } from "@/lib/trips";
 import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import { scheduleItemPrimaryLabel } from "@/lib/trips";
 import { TimelineGroups } from "../../../itinerary-timeline";
+import { VenueEngagementStatus } from "../../../venue-engagements";
 import { updateScheduleItem, shiftDaySchedule } from "../../../actions";
 
 // Local direct-call action helper — same shape as booking-row / itinerary-editor
@@ -62,6 +63,7 @@ export function DayTimeline({
         linkVenues
         showVenueContacts
         showGaps
+        renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
         renderItemExtra={
           canEdit
             ? (item) => <QuickEdit key={item.id} tripId={tripId} item={item} />

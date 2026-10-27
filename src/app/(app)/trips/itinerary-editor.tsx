@@ -4,6 +4,7 @@ import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { GripVertical, Lock } from "lucide-react";
+import { VenueEngagementStatus, VenueEngagementSteps } from "./venue-engagements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -738,7 +739,13 @@ function DayCard({
             ))}
           </ol>
         ) : (
-          <TimelineGroups items={day.items} showBookings linkVenues showGaps />
+          <TimelineGroups
+            items={day.items}
+            showBookings
+            linkVenues
+            showGaps
+            renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
+          />
         )}
       </div>
 
@@ -1115,13 +1122,14 @@ function ItemRow({
 
               {/* Member locations — the item's "where" (venue is never the heading). */}
               {item.sites.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-1">
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {item.sites.map((s) => (
-                    <span
-                      key={s.id}
-                      className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground"
-                    >
-                      {s.location.name}
+                    <span key={s.id} className="inline-flex flex-wrap items-center gap-1.5">
+                      <span className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {s.location.name}
+                      </span>
+                      {/* The venue engagement's next step + status. */}
+                      <VenueEngagementStatus locationId={s.locationId} />
                     </span>
                   ))}
                 </div>
@@ -2151,8 +2159,9 @@ function TravelFields({
 }
 
 // A venue item's booking lives on the (trip, location) engagement, not the item.
-// Link to it per member location; any legacy per-item bookings still show
-// (read-only) so old data isn't hidden.
+// Per member location: that engagement's step strip (acts on the one (trip,
+// location) booking, shared by every item at the venue) + a link to it; any
+// legacy per-item bookings still show (read-only) so old data isn't hidden.
 function VenueEngagementNote({
   tripId,
   item,
@@ -2163,15 +2172,16 @@ function VenueEngagementNote({
   const many = item.sites.length > 1;
   return (
     <div className="space-y-2 rounded-md border p-3">
-      <ul className="space-y-1 text-xs">
+      <ul className="space-y-2 text-xs">
         {item.sites.map((s) => (
-          <li key={s.id}>
+          <li key={s.id} className="space-y-1">
             <Link
               href={`/trips/${tripId}/booking?venue=${encodeURIComponent(s.locationId)}`}
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
             >
-              {many ? `${s.location.name} booking` : "Venue booking"} →
+              {many ? `${s.location.name} booking` : "Venue booking"}
             </Link>
+            <VenueEngagementSteps locationId={s.locationId} name={s.location.name} />
           </li>
         ))}
       </ul>
