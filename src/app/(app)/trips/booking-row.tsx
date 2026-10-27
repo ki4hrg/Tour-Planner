@@ -39,6 +39,7 @@ import {
   setPaymentSchedule,
 } from "./actions";
 import { WorkflowControl } from "./workflow-control";
+import { WaitingNote } from "./waiting-note";
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
@@ -977,11 +978,15 @@ export function VenueRow({
         </TableCell>
         <TableCell>
           {row.bookable ? (
-            <WorkflowControl
-              target={{ tripId, locationId: row.locationId }}
-              progress={row.progress}
-              canEdit={canEdit}
-            />
+            <>
+              <WorkflowControl
+                target={{ tripId, locationId: row.locationId }}
+                progress={row.progress}
+                canEdit={canEdit}
+                showAge={!row.waiting}
+              />
+              <WaitingNote waiting={row.waiting} className="mt-1 block" />
+            </>
           ) : (
             <span className="text-xs italic text-muted-foreground">
               No booking needed
@@ -1062,13 +1067,17 @@ export function VenueCard({
             ) : null}
           </span>
         </button>
-        <span className="shrink-0">
+        <span className="shrink-0 text-right">
           {row.bookable ? (
-            <WorkflowControl
-              target={{ tripId, locationId: row.locationId }}
-              progress={row.progress}
-              canEdit={canEdit}
-            />
+            <>
+              <WorkflowControl
+                target={{ tripId, locationId: row.locationId }}
+                progress={row.progress}
+                canEdit={canEdit}
+                showAge={!row.waiting}
+              />
+              <WaitingNote waiting={row.waiting} className="mt-1 block" />
+            </>
           ) : (
             <span className="text-xs italic text-muted-foreground">
               No booking needed
@@ -1162,7 +1171,9 @@ export function ItemRow({
           target={{ bookingId: row.bookingId }}
           progress={row.progress}
           canEdit={canEdit}
+          showAge={!row.waiting}
         />
+        <WaitingNote waiting={row.waiting} className="mt-1 block" />
       </TableCell>
     </TableRow>
     {open ? (
@@ -1217,12 +1228,14 @@ export function ItemCard({
               : ""}
           </span>
         </span>
-        <span className="shrink-0">
+        <span className="shrink-0 text-right">
           <WorkflowControl
             target={{ bookingId: row.bookingId }}
             progress={row.progress}
             canEdit={canEdit}
+            showAge={!row.waiting}
           />
+          <WaitingNote waiting={row.waiting} className="mt-1 block" />
         </span>
       </div>
 

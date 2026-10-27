@@ -1,5 +1,5 @@
-import type { BookingStatus } from "@prisma/client";
-import { toDateInput } from "./dates";
+import type { BookingStatus, StepActor } from "@prisma/client";
+import { parseDateInput, toDateInput } from "./dates";
 
 // Booking workflows (admin-defined milestone ladders) → a booking's coarse
 // status + stage. Pure, so the server sync layer (booking-workflow-sync.ts) and
@@ -21,11 +21,17 @@ export const BOOKING_STATUS_RANK: Record<BookingStatus, number> = {
 export const STEP_STATUSES = ["IN_PROGRESS", "CONFIRMED"] as const;
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
+/** Whose move a step is (BookingWorkflowStep.actor). */
+export const STEP_ACTORS = ["US", "VENUE"] as const satisfies readonly StepActor[];
+export type { StepActor };
+
 export type WorkflowStepLike = {
   id: string;
   label: string;
   sortOrder: number;
   status: BookingStatus;
+  // Who completes the step; absent (a caller that didn't load it) reads as US.
+  actor?: StepActor;
 };
 
 export type StepCompletionLike = { stepId: string; completedOn: Date };
@@ -96,6 +102,85 @@ export function upcomingStep<S extends WorkflowStepLike>(
   return ordered.slice(last + 1).find((s) => !done.has(s.id)) ?? null;
 }
 
+/**
+ * Whose move a booking is: the upcoming step (see `upcomingStep`), who owns
+ * it, and since when the ball has sat there — the latest tick on the booking,
+ * else `opened` (the booking's bookedOn ?? createdAt; null for an engagement
+ * not created yet). Null when nothing is pending.
+ */
+export type WaitingState<S extends WorkflowStepLike = WorkflowStepLike> = {
+  step: S;
+  actor: StepActor;
+  since: Date | null;
+};
+
+export function waitingOn<S extends WorkflowStepLike>(
+  steps: S[],
+  completions: StepCompletionLike[],
+  status: BookingStatus,
+  opened: Date | null,
+): WaitingState<S> | null {
+  const step = upcomingStep(steps, completions, status);
+  if (!step) return null;
+  const ids = new Set(steps.map((s) => s.id));
+  let since: Date | null = null;
+  for (const c of completions) {
+    if (!ids.has(c.stepId)) continue;
+    if (!since || c.completedOn.getTime() > since.getTime()) since = c.completedOn;
+  }
+  return { step, actor: step.actor ?? "US", since: since ?? opened };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole days from `since` to `today` (both date-only); never negative. */
+export function daysWaiting(since: Date, today: Date): number {
+  return Math.max(0, Math.round((today.getTime() - since.getTime()) / DAY_MS));
+}
+
+/** Client-safe waiting state as the dashboard rows / MCP carry it. */
+export type WaitingView = {
+  stepId: string;
+  stepLabel: string;
+  actor: StepActor;
+  since: string | null; // "yyyy-mm-dd"
+  days: number | null; // days waiting as of the server's today
+};
+
+export function waitingView(w: WaitingState | null, today: Date): WaitingView | null {
+  if (!w) return null;
+  return {
+    stepId: w.step.id,
+    stepLabel: w.step.label,
+    actor: w.actor,
+    since: w.since ? toDateInput(w.since) : null,
+    days: w.since ? daysWaiting(w.since, today) : null,
+  };
+}
+
+/**
+ * The waiting state from a serialized `BookingProgressView` (dates as
+ * yyyy-mm-dd) against the workflow it follows — what the client controls use.
+ * `doneIds` overrides the completions (optimistic ticks); a tick not yet in
+ * `progress` is dated `today`.
+ */
+export function waitingFromView<S extends WorkflowStepLike>(
+  steps: S[],
+  progress: Pick<BookingProgressView, "status" | "completions" | "openedOn">,
+  today: Date,
+  doneIds?: Set<string>,
+): WaitingState<S> | null {
+  const dated = new Map(
+    progress.completions.map((c) => [c.stepId, parseDateInput(c.completedOn) ?? today]),
+  );
+  const ids = doneIds ?? new Set(dated.keys());
+  const completions = [...ids].map((stepId) => ({
+    stepId,
+    completedOn: dated.get(stepId) ?? today,
+  }));
+  return waitingOn(steps, completions, progress.status, parseDateInput(progress.openedOn));
+}
+
 /** A booking's workflow state as the control needs it (client-safe). */
 export type BookingProgressView = {
   // False for a venue engagement not created yet — the first touch creates it.
@@ -105,6 +190,9 @@ export type BookingProgressView = {
   stageOn: string | null; // "yyyy-mm-dd"
   workflowId: string | null;
   completions: { stepId: string; completedOn: string }[];
+  // bookedOn ?? createdAt ("yyyy-mm-dd") — how long the ball has sat with
+  // someone when no step is ticked yet. Null for a not-yet-created engagement.
+  openedOn?: string | null;
   // The venue's default workflow (seeds a not-yet-created engagement).
   locationDefaultWorkflowId?: string | null;
 };
@@ -117,6 +205,8 @@ export function progressView(
     stageOn: Date | null;
     workflowId: string | null;
     stepCompletions?: { stepId: string; completedOn: Date }[];
+    bookedOn?: Date | null;
+    createdAt?: Date | null;
   } | null,
   locationDefaultWorkflowId?: string | null,
 ): BookingProgressView {
@@ -130,6 +220,11 @@ export function progressView(
       stepId: c.stepId,
       completedOn: toDateInput(c.completedOn),
     })),
+    openedOn: b?.bookedOn
+      ? toDateInput(b.bookedOn)
+      : b?.createdAt
+        ? toDateInput(b.createdAt)
+        : null,
     locationDefaultWorkflowId: locationDefaultWorkflowId ?? null,
   };
 }
@@ -142,4 +237,15 @@ export const BOOKING_PROGRESS_SELECT = {
   stageOn: true,
   workflowId: true,
   stepCompletions: { select: { stepId: true, completedOn: true } },
+  bookedOn: true,
+  createdAt: true,
+} as const;
+
+/** Prisma select for a workflow's steps as the resolver needs them. */
+export const WORKFLOW_STEP_SELECT = {
+  id: true,
+  label: true,
+  sortOrder: true,
+  status: true,
+  actor: true,
 } as const;

@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { resolveBookingProgress, nextStep, upcomingStep } from "./booking-workflow";
+import {
+  resolveBookingProgress,
+  nextStep,
+  upcomingStep,
+  waitingOn,
+  daysWaiting,
+  waitingView,
+  waitingFromView,
+} from "./booking-workflow";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -99,5 +107,94 @@ describe("upcomingStep", () => {
   it("is null once the last step is done, or when not needed", () => {
     expect(upcomingStep(steps, done("meal"), "IN_PROGRESS")).toBeNull();
     expect(upcomingStep(steps, [], "NOT_NEEDED")).toBeNull();
+  });
+});
+
+describe("waitingOn", () => {
+  const owned = steps.map((s) => ({
+    ...s,
+    actor: s.id === "avail" || s.id === "conf" ? ("VENUE" as const) : ("US" as const),
+  }));
+  const at = (stepId: string, on: string) => ({ stepId, completedOn: d(on) });
+
+  it("is our move on the first step, waiting since the booking opened", () => {
+    expect(waitingOn(owned, [], "PLANNED", d("2026-10-01"))).toMatchObject({
+      step: { id: "contact" },
+      actor: "US",
+      since: d("2026-10-01"),
+    });
+  });
+  it("waits on the venue since the latest tick", () => {
+    const w = waitingOn(
+      owned,
+      [at("contact", "2026-10-05"), at("form", "2026-10-12")],
+      "IN_PROGRESS",
+      d("2026-10-01"),
+    );
+    // "form" done leaves "avail" skipped (upcoming = after the latest done in order).
+    expect(w?.step.id).toBe("conf");
+    expect(w?.actor).toBe("VENUE");
+    expect(w?.since).toEqual(d("2026-10-12"));
+  });
+  it("uses the most recent completedOn even when ticked out of order", () => {
+    const w = waitingOn(
+      owned,
+      [at("avail", "2026-10-20"), at("contact", "2026-10-02")],
+      "IN_PROGRESS",
+      null,
+    );
+    expect(w?.step.id).toBe("form");
+    expect(w?.actor).toBe("US");
+    expect(w?.since).toEqual(d("2026-10-20"));
+  });
+  it("ignores completions from another workflow; a missing actor reads as US", () => {
+    const w = waitingOn(steps, [at("stale", "2026-10-25")], "PLANNED", null);
+    expect(w).toEqual({ step: steps[0], actor: "US", since: null });
+  });
+  it("is null when nothing is pending", () => {
+    expect(waitingOn(owned, [at("meal", "2026-10-01")], "CONFIRMED", null)).toBeNull();
+    expect(waitingOn(owned, [], "NOT_NEEDED", d("2026-10-01"))).toBeNull();
+  });
+});
+
+describe("daysWaiting / waitingView", () => {
+  it("counts whole days, never negative", () => {
+    expect(daysWaiting(d("2026-10-15"), d("2026-10-27"))).toBe(12);
+    expect(daysWaiting(d("2026-10-27"), d("2026-10-27"))).toBe(0);
+    expect(daysWaiting(d("2026-10-30"), d("2026-10-27"))).toBe(0);
+  });
+  it("serializes the state against today", () => {
+    const step = { ...steps[1], actor: "VENUE" as const };
+    expect(
+      waitingView({ step, actor: "VENUE", since: d("2026-10-15") }, d("2026-10-27")),
+    ).toEqual({
+      stepId: "avail",
+      stepLabel: "Availability confirmed",
+      actor: "VENUE",
+      since: "2026-10-15",
+      days: 12,
+    });
+    expect(
+      waitingView({ step, actor: "VENUE", since: null }, d("2026-10-27"))?.days,
+    ).toBeNull();
+    expect(waitingView(null, d("2026-10-27"))).toBeNull();
+  });
+});
+
+describe("waitingFromView", () => {
+  const view = {
+    status: "IN_PROGRESS" as const,
+    completions: [{ stepId: "contact", completedOn: "2026-10-05" }],
+    openedOn: "2026-10-01",
+  };
+  it("parses the serialized dates", () => {
+    const w = waitingFromView(steps, view, d("2026-10-27"));
+    expect(w?.step.id).toBe("avail");
+    expect(w?.since).toEqual(d("2026-10-05"));
+  });
+  it("dates an optimistic tick today", () => {
+    const w = waitingFromView(steps, view, d("2026-10-27"), new Set(["contact", "avail"]));
+    expect(w?.step.id).toBe("form");
+    expect(w?.since).toEqual(d("2026-10-27"));
   });
 });

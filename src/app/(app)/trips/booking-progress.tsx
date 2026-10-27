@@ -21,7 +21,14 @@ import {
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
-import { upcomingStep, type BookingProgressView } from "@/lib/booking-workflow";
+import {
+  daysWaiting,
+  upcomingStep,
+  waitingFromView,
+  waitingView,
+  type BookingProgressView,
+  type WaitingView,
+} from "@/lib/booking-workflow";
 import { BOOKING_STATUS_CLASSES } from "@/lib/trips";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
@@ -33,6 +40,7 @@ import {
 } from "./actions";
 import { WorkflowControl } from "./workflow-control";
 import { coverageLine } from "./booking-row";
+import { ACTOR_PREFIX, OURS_CHIP_CLASSES, WaitingNote } from "./waiting-note";
 
 // Progress view of the booking dashboard: every booking on the trip, whatever
 // workflow it follows, one row each with its whole step strip — so a planner
@@ -41,8 +49,9 @@ import { coverageLine } from "./booking-row";
 // by label, since the rows may follow different workflows).
 //
 // The pieces are reused elsewhere: `ProgressList` on the Location page (one
-// row per trip engaging that venue), `CompactProgress` ("Next: …" + the status
-// control) wherever a booking is shown in a single line.
+// row per trip engaging that venue), `CompactProgress` ("Your move: …" /
+// "Waiting on venue: …" + the status control) wherever a booking is shown in a
+// single line. Owners (whose move) come from ./waiting-note.
 
 /** The workflow a booking follows — for a not-yet-created engagement, the one its first touch will seed. */
 export function useWorkflowFor() {
@@ -70,7 +79,7 @@ function StepChip({
   step: WorkflowStepOption;
   done: boolean;
   doneOn?: string;
-  isNext: boolean;
+  isNext: boolean; // the upcoming step — outlined, amber when it's ours
   canEdit: boolean;
   pending: boolean;
   onToggle: () => void;
@@ -81,14 +90,22 @@ function StepChip({
       type="button"
       disabled={!canEdit || pending}
       aria-pressed={done}
-      title={done ? `${step.label}${doneOn ? ` · ${formatDate(doneOn)}` : ""}` : step.label}
+      title={[
+        step.label,
+        step.actor === "VENUE" ? "Venue" : "Us",
+        done && doneOn ? formatDate(doneOn) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       onClick={onToggle}
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default",
         done
           ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[step.status])
           : isNext
-            ? "border-foreground/40 text-foreground"
+            ? step.actor === "VENUE"
+              ? "border-foreground/30 text-muted-foreground"
+              : cn("font-medium", OURS_CHIP_CLASSES)
             : "border-dashed text-muted-foreground",
         canEdit && !done && "hover:border-foreground/60",
       )}
@@ -163,9 +180,11 @@ function useDoneSteps(lines: { key: string; progress: BookingProgressView }[]) {
 }
 
 /**
- * Compact single-line progress: the next step as a one-click chip ("Next: Sign
- * agreement" — ticks it), then the status control (whole ladder in its
- * popover). Read-only chip for viewers.
+ * Compact single-line progress: the upcoming step as a one-click chip led by
+ * its owner ("Your move: Sign agreement", "Waiting on venue: Confirm
+ * availability · 12d" — clicking ticks it), then the status control (whole
+ * ladder in its popover). A venue not engaged yet reads "Next: …". Read-only
+ * chip for viewers.
  */
 export function CompactProgress({
   target,
@@ -182,13 +201,15 @@ export function CompactProgress({
   const [pending, start] = useTransition();
   const [done, patchDone] = useDoneSteps([{ key: "b", progress }]);
   const doneSet = done.get("b") ?? new Set<string>();
-  const next = workflow
-    ? upcomingStep(
-        workflow.steps,
-        [...doneSet].map((stepId) => ({ stepId })),
-        progress.status,
-      )
+  // todayUtc() isolates "now" in lib (react-hooks/purity), like daysSince.
+  const today = todayUtc();
+  const waiting = workflow
+    ? waitingFromView(workflow.steps, progress, today, doneSet)
     : null;
+  const next = waiting?.step ?? null;
+  const days = waiting?.since ? daysWaiting(waiting.since, today) : 0;
+  // Owner-led once the booking exists; an untouched venue just shows "Next".
+  const owned = progress.exists && waiting != null;
 
   const tick = (stepId: string) =>
     start(async () => {
@@ -208,10 +229,28 @@ export function CompactProgress({
           pending={pending}
           onToggle={() => tick(next.id)}
         >
-          <span className="text-muted-foreground">Next:</span> {next.label}
+          {owned ? (
+            <>
+              <span className={cn(waiting.actor === "US" && "font-semibold")}>
+                {ACTOR_PREFIX[waiting.actor]}:
+              </span>{" "}
+              {next.label}
+              {days > 0 ? <span className="opacity-70"> · {days}d</span> : null}
+            </>
+          ) : (
+            <>
+              <span className="text-muted-foreground">Next:</span> {next.label}
+            </>
+          )}
         </StepChip>
       ) : null}
-      <WorkflowControl target={target} progress={progress} canEdit={canEdit} showAge={showAge} />
+      <WorkflowControl
+        target={target}
+        progress={progress}
+        canEdit={canEdit}
+        // The owner chip already says how long it's been waiting.
+        showAge={showAge && !owned}
+      />
     </span>
   );
 }
@@ -262,6 +301,16 @@ export function BookingStepStrip({
 }
 
 const normalize = (label: string) => label.trim().toLowerCase();
+
+/** Client-resolved `WaitingView` (optimistic done set) for `WaitingNote`. */
+function waitingNoteFor(
+  steps: WorkflowStepOption[],
+  progress: BookingProgressView,
+  doneIds?: Set<string>,
+): WaitingView | null {
+  const today = todayUtc();
+  return waitingView(waitingFromView(steps, progress, today, doneIds), today);
+}
 
 export type ProgressLine = {
   key: string;
@@ -479,6 +528,16 @@ export function ProgressList({
                   <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {[line.detail, workflow?.name].filter(Boolean).join(" · ")}
                   </p>
+                  {line.progress.exists && workflow ? (
+                    <WaitingNote
+                      className="block"
+                      waiting={waitingNoteFor(
+                        workflow.steps,
+                        line.progress,
+                        done.get(line.key),
+                      )}
+                    />
+                  ) : null}
                 </div>
               </div>
 
@@ -498,6 +557,8 @@ export function ProgressList({
                   target={line.target}
                   progress={line.progress}
                   canEdit={canEdit}
+                  // The owner note beside the name already says how long.
+                  showAge={!(line.progress.exists && workflow)}
                 />
               </div>
             </li>

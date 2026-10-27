@@ -58,11 +58,11 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
+incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting), `add-booking` (P, upserts the `(trip, location)`
 engagement — refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
 `update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
-`list-booking-workflows` (V, resolves `workflowId`/`stepId`), `set-booking-step` (P, tick/untick
+`list-booking-workflows` (V, resolves `workflowId`/`stepId`; each step's `actor`), `set-booking-step` (P, tick/untick
 one step, back-datable), `set-booking-workflow` (P, switch workflow; clears ticked steps),
 `list-payments` (V, the payment log +
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
@@ -378,7 +378,18 @@ npm test                          # vitest
   (`trips/booking-progress.tsx`, `?view=progress`) lists every booking across
   workflows with its full step strip — one-click step toggles, plus multi-select
   "Mark done" matched by step LABEL (`setBookingStepsBulk`), since selected rows
-  may follow different workflows. Rough-plan planned locations also
+  may follow different workflows. **Owner per step**: each step has an
+  `actor` (`StepActor` US | VENUE, default US, set per step at `/admin/workflows`);
+  the booking's upcoming step (`upcomingStep`) says whose move it is.
+  `waitingOn`/`waitingView` (pure, unit-tested) give `{ step, actor, since }` —
+  `since` = the latest tick, else `bookedOn ?? createdAt` — and days waiting
+  against a passed-in `today`. Surfaces: `CompactProgress` / Progress view /
+  Location page lead with "Your move: …" (amber) vs "Waiting on venue: … · 12d"
+  (muted, `waiting-note.tsx`); dashboard rows carry `waiting` (only for a booking
+  that exists — pass `workflows: loadWorkflowCatalog()` to `buildDashboardRows`),
+  feeding the "Your move" attention filter (trip dashboard + `/bookings`,
+  `isYourMove`) and the home card's "Your move" section; MCP `list-bookings`
+  returns it. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
 - **Fixed-time items**: `ScheduleItem.fixedTime` marks times the group doesn't

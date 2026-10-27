@@ -24,7 +24,14 @@ import {
 import { agreedTotal as resolveAgreedTotal } from "./costs";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { stayNights } from "./stays";
-import { progressView, type BookingProgressView } from "./booking-workflow";
+import {
+  progressView,
+  waitingFromView,
+  waitingView,
+  type BookingProgressView,
+  type WaitingView,
+  type WorkflowStepLike,
+} from "./booking-workflow";
 
 // Serialized, client-safe rows for the booking dashboard. A "venue" row is the
 // single engagement for a (trip, location) — it auto-covers every schedule item the
@@ -52,6 +59,10 @@ export type VenueBookingRow = {
   bookingId: string | null; // null until the engagement is first created
   status: BookingStatus;
   progress: BookingProgressView; // workflow state for the status control
+  // Whose move it is (the upcoming workflow step + its owner), when the
+  // caller passed `workflows`; null with no engagement yet, no workflow, or
+  // nothing pending.
+  waiting: WaitingView | null;
   label: string | null;
   confirmationRef: string | null;
   notes: string | null;
@@ -96,6 +107,7 @@ export type ItemBookingRow = {
   label: string;
   status: BookingStatus;
   progress: BookingProgressView;
+  waiting: WaitingView | null;
   confirmationRef: string | null;
   contactName: string | null;
   dayIndex: number;
@@ -136,6 +148,8 @@ type ProgressInput = {
   stageOn?: Date | null;
   workflowId?: string | null;
   stepCompletions?: { stepId: string; completedOn: Date }[];
+  bookedOn?: Date | null;
+  createdAt?: Date | null;
 };
 
 const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
@@ -146,6 +160,8 @@ const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
       stageOn: b.stageOn ?? null,
       workflowId: b.workflowId ?? null,
       stepCompletions: b.stepCompletions,
+      bookedOn: b.bookedOn,
+      createdAt: b.createdAt,
     },
     locationDefault,
   );
@@ -215,6 +231,9 @@ export type DashboardData = {
   // Multiplies PER_PERSON agreed prices (`tripHeadcount(trip)`); null/absent
   // leaves a per-person total unknown.
   headcount?: number | null;
+  // The workflow catalog (WORKFLOW_STEP_SELECT steps) — resolves each row's
+  // `waiting`; absent leaves it null.
+  workflows?: { id: string; steps: WorkflowStepLike[] }[];
 };
 
 type VenueAccum = { sessions: CoveredSession[]; dates: Date[]; nights: number };
@@ -230,6 +249,16 @@ export function buildDashboardRows(data: DashboardData): {
   itemRows: ItemBookingRow[];
 } {
   const locById = new Map(data.locations.map((l) => [l.id, l]));
+  const today = todayUtc();
+  // Whose move, on a booking that exists (an untouched venue has no ball in
+  // play yet — "Window open" / "Unconfirmed" cover it) and follows a workflow.
+  const workflowById = new Map((data.workflows ?? []).map((w) => [w.id, w]));
+  const waitingFor = (progress: BookingProgressView): WaitingView | null => {
+    const wf = progress.exists && progress.workflowId
+      ? workflowById.get(progress.workflowId)
+      : undefined;
+    return wf ? waitingView(waitingFromView(wf.steps, progress, today), today) : null;
+  };
   const engByLoc = new Map<string, EngagementInput>();
   for (const e of data.engagements) {
     if (e.locationId) engByLoc.set(e.locationId, e);
@@ -271,12 +300,14 @@ export function buildDashboardRows(data: DashboardData): {
       }
       // Site-less / one-off item bookings stay their own rows.
       for (const b of item.bookings) {
+        const progress = toProgress(b);
         itemRows.push({
           kind: "item",
           bookingId: b.id,
           label: b.label ?? label,
           status: b.status,
-          progress: toProgress(b),
+          progress,
+          waiting: waitingFor(progress),
           confirmationRef: b.confirmationRef,
           contactName: b.bookedContact?.name ?? null,
           dayIndex: day.dayIndex,
@@ -316,7 +347,6 @@ export function buildDashboardRows(data: DashboardData): {
   }
 
   const venueRows: VenueBookingRow[] = [];
-  const today = todayUtc();
   for (const [locationId, v] of venues) {
     const loc = locById.get(locationId);
     const eng = engByLoc.get(locationId) ?? null;
@@ -358,6 +388,7 @@ export function buildDashboardRows(data: DashboardData): {
     const earliest = earliestCoveredDate(v.dates);
     const win = bookingWindow(earliest, loc?.bookingOpensLeadDays ?? null);
     const status: BookingStatus = eng?.status ?? "PLANNED";
+    const progress = toProgress(eng, loc?.defaultWorkflowId);
     // Not-bookable sites and ones deliberately marked "not needed" never need attention.
     const inPlay = bookable && status !== "NOT_NEEDED";
 
@@ -374,7 +405,8 @@ export function buildDashboardRows(data: DashboardData): {
       bookable,
       bookingId: eng?.id ?? null,
       status,
-      progress: toProgress(eng, loc?.defaultWorkflowId),
+      progress,
+      waiting: bookable ? waitingFor(progress) : null,
       label: eng?.label ?? null,
       confirmationRef: eng?.confirmationRef ?? null,
       notes: eng?.notes ?? null,

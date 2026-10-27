@@ -8,6 +8,7 @@ import { tripHeadcount } from "@/lib/costs";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { loadWorkflowCatalog } from "@/lib/booking-workflow-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -162,6 +163,7 @@ export default async function BookingDashboardPage({
     locations,
     tripStartDate: trip.startDate,
     headcount: tripHeadcount(trip),
+    workflows: await loadWorkflowCatalog(),
   });
 
   return (

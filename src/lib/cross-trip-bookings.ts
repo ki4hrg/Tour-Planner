@@ -46,6 +46,7 @@ export type RowFlags = {
   missingPrice: boolean;
   paymentOverdue: boolean; // row.overdueAmount (in row.agreedCurrency) > 0
   unconfirmed: boolean;
+  yourMove: boolean; // a started booking whose upcoming workflow step is ours
 };
 
 export type VenueTripRow = {
@@ -72,6 +73,7 @@ export type AttentionFilters = {
   missingPrice: boolean;
   unconfirmed: boolean;
   paymentOverdue: boolean;
+  yourMove: boolean;
 };
 
 export const ALL_ATTENTION_FILTERS: AttentionFilters = {
@@ -79,6 +81,7 @@ export const ALL_ATTENTION_FILTERS: AttentionFilters = {
   missingPrice: true,
   unconfirmed: true,
   paymentOverdue: true,
+  yourMove: true,
 };
 
 export const NO_ATTENTION_FILTERS: AttentionFilters = {
@@ -86,11 +89,35 @@ export const NO_ATTENTION_FILTERS: AttentionFilters = {
   missingPrice: false,
   unconfirmed: false,
   paymentOverdue: false,
+  yourMove: false,
 };
 
 /** Bookable and not deliberately skipped — the only rows that can need work. */
 export function rowInPlay(row: VenueBookingRow): boolean {
   return row.bookable && row.status !== "NOT_NEEDED";
+}
+
+/**
+ * The ball is in our court: an engagement already underway (a booking record
+ * exists — an untouched venue is "Window open" / "Unconfirmed" instead) whose
+ * upcoming workflow step is ours. Works for item rows too (always started).
+ */
+export function isYourMove(row: {
+  waiting: VenueBookingRow["waiting"];
+  bookingId: string | null;
+  status: BookingStatus;
+}): boolean {
+  return (
+    row.bookingId != null &&
+    row.status !== "NOT_NEEDED" &&
+    row.waiting?.actor === "US"
+  );
+}
+
+/** "Your move: Sign agreement · 12d" / "Waiting on venue: Confirm availability · 3d". */
+export function waitingText(w: NonNullable<VenueBookingRow["waiting"]>): string {
+  const who = w.actor === "US" ? "Your move" : "Waiting on venue";
+  return `${who}: ${w.stepLabel}${w.days ? ` · ${w.days}d` : ""}`;
 }
 
 /** Same predicate as the single-trip dashboard's attention filter checkboxes. */
@@ -103,13 +130,14 @@ export function rowMatchesFilters(
     (f.windowOpen && row.open && !isBookingSecured(row.status)) ||
     (f.missingPrice && row.isMissingCost) ||
     (f.unconfirmed && !isBookingSecured(row.status)) ||
-    (f.paymentOverdue && row.overdueAmount > 0)
+    (f.paymentOverdue && row.overdueAmount > 0) ||
+    (f.yourMove && isYourMove(row))
   );
 }
 
 /**
  * "Needs attention" for sorting venues to the top: an unsecured booking whose
- * window is open, an overdue payment, or no usable price.
+ * window is open, an overdue payment, no usable price, or our move.
  */
 export function rowNeedsAttention(row: VenueBookingRow): boolean {
   return rowMatchesFilters(row, {
@@ -117,6 +145,7 @@ export function rowNeedsAttention(row: VenueBookingRow): boolean {
     missingPrice: true,
     unconfirmed: false,
     paymentOverdue: true,
+    yourMove: true,
   });
 }
 
@@ -128,6 +157,7 @@ export function rowFlags(row: VenueBookingRow): RowFlags {
     missingPrice: only("missingPrice"),
     paymentOverdue: only("paymentOverdue"),
     unconfirmed: only("unconfirmed"),
+    yourMove: only("yourMove"),
   };
 }
 
@@ -351,7 +381,7 @@ export function buildVenueEmail(group: VenueGroup): {
 
 // --- Action list (home dashboard) --------------------------------------------
 
-export type ActionReason = "paymentOverdue" | "windowOpen" | "missingPrice";
+export type ActionReason = "paymentOverdue" | "yourMove" | "windowOpen" | "missingPrice";
 
 export type ActionItem = {
   key: string; // `${tripId}:${locationId}`
@@ -366,15 +396,16 @@ export type ActionItem = {
 
 const REASON_RANK: Record<ActionReason, number> = {
   paymentOverdue: 0,
-  windowOpen: 1,
-  missingPrice: 2,
+  yourMove: 1,
+  windowOpen: 2,
+  missingPrice: 3,
 };
 
 /**
  * Flatten venue groups into a "needs action" list, one item per trip×venue
  * row that needs attention: overdue payments first (soonest trip first —
- * amounts can be in different currencies, so they aren't compared),
- * then open booking windows (earliest-opened first), then missing prices (by
+ * amounts can be in different currencies, so they aren't compared), then
+ * bookings where it's our move (longest waiting first), then open booking windows (earliest-opened first), then missing prices (by
  * trip date). Merely-unconfirmed rows whose window isn't open are left out.
  */
 export function actionItems(groups: VenueGroup[]): ActionItem[] {
@@ -383,7 +414,9 @@ export function actionItems(groups: VenueGroup[]): ActionItem[] {
     for (const { trip, row, flags } of g.rows) {
       const reason: ActionReason | null = flags.paymentOverdue
         ? "paymentOverdue"
-        : flags.windowOpen
+        : flags.yourMove && row.waiting
+          ? "yourMove"
+          : flags.windowOpen
           ? "windowOpen"
           : flags.missingPrice
             ? "missingPrice"
@@ -396,7 +429,9 @@ export function actionItems(groups: VenueGroup[]): ActionItem[] {
       const text =
         reason === "paymentOverdue"
           ? `${formatMoney(row.overdueAmount, row.agreedCurrency)} overdue`
-          : reason === "windowOpen"
+          : reason === "yourMove" && row.waiting
+            ? waitingText(row.waiting)
+            : reason === "windowOpen"
             ? `Booking window open${row.earliest ? ` since ${formatDate(row.earliest)}` : ""} · ${status}`
             : "No price agreed";
       items.push({
@@ -413,7 +448,10 @@ export function actionItems(groups: VenueGroup[]): ActionItem[] {
         sortKey:
           reason === "windowOpen"
             ? (row.earliest ?? "9999")
-            : (trip.startDate ?? "9999"),
+            : reason === "yourMove"
+              ? // Longest wait first.
+                String(99999 - Math.min(99999, row.waiting?.days ?? 0)).padStart(5, "0")
+              : (trip.startDate ?? "9999"),
       });
     }
   }

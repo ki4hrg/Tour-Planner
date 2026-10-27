@@ -105,8 +105,63 @@ describe("buildDashboardRows — planned visits + workflow progress", () => {
       stageOn: "2026-10-20",
       workflowId: "wf-agreement",
       completions: [{ stepId: "s1", completedOn: "2026-10-20" }],
+      openedOn: null,
       locationDefaultWorkflowId: null,
     });
+    // No workflow catalog passed: whose move stays unresolved.
+    expect(venueRows[0].waiting).toBeNull();
+  });
+
+  it("resolves whose move from the workflow catalog, only once engaged", () => {
+    const workflows = [
+      {
+        id: "wf-agreement",
+        steps: [
+          { id: "s1", label: "Initial contact", sortOrder: 0, status: "IN_PROGRESS" as const, actor: "US" as const },
+          { id: "s2", label: "Availability confirmed", sortOrder: 1, status: "IN_PROGRESS" as const, actor: "VENUE" as const },
+          { id: "s3", label: "Sign agreement", sortOrder: 2, status: "CONFIRMED" as const, actor: "US" as const },
+        ],
+      },
+    ];
+    const { venueRows } = buildDashboardRows({
+      days: [
+        {
+          dayIndex: 1,
+          date: null,
+          scheduleItems: [],
+          plannedLocations: [{ locationId: "epworth" }, { locationId: "oxford" }],
+        },
+      ],
+      engagements: [
+        {
+          id: "b1",
+          locationId: "epworth",
+          label: null,
+          status: "IN_PROGRESS",
+          workflowId: "wf-agreement",
+          stepCompletions: [{ stepId: "s1", completedOn: d("2026-10-20") }],
+          createdAt: d("2026-10-01"),
+          confirmationRef: null,
+          notes: null,
+          bookedContactId: null,
+          bookedContact: null,
+        },
+      ],
+      stays: [],
+      locations: [loc("epworth"), loc("oxford", "wf-agreement")],
+      workflows,
+    });
+    const epworth = venueRows.find((r) => r.locationId === "epworth")!;
+    expect(epworth.progress.openedOn).toBe("2026-10-01");
+    expect(epworth.waiting).toMatchObject({
+      stepId: "s2",
+      stepLabel: "Availability confirmed",
+      actor: "VENUE",
+      since: "2026-10-20",
+    });
+    expect(epworth.waiting?.days).toBeGreaterThanOrEqual(0);
+    // Oxford has no engagement yet: no ball in play.
+    expect(venueRows.find((r) => r.locationId === "oxford")!.waiting).toBeNull();
   });
 });
 

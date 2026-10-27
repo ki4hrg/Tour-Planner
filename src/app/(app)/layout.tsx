@@ -3,6 +3,7 @@ import { AppNav } from "@/components/app-nav";
 import { OfflineBanner } from "@/components/offline-banner";
 import { BookingWorkflowsProvider } from "@/components/booking-workflows";
 import { prisma } from "@/lib/db";
+import { WORKFLOW_STEP_SELECT } from "@/lib/booking-workflow";
 
 // Authenticated shell. Middleware already gates these routes; we re-check here
 // so Server Components in this group can rely on a present session.
@@ -21,7 +22,7 @@ export default async function AppLayout({
       isDefault: true,
       steps: {
         orderBy: { sortOrder: "asc" },
-        select: { id: true, label: true, sortOrder: true, status: true },
+        select: WORKFLOW_STEP_SELECT,
       },
     },
   });

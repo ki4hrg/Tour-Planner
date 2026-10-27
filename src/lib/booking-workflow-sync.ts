@@ -9,7 +9,7 @@
 
 import type { BookingStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { resolveBookingProgress } from "@/lib/booking-workflow";
+import { resolveBookingProgress, WORKFLOW_STEP_SELECT } from "@/lib/booking-workflow";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -229,4 +229,20 @@ export async function setBookingStage(
   }
   await recomputeBooking(bookingId, db);
   return { ok: true };
+}
+
+/**
+ * The workflow catalog with each step's owner — what `buildDashboardRows`
+ * (`workflows`) and the MCP tools resolve "whose move" against.
+ */
+export function loadWorkflowCatalog(db: Db = prisma) {
+  return db.bookingWorkflow.findMany({
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      isDefault: true,
+      steps: { ...STEPS_ORDER, select: WORKFLOW_STEP_SELECT },
+    },
+  });
 }
