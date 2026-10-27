@@ -261,12 +261,18 @@ function StayRow({
 
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {/* Lodging's booking state IS the venue engagement — set it
-                    right here (the first status set creates the engagement). */}
+                    right here (the first status set creates the engagement).
+                    A site booked via a parent acts on the parent's. */}
                 <WorkflowControl
                   target={{ tripId, locationId: stay.locationId }}
                   progress={progress ?? progressView(null)}
                   canEdit={canEdit}
                 />
+                {stay.bookedVia ? (
+                  <span className="text-xs text-muted-foreground">
+                    via {stay.bookedVia.name}
+                  </span>
+                ) : null}
                 {stay.booking?.bookedContact ? (
                   <span className="text-xs text-muted-foreground">
                     {stay.booking.bookedContact.name}
@@ -278,7 +284,7 @@ function StayRow({
                   </span>
                 ) : null}
                 <Link
-                  href={`/trips/${tripId}/booking?venue=${stay.locationId}`}
+                  href={`/trips/${tripId}/booking?venue=${stay.bookedVia?.id ?? stay.locationId}`}
                   className="text-xs text-muted-foreground link-quiet"
                 >
                   Booking

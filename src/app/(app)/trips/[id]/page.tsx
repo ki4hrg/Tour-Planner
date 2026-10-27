@@ -24,6 +24,7 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
+import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
 import { agreedTotal, rollUpCosts, tripHeadcount } from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
@@ -135,7 +136,7 @@ export default async function TripOverviewPage({
   const costLocations = locationIds.length
     ? await prisma.location.findMany({
         where: { id: { in: locationIds } },
-        select: { id: true, name: true, costs: true },
+        select: { id: true, name: true, costs: true, bookedViaId: true },
       })
     : [];
   // Scale per-person costs by the actual participant count, falling back to the
@@ -153,9 +154,26 @@ export default async function TripOverviewPage({
       { priority: "desc" },
     ],
     include: {
-      location: { select: { id: true, name: true, defaultWorkflowId: true } },
+      location: {
+        select: {
+          id: true,
+          name: true,
+          defaultWorkflowId: true,
+          bookedViaId: true,
+          bookedVia: {
+            select: { id: true, name: true, defaultWorkflowId: true },
+          },
+        },
+      },
     },
   });
+  // A site booked via a parent venue is covered by the parent's engagement.
+  const viaMap = bookedViaMap([
+    ...costLocations,
+    ...stays.map((s) => s.location),
+  ]);
+  const engagementVenue = (locationId: string) =>
+    engagementLocationId(locationId, viaMap);
 
   // Stay-specific paperwork, indexed for the Lodging panel.
   const stayDocuments = await prisma.document.findMany({
@@ -186,10 +204,11 @@ export default async function TripOverviewPage({
   // Workflow state for each stay's status control (keyed by lodging venue).
   const progressByLocation: Record<string, BookingProgressView> = {};
   for (const s of stays) {
-    const eng = engagementBookings.find((b) => b.locationId === s.locationId);
+    const venueId = engagementVenue(s.locationId);
+    const eng = engagementBookings.find((b) => b.locationId === venueId);
     progressByLocation[s.locationId] = progressView(
       eng ?? null,
-      s.location.defaultWorkflowId,
+      s.location.bookedVia?.defaultWorkflowId ?? s.location.defaultWorkflowId,
     );
   }
   const bookingByLocation = bookingsByLocation(
@@ -214,7 +233,9 @@ export default async function TripOverviewPage({
   }
   const lodgingEstimate = estimateLodging(
     stays.map((s) => ({
-      locationId: s.locationId,
+      // Priced by the engagement that covers it (a parent's agreed total
+      // covers lodging at its child sites).
+      locationId: engagementVenue(s.locationId),
       checkIn: s.checkIn,
       checkOut: s.checkOut,
       checkInDayIndex: s.checkInDayIndex,
@@ -233,7 +254,9 @@ export default async function TripOverviewPage({
   // A venue priced by its agreed total drops its catalog costs — the agreed
   // total already covers the whole engagement.
   const allCosts = costLocations
-    .filter((l) => !lodgingEstimate.agreedLocationIds.has(l.id))
+    .filter(
+      (l) => !lodgingEstimate.agreedLocationIds.has(engagementVenue(l.id)),
+    )
     .flatMap((s) => s.costs);
   const rollups = rollUpCosts(
     allCosts.map((c) => ({
@@ -254,10 +277,12 @@ export default async function TripOverviewPage({
     stayId: n.stay?.id ?? null,
     venue: n.stay?.location.name ?? null,
     status: n.stay
-      ? (bookingByLocation.get(n.stay.locationId)?.status ?? null)
+      ? (bookingByLocation.get(engagementVenue(n.stay.locationId))?.status ??
+        null)
       : null,
     stageLabel: n.stay
-      ? (bookingByLocation.get(n.stay.locationId)?.stageLabel ?? null)
+      ? (bookingByLocation.get(engagementVenue(n.stay.locationId))
+          ?.stageLabel ?? null)
       : null,
     covering: n.covering,
   }));
@@ -568,7 +593,10 @@ export default async function TripOverviewPage({
                   region: l.region?.name ?? null,
                 }))}
                 stays={stays.map((s) =>
-                  serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
+                  serializeStay(
+                    s,
+                    bookingByLocation.get(engagementVenue(s.locationId)) ?? null,
+                  ),
                 )}
                 documentsByStay={documentsByStay}
                 progressByLocation={progressByLocation}

@@ -232,12 +232,19 @@ model Location {
   travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
   travelsTo              TravelLeg[]                   @relation("TravelTo") // travel legs arriving here
   travelStops            TravelStop[]                  @relation("TravelStopLocation") // en-route stops here
+  // Booked via a parent venue: this site's sessions/stays are covered by the
+  // PARENT's (trip, parent) engagement. Single level only (a parent has no
+  // parent; never itself — DB CHECK location_booked_via_not_self).
+  bookedVia              Location?                     @relation("LocationBookedVia", fields: [bookedViaId], references: [id], onDelete: SetNull)
+  bookedViaId            String?
+  coveredSites           Location[]                    @relation("LocationBookedVia") // child sites booked through this one
   createdAt              DateTime                      @default(now())
   updatedAt              DateTime                      @updatedAt
 
   @@index([regionId])
   @@index([primaryContactId])
   @@index([defaultWorkflowId])
+  @@index([bookedViaId])
 }
 
 model Contact {

@@ -55,6 +55,8 @@ import {
   shiftDayItems,
 } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
+import { engagementLocationIdFor } from "@/lib/booked-via.server";
+import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
 import {
   seedWorkflowFor,
   setBookingStage,
@@ -222,7 +224,10 @@ export async function createTrip(
     // to the venue's standing terms (GH #86). Both beat an empty schedule.
     venueBookingsCreate = await applyLocationWorkflowDefaults(
       await applyLocationScheduleDefaults(
-        instantiateVenueBookings(template.bookings),
+        instantiateVenueBookings(
+          template.bookings,
+          await engagementVenueResolver(template.bookings),
+        ),
       ),
     );
     // Day-relative template stays resolve to dates against the new startDate (or
@@ -321,7 +326,10 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
   });
   if (!source) return;
 
-  const venueBookingsCreate = instantiateVenueBookings(source.bookings);
+  const venueBookingsCreate = instantiateVenueBookings(
+    source.bookings,
+    await engagementVenueResolver(source.bookings),
+  );
   // Capture lodging as day-relative anchors (dates → day indices, measured from
   // this trip's startDate). Stays that can't be anchored — the source trip is
   // itself date-less — are dropped; a template stay must carry day indices.
@@ -1044,6 +1052,24 @@ export async function addBooking(
   return { ok: true, message: "Booking added." };
 }
 
+// Child site → parent resolver for the engagements being copied (one query):
+// an engagement still sitting on a since-reparented child lands on the parent.
+async function engagementVenueResolver(
+  bookings: { locationId: string | null }[],
+): Promise<(locationId: string) => string> {
+  const ids = [
+    ...new Set(bookings.flatMap((b) => (b.locationId ? [b.locationId] : []))),
+  ];
+  const locs = ids.length
+    ? await prisma.location.findMany({
+        where: { id: { in: ids }, bookedViaId: { not: null } },
+        select: { id: true, bookedViaId: true },
+      })
+    : [];
+  const map = bookedViaMap(locs);
+  return (id) => engagementLocationId(id, map);
+}
+
 // Engagements copied without a workflow fall back to the venue's default
 // workflow (else the global default) — the template's own choice wins.
 async function applyLocationWorkflowDefaults(
@@ -1090,12 +1116,14 @@ async function applyLocationScheduleDefaults(
 // A not-bookable location (walk-by stop) is refused (`assertBookable`).
 export async function upsertVenueBooking(
   tripId: string,
-  locationId: string,
+  siteId: string,
   input: BookingInputData,
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  // A site booked via a parent is covered by the parent's engagement.
+  const locationId = await engagementLocationIdFor(siteId);
   const notBookable = await assertBookable(locationId);
   if (notBookable) return { error: notBookable };
 
@@ -1139,15 +1167,17 @@ async function resolveBookingTarget(
     };
   }
   // An existing engagement is used as-is (even at a since-archived venue);
-  // only a first touch goes through the create-time checks + seeding.
+  // only a first touch goes through the create-time checks + seeding. A site
+  // booked via a parent acts on the parent's engagement.
+  const locationId = await engagementLocationIdFor(target.locationId);
   const existing = await prisma.booking.findUnique({
     where: {
-      tripId_locationId: { tripId: target.tripId, locationId: target.locationId },
+      tripId_locationId: { tripId: target.tripId, locationId },
     },
     select: { id: true },
   });
   if (existing) return { bookingId: existing.id, tripId: target.tripId };
-  const res = await ensureVenueEngagement(target.tripId, target.locationId);
+  const res = await ensureVenueEngagement(target.tripId, locationId);
   if ("error" in res) return res;
   return { bookingId: res.bookingId, tripId: target.tripId };
 }

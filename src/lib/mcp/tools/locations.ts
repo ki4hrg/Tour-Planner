@@ -12,6 +12,7 @@ import {
   mergeLocations,
   previewLocationMerge,
 } from "@/lib/location-merge";
+import { checkBookedVia, setBookedVia } from "@/lib/booked-via.server";
 
 export function registerLocationTools(server: McpServer, user: SessionUser) {
   // ── search-locations (VIEWER+) ─────────────────────────────────────────
@@ -84,7 +85,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Location Details",
       description:
-        "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. Useful before creating a booking or adding a location to an itinerary.",
+        "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. bookedVia is the parent venue whose single engagement covers this site (its bookings live on the parent — see add-booking); coveredSites lists the sites booked via this one. Useful before creating a booking or adding a location to an itinerary.",
       inputSchema: { locationId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -133,6 +134,11 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
               },
             },
             hostSite: true,
+            bookedVia: { select: { id: true, name: true } },
+            coveredSites: {
+              orderBy: { name: "asc" },
+              select: { id: true, name: true },
+            },
           },
         });
 
@@ -372,7 +378,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Create Location",
       description:
-        "Create a location (a venue, stop, or potential host site). Requires a name. description is itinerary-facing (shown on shared itineraries); notes are staff-only. Set bookable=false for walk-by stops that are never booked. regionId files it under a region (use list-regions); tripTypeIds tag it (use list-trip-types). googlePlaceId (a Google Places place ID) plus lat/lng (both or neither) make map links open the exact place. To make it a host site or add pricing, use set-host-site / add-location-cost afterwards.",
+        "Create a location (a venue, stop, or potential host site). Requires a name. description is itinerary-facing (shown on shared itineraries); notes are staff-only. Set bookable=false for walk-by stops that are never booked. regionId files it under a region (use list-regions); tripTypeIds tag it (use list-trip-types). googlePlaceId (a Google Places place ID) plus lat/lng (both or neither) make map links open the exact place. To make it a host site or add pricing, use set-host-site / add-location-cost afterwards. bookedViaId names a parent venue whose single engagement covers this site (a museum booking covering several of its sites): the site still shows as itself on itineraries, but its sessions and stays are booked on the parent. Single level only — the parent can't itself be booked via another, and a site that covers others can't take a parent.",
       inputSchema: {
         name: z.string(),
         regionId: z.string().optional(),
@@ -389,6 +395,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         bookingNotes: z.string().optional(),
         scheduleLimitations: z.string().optional(),
         tripTypeIds: z.array(z.string()).optional(),
+        bookedViaId: z.string().nullable().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -413,6 +420,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       bookingNotes,
       scheduleLimitations,
       tripTypeIds,
+      bookedViaId,
     }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
@@ -424,6 +432,16 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
           ],
           isError: true,
         };
+      }
+
+      if (bookedViaId) {
+        const err = await checkBookedVia(null, bookedViaId);
+        if (err) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${err}` }],
+            isError: true,
+          };
+        }
       }
 
       if ((lat == null) !== (lng == null)) {
@@ -456,6 +474,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             tripTypes: tripTypeIds?.length
               ? { connect: tripTypeIds.map((id) => ({ id })) }
               : undefined,
+            ...(bookedViaId ? { bookedVia: { connect: { id: bookedViaId } } } : {}),
           },
         });
 
@@ -482,7 +501,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Location",
       description:
-        "Update a location's details. Only include fields you want to change. Pass regionId to refile (empty string clears the region). Passing tripTypeIds REPLACES the tag set (pass [] to clear). googlePlaceId links a Google place (empty string clears); lat/lng must be passed together (null clears both). Use get-location to find the id and current values.",
+        "Update a location's details. Only include fields you want to change. Pass regionId to refile (empty string clears the region). Passing tripTypeIds REPLACES the tag set (pass [] to clear). googlePlaceId links a Google place (empty string clears); lat/lng must be passed together (null clears both). Use get-location to find the id and current values. bookedViaId names a parent venue whose single engagement covers this site (a museum booking covering several of its sites): the site still shows as itself on itineraries, but its sessions and stays are booked on the parent. Single level only — the parent can't itself be booked via another, and a site that covers others can't take a parent. null clears it. Setting a parent MOVES this site's own existing engagements to the parent's (folded into the parent's engagement on the same trip, like merge-locations does; reported as movedBookings).",
       inputSchema: {
         locationId: z.string(),
         name: z.string().optional(),
@@ -500,6 +519,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         bookingNotes: z.string().optional(),
         scheduleLimitations: z.string().optional(),
         tripTypeIds: z.array(z.string()).optional(),
+        bookedViaId: z.string().nullable().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -525,6 +545,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
       bookingNotes,
       scheduleLimitations,
       tripTypeIds,
+      bookedViaId,
     }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
@@ -583,11 +604,33 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
 
         await prisma.location.update({ where: { id: locationId }, data });
 
+        // Booked-via goes through its own path: validated (single level, not
+        // self) and folds this site's engagements into the parent's.
+        let movedBookings = 0;
+        if (bookedViaId !== undefined) {
+          const res = await setBookedVia(locationId, bookedViaId || null);
+          if ("error" in res) {
+            return {
+              content: [{ type: "text" as const, text: `Error: ${res.error}` }],
+              isError: true,
+            };
+          }
+          movedBookings = res.folded;
+        }
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ success: true, id: locationId }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  id: locationId,
+                  ...(bookedViaId !== undefined ? { movedBookings } : {}),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };

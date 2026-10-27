@@ -16,6 +16,7 @@ import {
   previewLocationMerge,
   type LocationMergePreview,
 } from "@/lib/location-merge";
+import { setBookedVia } from "@/lib/booked-via.server";
 
 function parseLocation(formData: FormData) {
   return locationSchema.safeParse({
@@ -434,4 +435,34 @@ export async function setLocationDefaultWorkflow(
   });
   revalidatePath(`/locations/${locationId}`);
   return { ok: true, message: "Saved." };
+}
+
+// Set (or clear) the parent venue this location is booked via. Gaining a
+// parent hands this location's own engagements to the parent's (see
+// setBookedVia); the confirm in the UI names the trips first.
+export async function setLocationBookedVia(
+  locationId: string,
+  parentId: string | null,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const before = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: { bookedViaId: true },
+  });
+  if (!before) return { error: "Location not found." };
+  const res = await setBookedVia(locationId, parentId);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/locations");
+  for (const id of [locationId, parentId, before.bookedViaId]) {
+    if (id) revalidatePath(`/locations/${id}`);
+  }
+  // Engagement rows moved between venues on every trip that had one.
+  if (res.folded > 0) revalidatePath("/trips", "layout");
+  return {
+    ok: true,
+    message:
+      res.folded > 0
+        ? `Saved. Moved ${res.folded} booking${res.folded === 1 ? "" : "s"}.`
+        : "Saved.",
+  };
 }

@@ -14,6 +14,7 @@ import {
 import { prisma } from "@/lib/db";
 import { computeDayDate, dayIndexForDate } from "@/lib/dates";
 import { seedWorkflowFor } from "@/lib/booking-workflow-sync";
+import { engagementLocationIdFor } from "@/lib/booked-via.server";
 import {
   shiftStayDates,
   shiftStayIndicesForDeletedDay,
@@ -92,11 +93,13 @@ function isUniqueViolation(err: unknown): boolean {
  * gets the bookable check and standing-terms seeding like every other create
  * path. Two concurrent first creates can race past the upsert's read and hit
  * the `@@unique([tripId, locationId])`; the loser re-reads the winner's row.
+ * A site booked via a parent resolves to the PARENT's engagement.
  */
 export async function ensureVenueEngagement(
   tripId: string,
-  locationId: string,
+  siteId: string,
 ): Promise<{ error: string } | { bookingId: string }> {
+  const locationId = await engagementLocationIdFor(siteId);
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     select: { id: true },

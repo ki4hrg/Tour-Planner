@@ -58,8 +58,9 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
-engagement — refuses not-bookable venues, seeds standing terms + default workflow on create; item target
+incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
+engagement — a booked-via child resolves to its parent's (returns `engagementLocationId`) —
+refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
 `update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
 `list-booking-workflows` (V, resolves `workflowId`/`stepId`), `set-booking-step` (P, tick/untick
@@ -68,9 +69,10 @@ one step, back-datable), `set-booking-workflow` (P, switch workflow; clears tick
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
-payment terms, host site + Google place link), `list-regions` (V, resolves `regionId`), `list-trip-types`
+payment terms, host site + Google place link, `bookedVia` + `coveredSites`), `list-regions` (V, resolves `regionId`), `list-trip-types`
 (V, resolves `tripTypeId`), `create-location` (P), `update-location` (P; both take
-`googlePlaceId` + `lat`/`lng`, the coords both-or-neither),
+`googlePlaceId` + `lat`/`lng`, the coords both-or-neither, and `bookedViaId` — null clears;
+on update, gaining a parent folds the site's own engagements into the parent's, reported as `movedBookings`),
 `set-host-site` (P, upserts capability flags or `remove`s host-site status),
 `set-primary-contact` (P, links the contact + marks it primary, or clears the
 designation), `add-location-cost` (P), `update-location-cost` (P),
@@ -275,7 +277,8 @@ npm test                          # vitest
 - **Data model**: `prisma/schema.prisma` is the source of truth. Key shapes: `Trip` →
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
   `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).
-  `Location` (renamed from `Site`) has a 1:1 `HostSite` extension; `Stay` is per-trip
+  `Location` (renamed from `Site`) has a 1:1 `HostSite` extension and an optional
+  self-relation `bookedVia` / `coveredSites` (`bookedViaId`, see "Booked via" below); `Stay` is per-trip
   lodging; `Region` is a hierarchical catalog. A `Stay` anchors EITHER by calendar
   dates (`checkIn`/`checkOut`) on a dated trip OR by 1-based day indices
   (`checkInDayIndex`/`checkOutDayIndex`) on a date-less template — exactly one mode
@@ -303,6 +306,26 @@ npm test                          # vitest
   host site visited across many sessions is one booking, not one per session. Lodging
   has **no** booking of its own; the `Stay`'s booking state is its venue engagement.
   The item target is only for **site-less** bookings (a coach, a label-only reservation).
+  **Booked via (location-level parent)**: `Location.bookedViaId` points a child site at
+  a parent venue whose ONE engagement covers it (a museum booking covering several
+  sites nearby). The child still shows as itself on itineraries, share pages, ICS
+  feeds and the WP export; administratively its sessions, planned visits and stays
+  belong to the PARENT's `(trip, parent)` engagement. Single level only (a parent has
+  no parent; a site that covers others can't take one) — enforced in
+  `bookedViaError` (`src/lib/booked-via.ts`); not-self is also DB CHECK
+  `location_booked_via_not_self`. **Every engagement lookup/create resolves
+  child → parent** through `src/lib/booked-via.ts` (`bookedViaMap` /
+  `engagementLocationId` / `withBookedViaParentsWhere` for loading parents with
+  their children) or `engagementLocationIdFor` (`booked-via.server.ts`): dashboard
+  rows (child sessions fold into the parent row labelled "Visit · <Site>"),
+  `ensureVenueEngagement`, `upsertVenueBooking`, `resolveBookingTarget`,
+  `loadVenueEngagements` (child shows parent progress "via <Parent>"), the lodging
+  panel + trip cost estimate, the documents hub, template instantiation, MCP
+  `add-booking`. Setting a parent (`setBookedVia`) FOLDS the child's own existing
+  engagements into the parent's (same rules as a location merge, via the shared
+  `foldVenueEngagements`); the Location page's "Booked via" card confirms first,
+  naming the trips. A child's Location page shows its parent's booking progress
+  ("via <Parent>") and hides its own workflow/payment-terms cards.
   `Location.bookable` (default true) marks never-bookable walk-by stops (no booking
   allowed; hidden from the dashboard's attention filters); `BookingStatus.NOT_NEEDED`
   is a per-trip "skip this one". Row-building lives in `src/lib/booking-dashboard.ts`
@@ -403,7 +426,11 @@ npm test                          # vitest
   source row; same-trip engagements fold into the target's booking (payments/
   notes/docs move, further-along status kept, source schedule only if target has
   none, source step completions move when both follow the same workflow, then
-  status recomputes); host sites OR together; standing terms adopted only if target has none.
+  status recomputes); host sites OR together; standing terms adopted only if target has none;
+  sites booked via the source repoint to the target, and the source's own parent fills
+  the target's only if the target will cover no sites (pure `mergeBookedVia`, which
+  refuses a merge that would nest parents; a target that ends with a parent folds its
+  engagements into it).
   **When adding a new FK to `Location`, repoint it in `mergeLocations`** or the
   cascade on delete will silently drop that data.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
