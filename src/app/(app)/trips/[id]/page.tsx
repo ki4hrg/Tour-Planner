@@ -24,12 +24,12 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
-import { agreedTotal, rollUpCosts } from "@/lib/costs";
+import { agreedTotal, rollUpCosts, tripHeadcount } from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
   serializeDocument,
 } from "@/lib/documents";
-import { lodgingCoverage, rollUpStays } from "@/lib/stays";
+import { estimateLodging, lodgingCoverage } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import {
   resolveSchedule,
@@ -138,20 +138,10 @@ export default async function TripOverviewPage({
         select: { id: true, name: true, costs: true },
       })
     : [];
-  const allCosts = costLocations.flatMap((s) => s.costs);
   // Scale per-person costs by the actual participant count, falling back to the
   // planned capacity when it's unset — so templates (which have no participants)
   // and not-yet-registered trips still estimate against capacity.
-  const estimateHeadcount = trip.participantCount ?? trip.capacity;
-  const rollups = rollUpCosts(
-    allCosts.map((c) => ({
-      amount: Number(c.amount),
-      currency: c.currency,
-      unit: c.unit,
-    })),
-    estimateHeadcount,
-  );
-  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
+  const estimateHeadcount = tripHeadcount(trip);
 
   // Lodging (Stay) data — feeds the cost estimate and the Lodging section.
   const stays = await prisma.stay.findMany({
@@ -205,8 +195,26 @@ export default async function TripOverviewPage({
   const bookingByLocation = bookingsByLocation(
     engagementBookings.map(serializeBooking),
   );
-  const stayRollups = rollUpStays(
+  // Lodging in the estimate: a lodging venue whose engagement has an agreed
+  // total counts at that total (it is the contract, and covers every stay and
+  // session there); otherwise each stay counts at its nightly rate, priced for
+  // the trip headcount when the stay has no headcount of its own.
+  const agreedByLocation = new Map<string, { total: number; currency: string }>();
+  for (const b of engagementBookings) {
+    if (!b.locationId || b.status === "NOT_NEEDED") continue;
+    const total = agreedTotal(
+      {
+        agreedAmount: b.agreedAmount == null ? null : Number(b.agreedAmount),
+        agreedUnit: b.agreedUnit,
+      },
+      estimateHeadcount,
+    );
+    if (total != null)
+      agreedByLocation.set(b.locationId, { total, currency: b.agreedCurrency });
+  }
+  const lodgingEstimate = estimateLodging(
     stays.map((s) => ({
+      locationId: s.locationId,
       checkIn: s.checkIn,
       checkOut: s.checkOut,
       checkInDayIndex: s.checkInDayIndex,
@@ -218,7 +226,24 @@ export default async function TripOverviewPage({
           : Number(s.costPerPersonPerNight),
       currency: s.currency,
     })),
+    agreedByLocation,
+    estimateHeadcount,
   );
+  const stayRollups = lodgingEstimate.byCurrency;
+  // A venue priced by its agreed total drops its catalog costs — the agreed
+  // total already covers the whole engagement.
+  const allCosts = costLocations
+    .filter((l) => !lodgingEstimate.agreedLocationIds.has(l.id))
+    .flatMap((s) => s.costs);
+  const rollups = rollUpCosts(
+    allCosts.map((c) => ({
+      amount: Number(c.amount),
+      currency: c.currency,
+      unit: c.unit,
+    })),
+    estimateHeadcount,
+  );
+  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
 
   // Night-by-night lodging coverage for the Lodging card, plus the first run of
   // uncovered nights so "+ Add stay" can pre-fill it.
@@ -547,6 +572,7 @@ export default async function TripOverviewPage({
                 )}
                 documentsByStay={documentsByStay}
                 progressByLocation={progressByLocation}
+                headcount={estimateHeadcount}
                 suggestedSpan={canEdit ? suggestedSpan : null}
               />
             </CardContent>

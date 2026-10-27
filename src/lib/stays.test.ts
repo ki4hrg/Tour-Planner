@@ -3,6 +3,8 @@ import {
   nightsBetween,
   stayTotal,
   rollUpStays,
+  stayHeadcount,
+  estimateLodging,
   lodgingByNight,
   lodgingForDays,
   lodgingCoverage,
@@ -74,6 +76,72 @@ describe("rollUpStays", () => {
     expect(
       rollUpStays([{ checkIn: d("2026-07-06"), checkOut: d("2026-07-08") }]),
     ).toEqual([]);
+  });
+  it("prices a stay with no headcount at the trip headcount", () => {
+    // Regression: a rate with no stay headcount was silently dropped, so the
+    // trip's cost estimate left lodging out entirely.
+    const stay = {
+      checkIn: d("2026-07-06"),
+      checkOut: d("2026-07-08"),
+      costPerPersonPerNight: 111,
+      currency: "GBP",
+    };
+    expect(rollUpStays([stay], 24)).toEqual([
+      { currency: "GBP", total: 5328 },
+    ]);
+    expect(rollUpStays([stay], null)).toEqual([]);
+  });
+});
+
+describe("stayTotal headcount fallback", () => {
+  const span = {
+    checkIn: d("2026-07-06"),
+    checkOut: d("2026-07-08"),
+    costPerPersonPerNight: 111,
+  };
+  it("uses the trip headcount when the stay has none", () => {
+    // Regression: "GBP 111.00/night · 2 nights: GBP 0.00".
+    expect(stayTotal(span, 24)).toBe(5328);
+  });
+  it("prefers the stay's own headcount", () => {
+    expect(stayTotal({ ...span, headcount: 2 }, 24)).toBe(444);
+  });
+  it("stayHeadcount is null when neither is known", () => {
+    expect(stayHeadcount({}, null)).toBeNull();
+    expect(stayHeadcount({ headcount: null }, 24)).toBe(24);
+  });
+});
+
+describe("estimateLodging", () => {
+  const stay = (locationId: string, rate: number, currency = "GBP") => ({
+    locationId,
+    checkIn: d("2026-07-06"),
+    checkOut: d("2026-07-08"),
+    costPerPersonPerNight: rate,
+    currency,
+  });
+  it("rate-prices stays with no agreed engagement total", () => {
+    const r = estimateLodging([stay("a", 100), stay("b", 50)], new Map(), 10);
+    expect(r.byCurrency).toEqual([{ currency: "GBP", total: 3000 }]);
+    expect([...r.agreedLocationIds]).toEqual([]);
+  });
+  it("uses the agreed total once per venue, replacing its stays' rates", () => {
+    const r = estimateLodging(
+      [stay("a", 100), stay("a", 100), stay("b", 50)],
+      new Map([["a", { total: 3500, currency: "GBP" }]]),
+      10,
+    );
+    // a: 3500 agreed (not 2 × 2000); b: 2 nights × 10 × 50 = 1000.
+    expect(r.byCurrency).toEqual([{ currency: "GBP", total: 4500 }]);
+    expect([...r.agreedLocationIds]).toEqual(["a"]);
+  });
+  it("keeps the agreed currency", () => {
+    const r = estimateLodging(
+      [stay("a", 100)],
+      new Map([["a", { total: 900, currency: "EUR" }]]),
+      10,
+    );
+    expect(r.byCurrency).toEqual([{ currency: "EUR", total: 900 }]);
   });
 });
 
