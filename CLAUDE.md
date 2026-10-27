@@ -349,7 +349,9 @@ npm test                          # vitest
   booking it is **derived**: each step names the status it reaches (DB CHECK
   `booking_workflow_step_status`: IN_PROGRESS or CONFIRMED), the booking's status is
   the furthest any completed step reaches, and `stageLabel`/`stageOn` = the latest
-  step done in workflow order (steps may be ticked out of order). Status + stage are
+  step done. Steps are **sequential**: a step can be done only once every earlier
+  step is, and undone only while no later step is (`stepGate`/`stepGateError`,
+  enforced in `setBookingStep`; the board's stage drag fills in earlier steps). Status + stage are
   **stored** (so filters stay column reads) and recomputed by every write that
   changes them — all such writes go through `src/lib/booking-workflow-sync.ts`
   (MCP-safe; pure resolver `resolveBookingProgress` in `src/lib/booking-workflow.ts`,

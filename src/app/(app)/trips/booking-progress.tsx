@@ -17,6 +17,7 @@ import {
   type WorkflowOption,
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
+import { stepGate } from "@/lib/booking-workflow";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import { BOOKING_STATUS_CLASSES } from "@/lib/trips";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -155,25 +156,36 @@ export function BookingProgress({
   const label = bulkLabels.find((l) => normalize(l) === normalize(bulkLabel))
     ? bulkLabel
     : "";
-  const bulkEntries = (on: boolean) =>
-    chosen.flatMap((l) => {
+  const runBulk = (on: boolean) => {
+    const entries: { line: Line; stepId: string }[] = [];
+    let lacking = 0;
+    let blocked = 0;
+    for (const l of chosen) {
       const step = l.workflow?.steps.find(
         (s) => normalize(s.label) === normalize(label),
       );
-      if (!step) return [];
-      // Skip rows already in the requested state.
-      if (done.get(l.key)?.has(step.id) === on) return [];
-      return [{ line: l, stepId: step.id }];
-    });
-
-  const runBulk = (on: boolean) => {
-    const entries = bulkEntries(on);
-    const lacking = chosen.filter(
-      (l) => !l.workflow?.steps.some((st) => normalize(st.label) === normalize(label)),
-    ).length;
-    const lackingNote = lacking
-      ? ` ${lacking} ${lacking === 1 ? "has" : "have"} no "${label}" step.`
-      : "";
+      if (!step) {
+        lacking++;
+        continue;
+      }
+      const rowDone = done.get(l.key) ?? new Set<string>();
+      if (rowDone.has(step.id) === on) continue; // already there
+      // Steps go in order: skip rows whose earlier steps are open (done) or
+      // whose later steps are done (clear).
+      const g = stepGate(l.workflow!.steps, rowDone).get(step.id);
+      if (!(on ? g?.canComplete : g?.canUndo)) {
+        blocked++;
+        continue;
+      }
+      entries.push({ line: l, stepId: step.id });
+    }
+    const notes = [
+      lacking ? `${lacking} ${lacking === 1 ? "has" : "have"} no "${label}" step.` : "",
+      blocked
+        ? `${blocked} skipped: ${on ? "earlier steps not done" : "later steps done"}.`
+        : "",
+    ];
+    const lackingNote = notes.filter(Boolean).map((n) => ` ${n}`).join("");
     if (entries.length === 0) {
       toast.success(`Nothing to change.${lackingNote}`);
       return;
@@ -281,6 +293,7 @@ export function BookingProgress({
           const notNeeded = line.row.status === "NOT_NEEDED";
           const steps = line.workflow?.steps ?? [];
           const next = steps.find((s) => !rowDone.has(s.id));
+          const gate = stepGate(steps, rowDone);
           return (
             <li
               key={line.key}
@@ -314,11 +327,13 @@ export function BookingProgress({
                 {steps.map((s) => {
                   const isDone = rowDone.has(s.id);
                   const on = doneOn.get(line.key)?.get(s.id);
+                  const g = gate.get(s.id);
+                  const open = isDone ? g?.canUndo : g?.canComplete;
                   return (
                     <li key={s.id}>
                       <button
                         type="button"
-                        disabled={!canEdit || pending}
+                        disabled={!canEdit || pending || !open}
                         aria-pressed={isDone}
                         title={
                           isDone
@@ -333,7 +348,7 @@ export function BookingProgress({
                             : s.id === next?.id && !notNeeded
                               ? "border-foreground/40 text-foreground"
                               : "border-dashed text-muted-foreground",
-                          canEdit && !isDone && "hover:border-foreground/60",
+                          canEdit && open && !isDone && "hover:border-foreground/60",
                         )}
                       >
                         {isDone ? <Check className="size-3" aria-hidden /> : null}
