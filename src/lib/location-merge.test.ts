@@ -15,6 +15,11 @@ const loc = (o: Partial<MergeableLocationFields> = {}): MergeableLocationFields 
   notes: null,
   website: null,
   mapUrl: null,
+  googlePlaceId: null,
+  lat: null,
+  lng: null,
+  placeIdCheckedAt: null,
+  placeIdNeedsReview: false,
   bookable: true,
   bookingOpensLeadDays: null,
   bookingNotes: null,
@@ -69,6 +74,44 @@ describe("mergeLocationFields", () => {
   });
   it("is bookable if either was", () => {
     expect(mergeLocationFields(loc({ bookable: false }), loc()).bookable).toBe(true);
+  });
+  it("adopts the source's place link and coordinates when the target has none", () => {
+    const checked = new Date("2026-03-01");
+    const m = mergeLocationFields(
+      loc({ placeIdNeedsReview: true }),
+      loc({ googlePlaceId: "ChIJsrc", placeIdCheckedAt: checked, lat: 53.5, lng: -0.8 }),
+    );
+    expect(m.googlePlaceId).toBe("ChIJsrc");
+    expect(m.placeIdCheckedAt).toBe(checked);
+    // The adopted link is a confirmed one; the target's stale flag goes with its missing ID.
+    expect(m.placeIdNeedsReview).toBe(false);
+    expect([m.lat, m.lng]).toEqual([53.5, -0.8]);
+  });
+  it("keeps the target's place link and coordinates as units", () => {
+    const tChecked = new Date("2026-01-01");
+    const m = mergeLocationFields(
+      loc({ googlePlaceId: "ChIJtgt", placeIdCheckedAt: tChecked, lat: 51.5, lng: -0.1 }),
+      loc({
+        googlePlaceId: "ChIJsrc",
+        placeIdCheckedAt: new Date("2026-06-01"),
+        placeIdNeedsReview: true,
+        lat: 53.5,
+        lng: -0.8,
+      }),
+    );
+    expect(m.googlePlaceId).toBe("ChIJtgt");
+    expect(m.placeIdCheckedAt).toBe(tChecked);
+    expect(m.placeIdNeedsReview).toBe(false);
+    expect([m.lat, m.lng]).toEqual([51.5, -0.1]);
+  });
+  it("never mixes coordinates across sides", () => {
+    // A half-set target pair (invalid, but defensive) falls back to the source pair whole.
+    const m = mergeLocationFields(loc({ lat: 10 }), loc({ lat: 53.5, lng: -0.8 }));
+    expect([m.lat, m.lng]).toEqual([53.5, -0.8]);
+    expect(mergeLocationFields(loc(), loc({ lat: 1 }))).toMatchObject({ lat: null, lng: null });
+  });
+  it("keeps an open review flag when neither side is linked", () => {
+    expect(mergeLocationFields(loc(), loc({ placeIdNeedsReview: true })).placeIdNeedsReview).toBe(true);
   });
 });
 
