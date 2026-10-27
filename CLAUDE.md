@@ -226,6 +226,11 @@ npm test                          # vitest
   fragments ("Shown once — copy it now", "Unticked = staff only") that blur fact
   and instruction. Write a plain sentence for the fact and make the action the
   control ("This key will only be shown once. Click to copy." on a clickable key).
+- **Links look like links**: small inline links (muted metadata-row links,
+  "Booking", "Files", "Show archived") use the `link-quiet` utility
+  (`globals.css` — a faint underline at rest), never a hover-only underline.
+  No "→" as a link marker (an arrow reads as a process/transition — keep it for
+  ranges like "Mon → Wed"); back links use a `ChevronLeft` icon, not "←".
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.
