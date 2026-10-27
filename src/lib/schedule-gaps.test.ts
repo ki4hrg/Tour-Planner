@@ -17,6 +17,7 @@ function mockItem(
     endTime: null,
     notes: null,
     isBlock: false,
+    fixedTime: false,
     presentationId: null,
     presentation: null,
     presenters: [],

@@ -27,6 +27,7 @@ import {
   buildVenueEmail,
   filterVenueGroups,
   formatTripDates,
+  isYourMove,
   rowMatchesFilters,
   rowNeedsAttention,
   type AttentionFilters,
@@ -35,6 +36,7 @@ import {
   type VenueTripRow,
 } from "@/lib/cross-trip-bookings";
 import { WorkflowControl } from "../trips/workflow-control";
+import { WaitingNote } from "../trips/waiting-note";
 import { PriceCell, WindowCell, coverageLine } from "../trips/booking-row";
 
 const FILTER_LABELS: { key: keyof AttentionFilters; label: string }[] = [
@@ -42,6 +44,7 @@ const FILTER_LABELS: { key: keyof AttentionFilters; label: string }[] = [
   { key: "missingPrice", label: "Missing price" },
   { key: "unconfirmed", label: "Unconfirmed" },
   { key: "paymentOverdue", label: "Payment overdue" },
+  { key: "yourMove", label: "Your move" },
 ];
 
 export function CrossTripBookings({
@@ -73,7 +76,8 @@ export function CrossTripBookings({
           (!anyFilter ||
             (filters.unconfirmed &&
               !isBookingSecured(r.status) &&
-              r.status !== "NOT_NEEDED")) &&
+              r.status !== "NOT_NEEDED") ||
+            (filters.yourMove && isYourMove(r))) &&
           (!q || r.label.toLowerCase().includes(q)),
       ),
     }))
@@ -371,11 +375,15 @@ function VenueStatus({
   canEdit: boolean;
 }) {
   return (
-    <WorkflowControl
-      target={{ tripId: trip.id, locationId: row.locationId }}
-      progress={row.progress}
-      canEdit={canEdit}
-    />
+    <>
+      <WorkflowControl
+        target={{ tripId: trip.id, locationId: row.locationId }}
+        progress={row.progress}
+        canEdit={canEdit}
+        showAge={!row.waiting}
+      />
+      <WaitingNote waiting={row.waiting} className="mt-1 block" />
+    </>
   );
 }
 
@@ -423,12 +431,14 @@ function OtherBookings({
                       {r.confirmationRef ? ` · ref ${r.confirmationRef}` : ""}
                     </span>
                   </span>
-                  <span className="shrink-0">
+                  <span className="shrink-0 text-right">
                     <WorkflowControl
                       target={{ bookingId: r.bookingId }}
                       progress={r.progress}
                       canEdit={canEdit}
+                      showAge={!r.waiting}
                     />
+                    <WaitingNote waiting={r.waiting} className="mt-1 block" />
                   </span>
                 </li>
               ))}

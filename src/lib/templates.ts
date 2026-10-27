@@ -45,6 +45,7 @@ export type TemplateScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime?: boolean;
   presentationId: string | null;
   sites: TemplateItemLocation[];
   bookings: TemplateBooking[];
@@ -88,6 +89,7 @@ export type InstantiatedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime?: boolean;
   presentationId: string | null; // catalog link survives; presenters reset (omitted)
   sites: { create: InstantiatedItemLocation[] };
   bookings: { create: InstantiatedBooking[] };
@@ -150,36 +152,51 @@ export type InstantiatedVenueBooking = {
  * schedule is kept (fixed installment amounts included; the planner adjusts those
  * if the next negotiation differs). Rows without a location are skipped
  * (engagements require one).
+ *
+ * `engagementVenue` maps a site to the location its engagement lives on (a
+ * site booked via a parent → the parent, see booked-via.ts). An engagement
+ * copied from a since-reparented child lands on the parent; when the parent's
+ * own engagement is copied too, that one wins (one engagement per venue).
  */
 export function instantiateVenueBookings(
   bookings: TemplateVenueBooking[],
+  engagementVenue: (locationId: string) => string = (id) => id,
 ): InstantiatedVenueBooking[] {
-  return bookings
+  const withVenue = bookings
     .filter((b): b is TemplateVenueBooking & { locationId: string } =>
       Boolean(b.locationId),
     )
-    .map((b) => ({
-      locationId: b.locationId,
-      label: b.label,
-      notes: b.notes,
-      status: "PLANNED" as BookingStatus,
-      workflowId: b.workflowId ?? null,
-      ...(b.paymentSchedule?.length
-        ? {
-            paymentSchedule: {
-              create: b.paymentSchedule.map((i) => ({
-                label: i.label,
-                percent: i.percent,
-                fixedAmount: i.fixedAmount,
-                anchor: i.anchor,
-                offsetValue: i.offsetValue,
-                offsetUnit: i.offsetUnit,
-                sortOrder: i.sortOrder,
-              })),
-            },
-          }
-        : {}),
-    }));
+    .map((b) => ({ b, venueId: engagementVenue(b.locationId) }));
+  const chosen = new Map<string, TemplateVenueBooking & { locationId: string }>();
+  for (const { b, venueId } of withVenue) {
+    const prev = chosen.get(venueId);
+    // The venue's own engagement beats one folded in from a child site.
+    if (!prev || (prev.locationId !== venueId && b.locationId === venueId)) {
+      chosen.set(venueId, b);
+    }
+  }
+  return [...chosen.entries()].map(([venueId, b]) => ({
+    locationId: venueId,
+    label: b.label,
+    notes: b.notes,
+    status: "PLANNED" as BookingStatus,
+    workflowId: b.workflowId ?? null,
+    ...(b.paymentSchedule?.length
+      ? {
+          paymentSchedule: {
+            create: b.paymentSchedule.map((i) => ({
+              label: i.label,
+              percent: i.percent,
+              fixedAmount: i.fixedAmount,
+              anchor: i.anchor,
+              offsetValue: i.offsetValue,
+              offsetUnit: i.offsetUnit,
+              sortOrder: i.sortOrder,
+            })),
+          },
+        }
+      : {}),
+  }));
 }
 
 /**
@@ -231,6 +248,7 @@ export function instantiateDays(
               endTime: item.endTime,
               notes: item.notes,
               isBlock: item.isBlock,
+              fixedTime: item.fixedTime ?? false,
               // The shared catalog link survives; the per-occurrence speaker
               // override is reset (next trip assigns its own — like bookings).
               presentationId: item.presentationId,

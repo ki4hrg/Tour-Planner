@@ -66,7 +66,7 @@ export default async function CrossTripBookingsPage({
         <span className="ml-auto">
           <Link
             href={qs({ type, past: !includePast })}
-            className="text-sm text-muted-foreground underline-offset-2 hover:underline"
+            className="text-sm text-muted-foreground link-quiet"
           >
             {includePast ? "Hide past trips" : "Include past trips"}
           </Link>

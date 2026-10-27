@@ -26,6 +26,9 @@
  *  - Gaps and durations are clamped to ≥ 0 so malformed/overlapping originals can't
  *    produce times that run backwards.
  *  - When no item has a start time, only `order` changes.
+ *  - A fixed-time item (`fixedTime`) keeps its clock times wherever it lands in the
+ *    sequence, and is left out of the skeleton: the movable timed items are laid onto
+ *    the anchor + gaps of the movable items alone.
  */
 
 import { timeToMinutes, minutesToTime } from "./schedule-gaps";
@@ -34,6 +37,7 @@ export interface ReorderableItem {
   id: string;
   startTime: string | null;
   endTime: string | null;
+  fixedTime?: boolean; // keeps its times through any reorder
 }
 
 export interface ReorderedItem {
@@ -63,11 +67,13 @@ export function cascadeReorderedTimes(
     .filter((it): it is ReorderableItem => it != null);
 
   // Skeleton: timed items in chronological order define the anchor + inter-slot gaps.
+  const movable = (it: ReorderableItem) =>
+    !it.fixedTime && startMinutes(it) !== null;
   const timedNow = items
-    .filter((it) => startMinutes(it) !== null)
+    .filter(movable)
     .sort((a, b) => startMinutes(a)! - startMinutes(b)!);
 
-  // Nothing timed → order-only change, times untouched.
+  // Nothing movable is timed → order-only change, times untouched.
   if (timedNow.length === 0) {
     return ordered.map((it, i) => ({
       id: it.id,
@@ -104,7 +110,7 @@ export function cascadeReorderedTimes(
   let slot = 0;
   let cursor = anchor;
   for (const it of ordered) {
-    if (startMinutes(it) === null) continue; // untimed: keep null, no slot consumed
+    if (!movable(it)) continue; // untimed / fixed: keep times, no slot consumed
     const start = slot === 0 ? anchor : cursor + gaps[slot - 1];
     const isPoint = it.endTime == null;
     const end = start + duration(it);

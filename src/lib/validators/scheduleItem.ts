@@ -57,6 +57,8 @@ export const scheduleItemSchema = z
     endTime: optionalTime,
     notes: z.string().trim().optional(),
     isBlock: z.boolean().optional(),
+    // Times we don't control: ripple / slide / reorder never move it.
+    fixedTime: z.boolean().optional(),
     // The catalogued talk this item delivers (optional).
     presentationId: optionalId,
     // Per-occurrence speaker override; empty ⇒ use the talk's default presenters.

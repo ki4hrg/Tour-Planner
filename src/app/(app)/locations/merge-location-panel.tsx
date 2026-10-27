@@ -69,6 +69,7 @@ export function MergeLocationPanel({
       [p.contacts, "new contact link"],
       [p.travelReferences, "travel / day reference"],
       [p.shareLinks, "host-site share link"],
+      [p.coveredSites, "covered site"],
     ] as const;
     const moving = lines.filter(([n]) => n > 0);
     return (

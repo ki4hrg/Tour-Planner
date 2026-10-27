@@ -4,6 +4,8 @@ import { toDateInput, todayUtc } from "./dates";
 import { tripStillInPlayWhere } from "./trips";
 import { regionPath, type RegionNode } from "./regions";
 import { buildDashboardRows } from "./booking-dashboard";
+import { withBookedViaParentsWhere } from "./booked-via";
+import { PRICE_LINES_SELECT, tripHeadcount } from "./costs";
 import {
   groupRowsByVenue,
   type TripItemBookings,
@@ -12,6 +14,7 @@ import {
   type VenueMeta,
 } from "./cross-trip-bookings";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { loadWorkflowCatalog } from "@/lib/booking-workflow-sync";
 
 export type { TripItemBookings };
 
@@ -46,10 +49,13 @@ const TRIP_SELECT = {
   name: true,
   startDate: true,
   endDate: true,
+  participantCount: true,
+  capacity: true,
   tripType: { select: { name: true } },
   days: {
     orderBy: { dayIndex: "asc" },
     select: {
+      id: true,
       dayIndex: true,
       date: true,
       plannedLocations: { select: { locationId: true } },
@@ -78,6 +84,8 @@ const TRIP_SELECT = {
               ...BOOKING_PROGRESS_SELECT,
               confirmationRef: true,
               bookedContact: { select: { name: true } },
+              agreedCurrency: true,
+              priceLines: PRICE_LINES_SELECT,
             },
           },
         },
@@ -98,9 +106,8 @@ const TRIP_SELECT = {
       },
       bookedOn: true,
       createdAt: true,
-      agreedAmount: true,
       agreedCurrency: true,
-      agreedUnit: true,
+      priceLines: PRICE_LINES_SELECT,
       payments: { orderBy: { paidOn: "asc" } },
       paymentSchedule: true,
     },
@@ -123,7 +130,7 @@ export async function loadCrossTripBookings({
   tripTypeId?: string;
   includePast?: boolean;
 } = {}): Promise<CrossTripBookings> {
-  const [trips, regions] = await Promise.all([
+  const [trips, regions, workflows] = await Promise.all([
     prisma.trip.findMany({
       where: {
         ...crossTripScope(includePast),
@@ -135,6 +142,7 @@ export async function loadCrossTripBookings({
     prisma.region.findMany({
       select: { id: true, name: true, parentId: true },
     }),
+    loadWorkflowCatalog(),
   ]);
 
   const locationIds = [
@@ -151,10 +159,12 @@ export async function loadCrossTripBookings({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,
@@ -203,6 +213,8 @@ export async function loadCrossTripBookings({
       stays: t.stays,
       locations,
       tripStartDate: t.startDate,
+      headcount: tripHeadcount(t),
+      workflows,
     });
     return { trip, venueRows, itemRows };
   });

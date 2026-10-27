@@ -10,6 +10,7 @@ import {
 import { LocationForm } from "../location-form";
 import { createLocation } from "../actions";
 import { placesEnabled } from "@/lib/google-places";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +33,10 @@ export default async function NewLocationPage() {
         <h1 className="text-2xl font-semibold">New location</h1>
         <Link
           href="/locations"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All locations
+          <ChevronLeft className="size-4" />
+          All locations
         </Link>
       </div>
       <Card>

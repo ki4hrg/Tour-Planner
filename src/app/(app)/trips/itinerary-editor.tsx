@@ -1,9 +1,28 @@
 "use client";
 
-import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Lock } from "lucide-react";
+import {
+  useVenueEngagementVia,
+  VenueEngagementStatus,
+  VenueEngagementSteps,
+} from "./venue-engagements";
+import {
+  PriceLinesEditor,
+  draftsFromLines,
+  draftsToInput,
+} from "./price-lines-editor";
+import { currencyOptions } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,6 +149,13 @@ function useAction() {
   return { pending, run };
 }
 
+// Trip headcount + currency set for the item-booking price editor, so they
+// needn't thread through every item component.
+const TripPricingContext = createContext<{
+  headcount: number | null;
+  currencies: string[];
+}>({ headcount: null, currencies: [] });
+
 export function ItineraryEditor({
   tripId,
   canEdit,
@@ -141,6 +167,8 @@ export function ItineraryEditor({
   contacts: initialContacts,
   presentations: initialPresentations,
   cities,
+  headcount = null,
+  currencies = [],
 }: {
   tripId: string;
   canEdit: boolean;
@@ -152,6 +180,9 @@ export function ItineraryEditor({
   contacts: Contact[];
   presentations: Presentation[];
   cities: City[];
+  // Trip headcount (participants ?? capacity) for per-person booking prices.
+  headcount?: number | null;
+  currencies?: string[];
 }) {
   // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
@@ -325,6 +356,7 @@ export function ItineraryEditor({
   }));
 
   return (
+    <TripPricingContext.Provider value={{ headcount, currencies }}>
     <ItineraryDndProvider onDrop={onDrop}>
     <div className="space-y-4">
       {!hasStartDate && !isTemplate ? (
@@ -416,6 +448,7 @@ export function ItineraryEditor({
       </Dialog>
     </div>
     </ItineraryDndProvider>
+    </TripPricingContext.Provider>
   );
 }
 
@@ -738,7 +771,13 @@ function DayCard({
             ))}
           </ol>
         ) : (
-          <TimelineGroups items={day.items} showBookings linkVenues showGaps />
+          <TimelineGroups
+            items={day.items}
+            showBookings
+            linkVenues
+            showGaps
+            renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
+          />
         )}
       </div>
 
@@ -1084,8 +1123,14 @@ function ItemRow({
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 {/* Fixed-width time gutter so category chips and titles align
                     across rows whether or not an item carries an end time. */}
-                <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                <time className="inline-flex w-[5.25rem] shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
                   {time}
+                  {item.fixedTime && item.startTime ? (
+                    <Lock
+                      className="size-3"
+                      aria-label="Fixed time"
+                    />
+                  ) : null}
                 </time>
                 {item.category && !labelFromCategory ? (
                   <CategoryChip category={item.category} />
@@ -1109,13 +1154,14 @@ function ItemRow({
 
               {/* Member locations — the item's "where" (venue is never the heading). */}
               {item.sites.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-1">
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {item.sites.map((s) => (
-                    <span
-                      key={s.id}
-                      className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground"
-                    >
-                      {s.location.name}
+                    <span key={s.id} className="inline-flex flex-wrap items-center gap-1.5">
+                      <span className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {s.location.name}
+                      </span>
+                      {/* The venue engagement's next step + status. */}
+                      <VenueEngagementStatus locationId={s.locationId} />
                     </span>
                   ))}
                 </div>
@@ -1264,6 +1310,7 @@ function ItemFields({
   );
   const [title, setTitle] = useState(initial?.title ?? "");
   const [isBlock, setIsBlock] = useState(initial?.isBlock ?? false);
+  const [fixedTime, setFixedTime] = useState(initial?.fixedTime ?? false);
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
   // Ripple a time change through the rest of the day (edit only). Default on so
@@ -1405,6 +1452,7 @@ function ItemFields({
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
         isBlock: selfDescribing ? false : isBlock,
+        fixedTime: !!startTime && fixedTime,
         presentationId:
           selfDescribing || presentationId === NONE ? undefined : presentationId,
         presenterIds: selfDescribing ? [] : presenterIds,
@@ -1415,6 +1463,7 @@ function ItemFields({
           setCategoryId(NONE);
           setTitle("");
           setIsBlock(false);
+          setFixedTime(false);
           setStartTime("");
           setEndTime("");
           setNotes("");
@@ -1494,15 +1543,32 @@ function ItemFields({
         </p>
       ) : null}
 
-      {canCascade ? (
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            checked={cascade}
-            onCheckedChange={(v) => setCascade(v === true)}
-          />
-          <span>Shift later items</span>
-        </label>
+      {startTime ? (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* A fixed time is one we don't control (a public event): shifting
+              and reordering never move it, and a ripple stops there. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={fixedTime}
+              onCheckedChange={(v) => setFixedTime(v === true)}
+            />
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3.5" aria-hidden />
+              Fixed time
+            </span>
+          </label>
+          {canCascade ? (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={cascade}
+                onCheckedChange={(v) => setCascade(v === true)}
+              />
+              <span>Shift later items</span>
+            </label>
+          ) : null}
+        </div>
       ) : null}
 
       {selfDescribing ? null : (
@@ -1585,7 +1651,7 @@ function ItemFields({
         ) : (
           <button
             type="button"
-            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            className="text-xs text-muted-foreground link-quiet"
             onClick={() => setCreatingLocation(true)}
           >
             + Create a new location
@@ -1653,7 +1719,7 @@ function ItemFields({
             ) : (
               <button
                 type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingTalk(true)}
               >
                 + Create a new talk
@@ -1742,7 +1808,7 @@ function ItemFields({
             ) : (
               <button
                 type="button"
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingPresenter(true)}
               >
                 + Create a new presenter
@@ -1813,6 +1879,7 @@ function TravelFields({
   const [toLabel, setToLabel] = useState(leg?.toLabel ?? "");
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
+  const [fixedTime, setFixedTime] = useState(initial?.fixedTime ?? false);
   const [cascade, setCascade] = useState(true);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [stops, setStops] = useState<StopDraft[]>(
@@ -1880,6 +1947,7 @@ function TravelFields({
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
         isBlock: false,
+        fixedTime: !!startTime && fixedTime,
         presenterIds: [],
         locationIds: [],
         travel,
@@ -1893,6 +1961,7 @@ function TravelFields({
           setToLabel("");
           setStartTime("");
           setEndTime("");
+          setFixedTime(false);
           setNotes("");
           setStops([]);
         }
@@ -1986,15 +2055,32 @@ function TravelFields({
         </p>
       ) : null}
 
-      {canCascade ? (
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            checked={cascade}
-            onCheckedChange={(v) => setCascade(v === true)}
-          />
-          <span>Shift later items</span>
-        </label>
+      {startTime ? (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* A fixed time is one we don't control (a public event): shifting
+              and reordering never move it, and a ripple stops there. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={fixedTime}
+              onCheckedChange={(v) => setFixedTime(v === true)}
+            />
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3.5" aria-hidden />
+              Fixed time
+            </span>
+          </label>
+          {canCascade ? (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={cascade}
+                onCheckedChange={(v) => setCascade(v === true)}
+              />
+              <span>Shift later items</span>
+            </label>
+          ) : null}
+        </div>
       ) : null}
 
       {/* En-route stops — comfort/photo stops that belong to the leg, not the day. */}
@@ -2105,8 +2191,9 @@ function TravelFields({
 }
 
 // A venue item's booking lives on the (trip, location) engagement, not the item.
-// Link to it per member location; any legacy per-item bookings still show
-// (read-only) so old data isn't hidden.
+// Per member location: that engagement's step strip (acts on the one (trip,
+// location) booking, shared by every item at the venue) + a link to it; any
+// legacy per-item bookings still show (read-only) so old data isn't hidden.
 function VenueEngagementNote({
   tripId,
   item,
@@ -2117,16 +2204,15 @@ function VenueEngagementNote({
   const many = item.sites.length > 1;
   return (
     <div className="space-y-2 rounded-md border p-3">
-      <ul className="space-y-1 text-xs">
+      <ul className="space-y-2 text-xs">
         {item.sites.map((s) => (
-          <li key={s.id}>
-            <Link
-              href={`/trips/${tripId}/booking?venue=${encodeURIComponent(s.locationId)}`}
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {many ? `${s.location.name} booking` : "Venue booking"} →
-            </Link>
-          </li>
+          <VenueEngagementNoteRow
+            key={s.id}
+            tripId={tripId}
+            locationId={s.locationId}
+            name={s.location.name}
+            many={many}
+          />
         ))}
       </ul>
       {item.bookings.length > 0 ? (
@@ -2140,6 +2226,38 @@ function VenueEngagementNote({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// One site's engagement link + steps. A site booked via a parent links to the
+// parent's engagement row, which is the booking that covers it.
+function VenueEngagementNoteRow({
+  tripId,
+  locationId,
+  name,
+  many,
+}: {
+  tripId: string;
+  locationId: string;
+  name: string;
+  many: boolean;
+}) {
+  const via = useVenueEngagementVia(locationId);
+  const venueId = via?.id ?? locationId;
+  return (
+    <li className="space-y-1">
+      <Link
+        href={`/trips/${tripId}/booking?venue=${encodeURIComponent(venueId)}`}
+        className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        {via
+          ? `${via.name} booking`
+          : many
+            ? `${name} booking`
+            : "Venue booking"}
+      </Link>
+      <VenueEngagementSteps locationId={locationId} name={name} />
+    </li>
   );
 }
 
@@ -2275,6 +2393,15 @@ function BookingFields({
     initial?.confirmationRef ?? "",
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  // Same itemized agreed price as a venue engagement (no list prices here —
+  // a site-less booking has no venue catalog).
+  const pricing = useContext(TripPricingContext);
+  const [priceDrafts, setPriceDrafts] = useState(() =>
+    draftsFromLines(initial?.priceLines ?? []),
+  );
+  const [agreedCurrency, setAgreedCurrency] = useState(
+    initial?.agreedCurrency ?? pricing.currencies[0] ?? "USD",
+  );
 
   const submit = () => {
     onSubmit(
@@ -2284,6 +2411,8 @@ function BookingFields({
         bookedContactId: bookedContactId === NONE ? undefined : bookedContactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
+        agreedCurrency,
+        priceLines: draftsToInput(priceDrafts),
       },
       () => {
         if (!initial) {
@@ -2292,6 +2421,7 @@ function BookingFields({
           setBookedContactId(NONE);
           setConfirmationRef("");
           setNotes("");
+          setPriceDrafts([]);
         }
       },
     );
@@ -2350,6 +2480,16 @@ function BookingFields({
         <div className="space-y-1.5">
           <Label className="text-xs">Booking notes</Label>
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <PriceLinesEditor
+            drafts={priceDrafts}
+            onDraftsChange={setPriceDrafts}
+            currency={agreedCurrency}
+            onCurrencyChange={setAgreedCurrency}
+            currencyChoices={currencyOptions(pricing.currencies, agreedCurrency)}
+            headcount={pricing.headcount}
+          />
         </div>
       </div>
       <div className="flex gap-2">

@@ -5,12 +5,15 @@ import { requireUser, hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toDateInput } from "@/lib/dates";
 import { buildDashboardRows, type VenueBookingRow } from "@/lib/booking-dashboard";
+import { withBookedViaParentsWhere } from "@/lib/booked-via";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import {
   MultiYearGrid,
   type YearColumn,
   type VenueLine,
 } from "../multi-year-grid";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +22,12 @@ const TRIP_SELECT = {
   id: true,
   name: true,
   startDate: true,
+  participantCount: true,
+  capacity: true,
   days: {
     orderBy: { dayIndex: "asc" as const },
     select: {
+      id: true,
       dayIndex: true,
       date: true,
       plannedLocations: { select: { locationId: true } },
@@ -60,8 +66,8 @@ const TRIP_SELECT = {
       bookedContact: { select: { id: true, name: true } },
       bookedOn: true,
       createdAt: true,
-      agreedAmount: true,
       agreedCurrency: true,
+      priceLines: PRICE_LINES_SELECT,
       payments: true,
       paymentSchedule: true,
     },
@@ -106,10 +112,12 @@ export default async function CompareYearsPage({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,
@@ -133,6 +141,7 @@ export default async function CompareYearsPage({
       stays: t.stays,
       locations,
       tripStartDate: t.startDate,
+      headcount: tripHeadcount(t),
     });
     for (const row of venueRows) {
       let line = venueMap.get(row.locationId);
@@ -166,9 +175,10 @@ export default async function CompareYearsPage({
         </div>
         <Link
           href="/trips"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All trips
+          <ChevronLeft className="size-4" />
+          All trips
         </Link>
       </div>
 

@@ -29,3 +29,37 @@ export function timedInsertIndex(
   );
   return idx === -1 ? ordered.length : idx;
 }
+
+/**
+ * After an item's start time changes, where it should sit in the day's manual
+ * sequence. The sequence is the planner's, so it's only disturbed when the edit
+ * actually broke chronology: if the item still starts no earlier than the timed
+ * item before it and no later than the timed item after it (untimed neighbours
+ * are skipped), it stays put. Otherwise it's re-slotted by `timedInsertIndex`
+ * among the others. An untimed item never moves.
+ *
+ * `items` are the day's items with their POST-edit times. Returns the new id
+ * order, or null when nothing moves.
+ */
+export function reslotAfterTimeEdit(
+  items: { id: string; order: number; startTime: string | null }[],
+  editedId: string,
+): string[] | null {
+  const ordered = [...items].sort((a, b) => a.order - b.order);
+  const at = ordered.findIndex((it) => it.id === editedId);
+  if (at === -1) return null;
+  const start = ordered[at].startTime;
+  if (!start) return null;
+
+  const prev = ordered.slice(0, at).reverse().find((it) => it.startTime != null);
+  const next = ordered.slice(at + 1).find((it) => it.startTime != null);
+  const inOrder =
+    (!prev || prev.startTime! <= start) && (!next || next.startTime! >= start);
+  if (inOrder) return null;
+
+  const others = ordered.filter((it) => it.id !== editedId);
+  const idx = timedInsertIndex(others, start);
+  const ids = others.map((it) => it.id);
+  ids.splice(idx, 0, editedId);
+  return ids;
+}

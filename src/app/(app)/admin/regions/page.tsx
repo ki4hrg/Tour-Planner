@@ -10,6 +10,7 @@ import {
 import { RegionForm } from "./region-form";
 import { RegionsManager, type RegionRow } from "./regions-manager";
 import { createRegion } from "./actions";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +56,10 @@ export default async function RegionsAdminPage() {
         <h1 className="text-2xl font-semibold">Regions</h1>
         <Link
           href="/admin"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← Admin
+          <ChevronLeft className="size-4" />
+          Admin
         </Link>
       </div>
 

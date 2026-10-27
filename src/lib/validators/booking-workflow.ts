@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { STEP_STATUSES } from "../booking-workflow";
+import { STEP_ACTORS, STEP_STATUSES } from "../booking-workflow";
 
 // An admin's save of one workflow: its name, whether it is the global default,
 // and the full ordered step list. Steps with an `id` are kept (their
@@ -14,6 +14,7 @@ export const bookingWorkflowSchema = z.object({
         id: z.string().optional(),
         label: z.string().trim().min(1, "Every step needs a label.").max(120),
         status: z.enum(STEP_STATUSES),
+        actor: z.enum(STEP_ACTORS),
       }),
     )
     .max(30),

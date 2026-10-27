@@ -7,7 +7,10 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { regionOptions } from "@/lib/regions";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import { ItineraryEditor } from "../../itinerary-editor";
+import { VenueEngagementsProvider } from "../../venue-engagements";
+import { loadVenueEngagements } from "@/lib/venue-engagements";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +51,10 @@ export default async function ItineraryPage({
               },
               bookings: {
                 orderBy: { createdAt: "asc" },
-                include: { bookedContact: { select: { id: true, name: true } } },
+                include: {
+                  bookedContact: { select: { id: true, name: true } },
+                  priceLines: PRICE_LINES_SELECT,
+                },
               },
             },
           },
@@ -101,26 +107,41 @@ export default async function ItineraryPage({
     name: regionName.get(o.id) ?? o.label,
   }));
 
+  // Each venue's (trip, location) engagement, shown beside the venue.
+  const engagements = await loadVenueEngagements(
+    trip.id,
+    trip.days.flatMap((d) =>
+      d.scheduleItems.flatMap((it) => it.sites.map((s) => s.locationId)),
+    ),
+  );
+
   return (
     <div className="space-y-6">
-
-      <ItineraryEditor
+      <VenueEngagementsProvider
         tripId={trip.id}
         canEdit={canEdit}
-        hasStartDate={trip.startDate != null}
-        isTemplate={trip.isTemplate}
-        days={trip.days.map(serializeDay)}
-        categories={categories}
-        locations={locations.map((l) => ({
-          id: l.id,
-          name: l.name,
-          region: l.region?.name ?? null,
-          tagged: l.tripTypes.length > 0,
-        }))}
-        contacts={contacts}
-        presentations={presentations}
-        cities={cities}
-      />
+        engagements={engagements}
+      >
+        <ItineraryEditor
+          tripId={trip.id}
+          canEdit={canEdit}
+          hasStartDate={trip.startDate != null}
+          isTemplate={trip.isTemplate}
+          days={trip.days.map(serializeDay)}
+          categories={categories}
+          locations={locations.map((l) => ({
+            id: l.id,
+            name: l.name,
+            region: l.region?.name ?? null,
+            tagged: l.tripTypes.length > 0,
+          }))}
+          contacts={contacts}
+          presentations={presentations}
+          headcount={tripHeadcount(trip)}
+          currencies={trip.currencies}
+          cities={cities}
+        />
+      </VenueEngagementsProvider>
     </div>
   );
 }

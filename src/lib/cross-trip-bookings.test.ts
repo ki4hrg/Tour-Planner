@@ -31,6 +31,7 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
       workflowId: null,
       completions: [],
     },
+    waiting: null,
     label: null,
     confirmationRef: null,
     notes: null,
@@ -42,9 +43,10 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     nightCount: 0,
     costs: [],
     bookedOn: null,
-    agreedAmount: 100,
+    priceLines: [{ label: "Agreed price", amount: 100, unit: "PER_GROUP" }],
     agreedCurrency: "GBP",
-    agreedUnit: null,
+    agreedTotal: 100,
+    headcount: null,
     payments: [],
     paidTotal: 0,
     unpaidBalance: 100,
@@ -237,7 +239,7 @@ describe("formatting", () => {
   it("formats sessions with date or day number", () => {
     expect(
       formatSession({
-        id: "i",
+        id: "i", dayId: null,
         dayIndex: 2,
         date: "2026-07-07",
         startTime: "10:00",
@@ -247,7 +249,7 @@ describe("formatting", () => {
     ).toBe("Tue 7 Jul, 10:00–12:00: Visit");
     expect(
       formatSession({
-        id: "i",
+        id: "i", dayId: null,
         dayIndex: 3,
         date: null,
         startTime: null,
@@ -279,7 +281,7 @@ describe("buildVenueEmail", () => {
             nightCount: 2,
             sessions: [
               {
-                id: "s",
+                id: "s", dayId: null,
                 dayIndex: 2,
                 date: "2026-07-07",
                 startTime: "10:00",
@@ -396,7 +398,51 @@ describe("actionItems", () => {
       missingPrice: false,
       paymentOverdue: true,
       unconfirmed: true,
+      yourMove: false,
     });
+  });
+
+  it("lists our-move bookings after overdue payments, longest wait first", () => {
+    const wait = (actor: "US" | "VENUE", days: number) => ({
+      stepId: "s",
+      stepLabel: actor === "US" ? "Sign agreement" : "Confirm availability",
+      actor,
+      since: "2026-10-01",
+      days,
+    });
+    const g = groupRowsByVenue(
+      [
+        {
+          trip: trip("t1", "2027-01-01"),
+          venueRows: [
+            row({ bookingId: "b1", waiting: wait("US", 3) }),
+            row({ locationId: "loc-b", bookingId: "b2", waiting: wait("US", 12) }),
+            // Waiting on the venue, or not started yet: not ours.
+            row({ locationId: "loc-c", bookingId: "b3", waiting: wait("VENUE", 30) }),
+            row({ locationId: "loc-d", waiting: wait("US", 0) }),
+            row({
+              locationId: "loc-e",
+              bookingId: "b5",
+              open: true,
+              earliest: "2026-01-01",
+              overdueAmount: 5,
+              waiting: wait("US", 40),
+            }),
+          ],
+        },
+      ],
+      venues,
+    );
+    const items = actionItems(g);
+    expect(items.map((i) => [i.reason, i.key])).toEqual([
+      ["paymentOverdue", "t1:loc-e"],
+      ["yourMove", "t1:loc-b"],
+      ["yourMove", "t1:loc-a"],
+    ]);
+    expect(items[1].text).toBe("Your move: Sign agreement · 12d");
+    expect(
+      rowMatchesFilters(g[0].rows[0].row, { ...NO_ATTENTION_FILTERS, yourMove: true }),
+    ).toBe(true);
   });
 
   it("orders overdue, then open windows by date, then missing price; one per row", () => {

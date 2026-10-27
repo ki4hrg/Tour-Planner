@@ -20,9 +20,15 @@
  *
  * These operate on an item's `order` (the day's manual sequence), NOT on wall-clock
  * position — "from here onward" means "later in the list," matching what the planner
- * sees. Fixed anchors (a booked tour that mustn't move) are NOT modelled yet; the
- * ripple is opt-in per edit so a planner declines it when a downstream item is
- * pinned in reality. See `docs/itinerary-time-editing.md` for that deferred design.
+ * sees.
+ *
+ * **Fixed-time items** (`fixedTime` — a public event, a booked slot we don't control)
+ * are anchors: neither gesture ever moves one, and a shift STOPS at the first fixed
+ * item it reaches — that item and everything after it keep their times. What follows
+ * a fixed event is timed relative to it (the coach after the parade), so sliding it
+ * past the anchor would be wrong. The shifted run can end up overlapping the anchor;
+ * `fixedTimeOverlaps` reports that so the caller can say so. See
+ * `docs/itinerary-time-editing.md`.
  */
 
 import { timeToMinutes, minutesToTime } from "./schedule-gaps";
@@ -32,6 +38,7 @@ export interface DayScheduleItem {
   order: number; // 1-based, contiguous within the day
   startTime: string | null;
   endTime: string | null;
+  fixedTime?: boolean; // anchor: never shifted, and a shift stops at it
 }
 
 /** A recomputed timing for one item — write these back verbatim. */
@@ -105,16 +112,41 @@ export function cascadeFromEdit(
     effectiveEndMinutes(oldStart, edited.endTime);
   if (delta === 0) return [];
 
-  return items
-    .filter((it) => it.order > edited.order && it.startTime != null)
+  return shiftRun(items, delta, edited.order + 1);
+}
+
+/**
+ * The timed, movable items from `fromOrder` up to (not including) the first
+ * fixed-time item ordered after `fromOrder`. A fixed item AT the start of the run
+ * is skipped rather than ending it, so "shift from the parade onward" moves what
+ * comes after the parade, up to the next anchor.
+ */
+function shiftRun(
+  items: DayScheduleItem[],
+  delta: number,
+  fromOrder: number,
+): TimeShift[] {
+  const stopAt = items
+    .filter((it) => it.fixedTime && it.order > fromOrder)
+    .reduce((min, it) => Math.min(min, it.order), Infinity);
+  return [...items]
+    .sort((a, b) => a.order - b.order)
+    .filter(
+      (it) =>
+        it.order >= fromOrder &&
+        it.order < stopAt &&
+        !it.fixedTime &&
+        it.startTime != null,
+    )
     .map((it) => shiftItem(it, delta))
     .filter((s): s is TimeShift => s !== null);
 }
 
 /**
  * Slide a run of timed items by a fixed `deltaMinutes` (negative = earlier).
- * Shifts every timed item whose `order >= fromOrder` (default 1 = the whole day).
- * Returns only the items that changed; untimed items are left alone.
+ * Shifts every timed item whose `order >= fromOrder` (default 1 = the whole day),
+ * stopping at the next fixed-time item. Returns only the items that changed;
+ * untimed and fixed-time items are left alone.
  */
 export function shiftDayItems(
   items: DayScheduleItem[],
@@ -122,8 +154,33 @@ export function shiftDayItems(
   fromOrder = 1,
 ): TimeShift[] {
   if (deltaMinutes === 0) return [];
-  return items
-    .filter((it) => it.order >= fromOrder && it.startTime != null)
-    .map((it) => shiftItem(it, deltaMinutes))
-    .filter((s): s is TimeShift => s !== null);
+  return shiftRun(items, deltaMinutes, fromOrder);
+}
+
+/**
+ * Fixed-time items that, once `shifts` are applied, overlap the movable item
+ * just before them in the day's order — the ripple ran into the anchor. Returns
+ * the ids of the fixed items run into (empty when everything still fits).
+ */
+export function fixedTimeOverlaps(
+  items: DayScheduleItem[],
+  shifts: TimeShift[],
+): string[] {
+  const shifted = new Map(shifts.map((s) => [s.id, s]));
+  const timed = [...items]
+    .sort((a, b) => a.order - b.order)
+    .map((it) => ({ ...it, ...shifted.get(it.id) }))
+    .filter((it) => it.startTime != null && timeToMinutes(it.startTime) !== null);
+
+  const hits: string[] = [];
+  for (let i = 1; i < timed.length; i++) {
+    const anchor = timed[i];
+    const prev = timed[i - 1];
+    if (!anchor.fixedTime || !shifted.has(prev.id)) continue;
+    const prevStart = timeToMinutes(prev.startTime!)!;
+    if (effectiveEndMinutes(prevStart, prev.endTime) > timeToMinutes(anchor.startTime!)!) {
+      hits.push(anchor.id);
+    }
+  }
+  return hits;
 }

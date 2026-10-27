@@ -29,6 +29,7 @@ export default async function WorkflowsPage() {
             id: s.id,
             label: s.label,
             status: s.status === "CONFIRMED" ? "CONFIRMED" : "IN_PROGRESS",
+            actor: s.actor,
           })),
         }))}
       />

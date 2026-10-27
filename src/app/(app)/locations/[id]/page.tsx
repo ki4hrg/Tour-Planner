@@ -11,9 +11,25 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
+import {
+  agreedTotal,
+  formatPriceBreakdown,
+  hasAgreedPrice,
+  PRICE_LINES_SELECT,
+  serializePriceLines,
+  tripHeadcount,
+} from "@/lib/costs";
 import { bookingStageText } from "@/lib/trips";
-import { BOOKING_PROGRESS_SELECT, progressView } from "@/lib/booking-workflow";
+import {
+  BOOKING_PROGRESS_SELECT,
+  WORKFLOW_STEP_SELECT,
+  progressView,
+  waitingOn,
+  waitingView,
+} from "@/lib/booking-workflow";
+import { WaitingNote } from "../../trips/waiting-note";
 import { LocationWorkflowSelect } from "../location-workflow-select";
+import { ProgressList, type ProgressLine } from "../../trips/booking-progress";
 import {
   resolveSchedule,
   scheduleAttention,
@@ -37,9 +53,12 @@ import { LocationContactsManager } from "../location-contacts-manager";
 import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
 import { HostSitePanel } from "../host-site-panel";
 import { MergeLocationPanel } from "../merge-location-panel";
+import { LocationBookedVia } from "../location-booked-via";
+import { engagementsToFold } from "@/lib/booked-via.server";
 import { NotesThread } from "../../notes/notes-thread";
 import { DocumentRow, DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -80,10 +99,49 @@ export default async function LocationDetailPage({
           logisticsNotes: true,
         },
       },
+      bookedVia: {
+        select: { id: true, name: true, bookable: true, defaultWorkflowId: true },
+      },
+      coveredSites: { orderBy: { name: "asc" }, select: { id: true, name: true } },
       _count: { select: { scheduleItems: true } },
     },
   });
   if (!location) notFound();
+
+  // Booked via a parent: this site's engagements live on the PARENT, so the
+  // booking surfaces below read (and act on) the parent's. A parent's own
+  // surfaces count the sites it covers as touching it.
+  const parent = location.bookedVia;
+  const engagementId = parent?.id ?? id;
+  const engagementBookable = parent ? parent.bookable : location.bookable;
+  const engagementWorkflowId = parent
+    ? parent.defaultWorkflowId
+    : location.defaultWorkflowId;
+  const siteIds = [id, ...location.coveredSites.map((c) => c.id)];
+  const atSite = { locationId: { in: siteIds } };
+
+  // "Booked via" picker: bookable locations that aren't themselves booked via
+  // another (single level), never this one. Only offered while this location
+  // covers no sites of its own.
+  const [bookedViaCandidates, foldTrips] =
+    canEdit && location.coveredSites.length === 0
+      ? await Promise.all([
+          prisma.location.findMany({
+            where: {
+              id: { not: id },
+              bookedViaId: null,
+              bookable: true,
+              archivedAt: null,
+            },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true },
+          }),
+          engagementsToFold(id),
+        ])
+      : [[], []];
+  if (parent && !bookedViaCandidates.some((c) => c.id === parent.id)) {
+    bookedViaCandidates.unshift({ id: parent.id, name: parent.name });
+  }
 
   const [allTripTypes, allContacts, allRegions] = await Promise.all([
     prisma.tripType.findMany({
@@ -166,15 +224,15 @@ export default async function LocationDetailPage({
       endDate: { gte: today },
       OR: [
         { bookings: { some: { locationId: id } } },
-        { stays: { some: { locationId: id } } },
+        { stays: { some: atSite } },
         {
           days: {
             some: {
-              scheduleItems: { some: { sites: { some: { locationId: id } } } },
+              scheduleItems: { some: { sites: { some: atSite } } },
             },
           },
         },
-        { days: { some: { plannedLocations: { some: { locationId: id } } } } },
+        { days: { some: { plannedLocations: { some: atSite } } } },
       ],
     },
     orderBy: { startDate: "asc" },
@@ -183,15 +241,18 @@ export default async function LocationDetailPage({
       name: true,
       startDate: true,
       endDate: true,
-      bookings: { where: { locationId: id }, select: BOOKING_PROGRESS_SELECT },
-      stays: { where: { locationId: id }, select: { id: true } },
+      bookings: {
+        where: { locationId: engagementId },
+        select: BOOKING_PROGRESS_SELECT,
+      },
+      stays: { where: atSite, select: { id: true } },
       days: {
         select: {
           scheduleItems: {
-            where: { sites: { some: { locationId: id } } },
+            where: { sites: { some: atSite } },
             select: { id: true },
           },
-          plannedLocations: { where: { locationId: id }, select: { id: true } },
+          plannedLocations: { where: atSite, select: { id: true } },
         },
       },
     },
@@ -203,10 +264,56 @@ export default async function LocationDetailPage({
       .filter(Boolean)
       .join(" – "),
     ongoing: isOngoing(t.startDate, t.endDate),
-    booking: progressView(t.bookings[0] ?? null, location.defaultWorkflowId),
+    booking: progressView(t.bookings[0] ?? null, engagementWorkflowId),
     sessionCount: t.days.reduce((n, d) => n + d.scheduleItems.length, 0),
     plannedCount: t.days.reduce((n, d) => n + d.plannedLocations.length, 0),
     hasLodging: t.stays.length > 0,
+  }));
+
+  // Booking progress: this venue's engagement on every active trip that hasn't
+  // ended (or has no dates yet) and touches it — the one place to move the
+  // venue's bookings along across trips. A trip with no engagement yet shows
+  // the workflow its first tick will seed.
+  const progressTripRows = engagementBookable
+    ? await prisma.trip.findMany({
+        where: {
+          isTemplate: false,
+          status: "ACTIVE",
+          OR: [{ endDate: null }, { endDate: { gte: today } }],
+          AND: {
+            OR: [
+              { bookings: { some: { locationId: id } } },
+              { stays: { some: atSite } },
+              {
+                days: {
+                  some: {
+                    scheduleItems: { some: { sites: { some: atSite } } },
+                  },
+                },
+              },
+              { days: { some: { plannedLocations: { some: atSite } } } },
+            ],
+          },
+        },
+        orderBy: [{ startDate: { sort: "asc", nulls: "last" } }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          bookings: {
+            where: { locationId: engagementId },
+            select: BOOKING_PROGRESS_SELECT,
+          },
+        },
+      })
+    : [];
+  const progressLines: ProgressLine[] = progressTripRows.map((t) => ({
+    key: t.id,
+    name: t.name,
+    href: bookingDashboardHref(t.id, engagementId),
+    detail: t.startDate ? formatDate(t.startDate) : "No dates",
+    target: { tripId: t.id, locationId: id },
+    progress: progressView(t.bookings[0] ?? null, engagementWorkflowId),
   }));
 
   // Visit history: which non-template trips this venue appears in, newest first.
@@ -264,25 +371,44 @@ export default async function LocationDetailPage({
           id: true,
           status: true,
           stageLabel: true,
+          workflow: {
+            select: {
+              steps: {
+                orderBy: { sortOrder: "asc" },
+                select: WORKFLOW_STEP_SELECT,
+              },
+            },
+          },
+          stepCompletions: { select: { stepId: true, completedOn: true } },
           bookedOn: true,
           createdAt: true,
-          agreedAmount: true,
           agreedCurrency: true,
+          priceLines: PRICE_LINES_SELECT,
           payments: { select: { amount: true } },
           paymentSchedule: true,
-          trip: { select: { id: true, name: true, startDate: true } },
+          trip: {
+            select: {
+              id: true,
+              name: true,
+              startDate: true,
+              participantCount: true,
+              capacity: true,
+            },
+          },
         },
       })
     : [];
   const engagements = engagementRows
     .filter((b) => b.trip != null)
     .map((b) => {
-      const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+      const lines = serializePriceLines(b.priceLines);
+      // Per-person lines × the trip's headcount; null when that's unknown.
+      const agreed = agreedTotal(lines, tripHeadcount(b.trip!));
       const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
       const resolved = resolveSchedule(
         b.paymentSchedule.map(serializeInstallment),
         {
-          agreedAmount: agreed,
+          agreedTotal: agreed,
           paidTotal: paid,
           tripStartDate: b.trip!.startDate,
           bookingDate: b.bookedOn ?? b.createdAt,
@@ -297,7 +423,24 @@ export default async function LocationDetailPage({
         startDate: b.trip!.startDate,
         status: b.status,
         stageLabel: b.stageLabel,
+        // Whose move: the upcoming step + its owner, days waiting as of today.
+        waiting: b.workflow
+          ? waitingView(
+              waitingOn(
+                b.workflow.steps,
+                b.stepCompletions,
+                b.status,
+                b.bookedOn ?? b.createdAt,
+              ),
+              today,
+            )
+          : null,
         currency: b.agreedCurrency,
+        // Set only for per-person lines whose trip has no headcount.
+        unresolvedPrice:
+          hasAgreedPrice(lines) && agreed == null
+            ? formatPriceBreakdown(lines, b.agreedCurrency, null)
+            : null,
         agreed,
         paid,
         outstanding: agreed == null ? null : Math.max(0, agreed - paid),
@@ -366,9 +509,10 @@ export default async function LocationDetailPage({
         </h1>
         <Link
           href="/locations"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All locations
+          <ChevronLeft className="size-4" />
+          All locations
         </Link>
       </div>
 
@@ -392,6 +536,27 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {progressLines.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+              Booking progress
+              {parent ? (
+                <Link
+                  href={`/locations/${parent.id}`}
+                  className="text-xs font-normal text-muted-foreground link-quiet"
+                >
+                  via {parent.name}
+                </Link>
+              ) : null}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProgressList lines={progressLines} canEdit={canEdit} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -503,11 +668,19 @@ export default async function LocationDetailPage({
                     </Link>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {e.startDate ? formatDate(e.startDate) : "—"} ·{" "}
-                      {bookingStageText(e)}
+                      {e.waiting ? (
+                        <WaitingNote waiting={e.waiting} />
+                      ) : (
+                        bookingStageText(e)
+                      )}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">
-                    {e.agreed == null ? (
+                    {e.unresolvedPrice != null ? (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        {e.unresolvedPrice} · no headcount
+                      </span>
+                    ) : e.agreed == null ? (
                       <span className="text-muted-foreground">no agreed price</span>
                     ) : (
                       <>
@@ -544,14 +717,24 @@ export default async function LocationDetailPage({
       {currentTrips.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Current trips here</CardTitle>
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+              Current trips here
+              {parent ? (
+                <Link
+                  href={`/locations/${parent.id}`}
+                  className="text-xs font-normal text-muted-foreground link-quiet"
+                >
+                  via {parent.name}
+                </Link>
+              ) : null}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <LocationTripsPanel
               locationId={location.id}
               rows={currentTrips}
               canEdit={canEdit}
-              bookable={location.bookable}
+              bookable={engagementBookable}
             />
           </CardContent>
         </Card>
@@ -669,6 +852,27 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
+      {location.bookable &&
+      (parent || location.coveredSites.length > 0 || canEdit) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {location.coveredSites.length > 0 ? "Covers" : "Booked via"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LocationBookedVia
+              locationId={location.id}
+              bookedVia={parent ? { id: parent.id, name: parent.name } : null}
+              coveredSites={location.coveredSites}
+              candidates={bookedViaCandidates}
+              foldTrips={foldTrips.map((t) => t.tripName)}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card id="contacts" className="scroll-mt-20">
         <CardHeader>
           <CardTitle className="text-base">Contacts</CardTitle>
@@ -706,7 +910,7 @@ export default async function LocationDetailPage({
         </CardContent>
       </Card>
 
-      {location.bookable ? (
+      {location.bookable && !parent ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Booking workflow</CardTitle>
@@ -721,7 +925,7 @@ export default async function LocationDetailPage({
         </Card>
       ) : null}
 
-      {location.bookable && (paymentTerms.length > 0 || canEdit) ? (
+      {location.bookable && !parent && (paymentTerms.length > 0 || canEdit) ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Payment terms</CardTitle>

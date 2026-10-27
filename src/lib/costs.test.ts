@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { rollUpCosts, type CostLike } from "./costs";
+import {
+  agreedTotal,
+  formatPriceBreakdown,
+  hasAgreedPrice,
+  listPriceLines,
+  priceLineSums,
+  rollUpCosts,
+  serializePriceLines,
+  tripHeadcount,
+  type CostLike,
+  type PriceLine,
+} from "./costs";
+
 
 const costs: CostLike[] = [
   { amount: 10, currency: "GBP", unit: "PER_PERSON" },
@@ -31,5 +43,140 @@ describe("rollUpCosts", () => {
 
   it("returns an empty array for no costs", () => {
     expect(rollUpCosts([], 10)).toEqual([]);
+  });
+});
+
+describe("tripHeadcount", () => {
+  it("prefers participants, falls back to capacity, else null", () => {
+    expect(tripHeadcount({ participantCount: 32, capacity: 40 })).toBe(32);
+    expect(tripHeadcount({ participantCount: null, capacity: 40 })).toBe(40);
+    expect(tripHeadcount({ participantCount: 0, capacity: 40 })).toBe(0);
+    expect(tripHeadcount({})).toBeNull();
+  });
+});
+
+
+const pp = (label: string, amount: number): PriceLine => ({ label, amount, unit: "PER_PERSON" });
+const grp = (label: string, amount: number): PriceLine => ({ label, amount, unit: "PER_GROUP" });
+
+describe("agreedTotal", () => {
+  it("no lines is no agreed price", () => {
+    expect(agreedTotal([], 40)).toBeNull();
+    expect(hasAgreedPrice([])).toBe(false);
+    expect(hasAgreedPrice([grp("Hall", 0)])).toBe(true);
+  });
+
+  it("per-group lines sum to the total, headcount or not", () => {
+    expect(agreedTotal([grp("Hall", 600)], 40)).toBe(600);
+    expect(agreedTotal([grp("Hall", 200), grp("Guide", 90)], null)).toBe(290);
+  });
+
+  it("per-person lines multiply by the headcount", () => {
+    expect(agreedTotal([pp("Admission", 15)], 40)).toBe(600);
+    expect(agreedTotal([pp("Admission", 12.5)], 3)).toBe(37.5);
+    expect(agreedTotal([pp("A", 0.1)], 3)).toBe(0.3);
+  });
+
+  it("mixes per-person × headcount with per-group lines", () => {
+    const lines = [pp("Admission", 12), pp("Lunch", 20), grp("Group charge", 90)];
+    expect(agreedTotal(lines, 40)).toBe(1370);
+    // follows the headcount
+    expect(agreedTotal(lines, 30)).toBe(1050);
+  });
+
+  it("per-person lines with unknown headcount have no known total", () => {
+    expect(agreedTotal([pp("Admission", 15)], null)).toBeNull();
+    expect(agreedTotal([pp("Admission", 15), grp("Hall", 90)], null)).toBeNull();
+  });
+});
+
+describe("priceLineSums", () => {
+  it("splits per-person and per-group sums", () => {
+    expect(priceLineSums([pp("A", 12), pp("L", 20.1), grp("G", 90)])).toEqual({
+      perPerson: 32.1,
+      perGroup: 90,
+      hasPerPerson: true,
+    });
+    expect(priceLineSums([])).toEqual({ perPerson: 0, perGroup: 0, hasPerPerson: false });
+  });
+});
+
+describe("serializePriceLines", () => {
+  it("orders by `order` and converts amounts to numbers", () => {
+    expect(
+      serializePriceLines([
+        { label: "B", amount: "20.00", unit: "PER_GROUP", order: 1 },
+        { label: "A", amount: { valueOf: () => 12 }, unit: "PER_PERSON", order: 0 },
+      ]),
+    ).toEqual([pp("A", 12), grp("B", 20)]);
+  });
+});
+
+describe("formatPriceBreakdown", () => {
+  const lines = [pp("Admission", 12), pp("Lunch", 20), grp("Group", 90)];
+
+  it("shows per-person lines × headcount, group lines and the total", () => {
+    expect(formatPriceBreakdown(lines, "GBP", 40)).toBe(
+      "Admission £12.00 + Lunch £20.00 /person × 40 + Group £90.00 = £1,370.00",
+    );
+  });
+
+  it("drops the multiplier and total without a headcount", () => {
+    expect(formatPriceBreakdown(lines, "GBP", null)).toBe(
+      "Admission £12.00 + Lunch £20.00 /person + Group £90.00",
+    );
+  });
+
+  it("a single per-group line is just its amount", () => {
+    expect(formatPriceBreakdown([grp("Agreed price", 600)], "USD", null)).toBe("$600.00");
+  });
+
+  it("is empty for no lines", () => {
+    expect(formatPriceBreakdown([], "USD", 10)).toBe("");
+  });
+});
+
+describe("listPriceLines", () => {
+  const cost = (label: string, amount: number, unit: "PER_PERSON" | "PER_GROUP", currency = "GBP") => ({
+    label,
+    amount,
+    unit,
+    currency,
+  });
+
+  it("copies the venue's lines 1:1, no collapsing", () => {
+    const s = listPriceLines([
+      cost("Admission", 12, "PER_PERSON"),
+      cost("Lunch", 20, "PER_PERSON"),
+      cost("Group charge", 90, "PER_GROUP"),
+    ]);
+    expect(s).toEqual({
+      currency: "GBP",
+      lines: [pp("Admission", 12), pp("Lunch", 20), grp("Group charge", 90)],
+      skipped: 0,
+    });
+  });
+
+  it("takes the venue's main currency and skips the rest", () => {
+    const s = listPriceLines([
+      cost("Hall", 200, "PER_GROUP"),
+      cost("Guide", 90, "PER_GROUP"),
+      cost("Parking", 30, "PER_GROUP", "USD"),
+    ]);
+    expect(s).toMatchObject({ currency: "GBP", skipped: 1 });
+    expect(s?.lines).toHaveLength(2);
+  });
+
+  it("prefers the booking's currency when the venue lists any in it", () => {
+    const s = listPriceLines(
+      [cost("Hall", 200, "PER_GROUP"), cost("Guide", 90, "PER_GROUP"), cost("Parking", 30, "PER_GROUP", "USD")],
+      "USD",
+    );
+    expect(s).toMatchObject({ currency: "USD", lines: [grp("Parking", 30)], skipped: 2 });
+    expect(listPriceLines([cost("Hall", 200, "PER_GROUP")], "EUR")?.currency).toBe("GBP");
+  });
+
+  it("is null for a venue with no list prices", () => {
+    expect(listPriceLines([])).toBeNull();
   });
 });

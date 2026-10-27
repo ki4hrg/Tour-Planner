@@ -36,6 +36,14 @@ enum BookingStatus {
   NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 
+// Whose move a workflow step is: US (the planner — "sign the agreement") or
+// VENUE (waiting on them — "confirm availability"). The booking's upcoming step
+// decides who holds the ball (src/lib/booking-workflow.ts `waitingOn`).
+enum StepActor {
+  US
+  VENUE
+}
+
 enum CostUnit {
   PER_PERSON
   PER_GROUP
@@ -232,12 +240,19 @@ model Location {
   travelsFrom            TravelLeg[]                   @relation("TravelFrom") // travel legs departing here
   travelsTo              TravelLeg[]                   @relation("TravelTo") // travel legs arriving here
   travelStops            TravelStop[]                  @relation("TravelStopLocation") // en-route stops here
+  // Booked via a parent venue: this site's sessions/stays are covered by the
+  // PARENT's (trip, parent) engagement. Single level only (a parent has no
+  // parent; never itself — DB CHECK location_booked_via_not_self).
+  bookedVia              Location?                     @relation("LocationBookedVia", fields: [bookedViaId], references: [id], onDelete: SetNull)
+  bookedViaId            String?
+  coveredSites           Location[]                    @relation("LocationBookedVia") // child sites booked through this one
   createdAt              DateTime                      @default(now())
   updatedAt              DateTime                      @updatedAt
 
   @@index([regionId])
   @@index([primaryContactId])
   @@index([defaultWorkflowId])
+  @@index([bookedViaId])
 }
 
 model Contact {
@@ -377,6 +392,7 @@ model ScheduleItem {
   endTime        String?
   notes          String?
   isBlock        Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
+  fixedTime      Boolean               @default(false) // times we don't control (a public event): shifts/reorders never move it
   presentation   Presentation?         @relation(fields: [presentationId], references: [id], onDelete: SetNull)
   presentationId String? // the catalogued talk this item delivers (optional)
   presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters
@@ -481,10 +497,11 @@ model Booking {
   // installments (GH #86). Planner-set; resolution falls back to createdAt when null.
   bookedOn        DateTime?               @db.Date
   // The negotiated price for THIS engagement (the location cost catalog is the
-  // asking price; this is what was actually agreed). Settled when payments cover it.
-  agreedAmount    Decimal?                @db.Decimal(10, 2)
+  // asking price; this is what was actually agreed), itemized like the venue's
+  // Cost lines so the total follows the headcount (`agreedTotal` in costs.ts).
+  // One currency per booking. Settled when payments cover the total.
   agreedCurrency  String                  @default("USD")
-  agreedUnit      CostUnit?
+  priceLines      BookingPriceLine[]
   payments        Payment[]
   paymentSchedule PaymentScheduleItem[]
   createdAt       DateTime                @default(now())
@@ -535,6 +552,7 @@ model BookingWorkflowStep {
   label       String
   sortOrder   Int                     @default(0)
   status      BookingStatus           @default(IN_PROGRESS)
+  actor       StepActor               @default(US) // who completes this step
   completions BookingStepCompletion[]
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
@@ -591,13 +609,30 @@ model PaymentScheduleItem {
   booking     Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   bookingId   String
   label       String? // e.g. "Deposit", "Balance"
-  percent     Decimal?           @db.Decimal(5, 2) // of the booking's agreedAmount
+  percent     Decimal?           @db.Decimal(5, 2) // of the booking's agreed total
   fixedAmount Decimal?           @db.Decimal(10, 2) // in the booking's agreedCurrency
   anchor      PaymentAnchor      @default(EVENT_START)
   offsetValue Int? // in offsetUnit; anchor-natural direction (EVENT_START=before start, BOOKING=after booking). null iff anchor=NONE
   offsetUnit  PaymentOffsetUnit? // null iff anchor=NONE
   sortOrder   Int                @default(0) // stable display order for equal due dates
   createdAt   DateTime           @default(now())
+
+  @@index([bookingId])
+}
+
+// One line of a booking's agreed price, mirroring the venue's `Cost` lines
+// ("Admission £12 /person", "Group charge £90"). The agreed total is the
+// per-person sum × trip headcount + the per-group sum (`agreedTotal` in
+// costs.ts). Amounts are in the booking's agreedCurrency. Edited
+// replace-the-whole-set.
+model BookingPriceLine {
+  id        String   @id @default(cuid())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String
+  label     String
+  amount    Decimal  @db.Decimal(10, 2)
+  unit      CostUnit
+  order     Int      @default(0)
 
   @@index([bookingId])
 }
@@ -616,7 +651,7 @@ model LocationPaymentScheduleItem {
   location    Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
   locationId  String
   label       String? // e.g. "Deposit", "Balance"
-  percent     Decimal?           @db.Decimal(5, 2) // of the engagement's agreedAmount
+  percent     Decimal?           @db.Decimal(5, 2) // of the engagement's agreed total
   fixedAmount Decimal?           @db.Decimal(10, 2) // in the engagement's agreedCurrency
   anchor      PaymentAnchor      @default(EVENT_START)
   offsetValue Int? // in offsetUnit; anchor-natural direction. null iff anchor=NONE

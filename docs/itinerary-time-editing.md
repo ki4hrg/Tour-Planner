@@ -93,17 +93,22 @@ Three parts, smallest-blast-radius first:
    the day up (same opt-in model as the edit ripple), instead of leaving a hole to
    close by hand. Cheapest win; reuses `cascadeFromEdit`-style logic. No schema change.
 
-2. **Pinned anchors** (`pinnedTime Boolean @default(false)` on `ScheduleItem`; a lock
-   toggle in the editors). A pinned item's times are fixed; ripple/slide must not move
-   it. This is the piece that lets automation tell "must move" from "must not move" —
-   without it, compress can't be safe. Migration + UI + cascade changes.
+2. **Fixed-time anchors** — ✅ shipped as `ScheduleItem.fixedTime` (a "Fixed time"
+   toggle with a lock marker in the item editor, travel editor, and day-view quick
+   edit; `fixedTime` on the MCP add/update tools). A fixed item's times never move:
+   the edit ripple and the day slide **stop at the anchor** (the first rule below —
+   the fixed item and everything after it keep their times), and the reorder cascade
+   leaves fixed items' times alone while re-laying the movable ones onto their own
+   skeleton. When the shifted run now overlaps the anchor, the toast says so — a
+   first, minimal cut of #3.
 
 3. **Overflow / collision indicator.** After a replan, show whether the middle
    actually _fits_ before the first pinned anchor, or has spilled past it.
    `computeScheduleGaps` already finds gaps; an inverse pass finds overlaps. This is
    what turns "I think it fits" into "it fits."
 
-**Engine shape.** `cascadeFromEdit` / `shiftDayItems` stay the right primitive — a
+**Engine shape.** (Shipped with "stop at the anchor"; kept for the record.)
+`cascadeFromEdit` / `shiftDayItems` stay the right primitive — a
 single-delta, order-based translation — but grow to take the pinned set and
 **segment the shift at each anchor** rather than applying one delta across the whole
 tail. Two candidate rules where a shift meets a pinned item:

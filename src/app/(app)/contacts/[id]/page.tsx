@@ -13,6 +13,7 @@ import { ContactChannels } from "@/components/contact-channels";
 import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
+import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -45,9 +46,10 @@ export default async function ContactDetailPage({
         </div>
         <Link
           href="/contacts"
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← All contacts
+          <ChevronLeft className="size-4" />
+          All contacts
         </Link>
       </div>
 

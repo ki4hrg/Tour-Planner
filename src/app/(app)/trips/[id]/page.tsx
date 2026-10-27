@@ -24,12 +24,20 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
-import { rollUpCosts } from "@/lib/costs";
+import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
+import {
+  agreedTotal,
+  hasAgreedPrice,
+  PRICE_LINES_SELECT,
+  rollUpCosts,
+  serializePriceLines,
+  tripHeadcount,
+} from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
   serializeDocument,
 } from "@/lib/documents";
-import { lodgingCoverage, rollUpStays } from "@/lib/stays";
+import { estimateLodging, lodgingCoverage } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
 import {
   resolveSchedule,
@@ -135,23 +143,13 @@ export default async function TripOverviewPage({
   const costLocations = locationIds.length
     ? await prisma.location.findMany({
         where: { id: { in: locationIds } },
-        select: { id: true, name: true, costs: true },
+        select: { id: true, name: true, costs: true, bookedViaId: true },
       })
     : [];
-  const allCosts = costLocations.flatMap((s) => s.costs);
   // Scale per-person costs by the actual participant count, falling back to the
   // planned capacity when it's unset — so templates (which have no participants)
   // and not-yet-registered trips still estimate against capacity.
-  const estimateHeadcount = trip.participantCount ?? trip.capacity;
-  const rollups = rollUpCosts(
-    allCosts.map((c) => ({
-      amount: Number(c.amount),
-      currency: c.currency,
-      unit: c.unit,
-    })),
-    estimateHeadcount,
-  );
-  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
+  const estimateHeadcount = tripHeadcount(trip);
 
   // Lodging (Stay) data — feeds the cost estimate and the Lodging section.
   const stays = await prisma.stay.findMany({
@@ -163,9 +161,26 @@ export default async function TripOverviewPage({
       { priority: "desc" },
     ],
     include: {
-      location: { select: { id: true, name: true, defaultWorkflowId: true } },
+      location: {
+        select: {
+          id: true,
+          name: true,
+          defaultWorkflowId: true,
+          bookedViaId: true,
+          bookedVia: {
+            select: { id: true, name: true, defaultWorkflowId: true },
+          },
+        },
+      },
     },
   });
+  // A site booked via a parent venue is covered by the parent's engagement.
+  const viaMap = bookedViaMap([
+    ...costLocations,
+    ...stays.map((s) => s.location),
+  ]);
+  const engagementVenue = (locationId: string) =>
+    engagementLocationId(locationId, viaMap);
 
   // Stay-specific paperwork, indexed for the Lodging panel.
   const stayDocuments = await prisma.document.findMany({
@@ -189,6 +204,7 @@ export default async function TripOverviewPage({
       location: { select: { name: true } },
       payments: { select: { amount: true } },
       paymentSchedule: true,
+      priceLines: PRICE_LINES_SELECT,
       stepCompletions: { select: { stepId: true, completedOn: true } },
       workflow: { select: { _count: { select: { steps: true } } } },
     },
@@ -196,17 +212,35 @@ export default async function TripOverviewPage({
   // Workflow state for each stay's status control (keyed by lodging venue).
   const progressByLocation: Record<string, BookingProgressView> = {};
   for (const s of stays) {
-    const eng = engagementBookings.find((b) => b.locationId === s.locationId);
+    const venueId = engagementVenue(s.locationId);
+    const eng = engagementBookings.find((b) => b.locationId === venueId);
     progressByLocation[s.locationId] = progressView(
       eng ?? null,
-      s.location.defaultWorkflowId,
+      s.location.bookedVia?.defaultWorkflowId ?? s.location.defaultWorkflowId,
     );
   }
   const bookingByLocation = bookingsByLocation(
     engagementBookings.map(serializeBooking),
   );
-  const stayRollups = rollUpStays(
+  // Lodging in the estimate: a lodging venue whose engagement has an agreed
+  // total counts at that total (it is the contract, and covers every stay and
+  // session there); otherwise each stay counts at its nightly rate, priced for
+  // the trip headcount when the stay has no headcount of its own.
+  const agreedByLocation = new Map<string, { total: number; currency: string }>();
+  for (const b of engagementBookings) {
+    if (!b.locationId || b.status === "NOT_NEEDED") continue;
+    const total = agreedTotal(
+      serializePriceLines(b.priceLines),
+      estimateHeadcount,
+    );
+    if (total != null)
+      agreedByLocation.set(b.locationId, { total, currency: b.agreedCurrency });
+  }
+  const lodgingEstimate = estimateLodging(
     stays.map((s) => ({
+      // Priced by the engagement that covers it (a parent's agreed total
+      // covers lodging at its child sites).
+      locationId: engagementVenue(s.locationId),
       checkIn: s.checkIn,
       checkOut: s.checkOut,
       checkInDayIndex: s.checkInDayIndex,
@@ -218,7 +252,26 @@ export default async function TripOverviewPage({
           : Number(s.costPerPersonPerNight),
       currency: s.currency,
     })),
+    agreedByLocation,
+    estimateHeadcount,
   );
+  const stayRollups = lodgingEstimate.byCurrency;
+  // A venue priced by its agreed total drops its catalog costs — the agreed
+  // total already covers the whole engagement.
+  const allCosts = costLocations
+    .filter(
+      (l) => !lodgingEstimate.agreedLocationIds.has(engagementVenue(l.id)),
+    )
+    .flatMap((s) => s.costs);
+  const rollups = rollUpCosts(
+    allCosts.map((c) => ({
+      amount: Number(c.amount),
+      currency: c.currency,
+      unit: c.unit,
+    })),
+    estimateHeadcount,
+  );
+  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
 
   // Night-by-night lodging coverage for the Lodging card, plus the first run of
   // uncovered nights so "+ Add stay" can pre-fill it.
@@ -229,10 +282,12 @@ export default async function TripOverviewPage({
     stayId: n.stay?.id ?? null,
     venue: n.stay?.location.name ?? null,
     status: n.stay
-      ? (bookingByLocation.get(n.stay.locationId)?.status ?? null)
+      ? (bookingByLocation.get(engagementVenue(n.stay.locationId))?.status ??
+        null)
       : null,
     stageLabel: n.stay
-      ? (bookingByLocation.get(n.stay.locationId)?.stageLabel ?? null)
+      ? (bookingByLocation.get(engagementVenue(n.stay.locationId))
+          ?.stageLabel ?? null)
       : null,
     covering: n.covering,
   }));
@@ -280,9 +335,11 @@ export default async function TripOverviewPage({
   // or next-due installment, so a payment problem is visible from the trip page
   // without opening the booking dashboard. Templates have no dates, so their
   // installments never resolve — the panel is dated-trip only.
+  // `unknown` counts per-person price lines with no headcount to multiply: their
+  // total (and so their balance) is unknown, which the panel says outright.
   const moneyByCurrency = new Map<
     string,
-    { agreed: number; paid: number; outstanding: number }
+    { agreed: number; paid: number; outstanding: number; unknown: number }
   >();
   const moneyAttention: {
     venue: string;
@@ -295,14 +352,18 @@ export default async function TripOverviewPage({
   }[] = [];
   const moneyToday = todayUtc();
   for (const b of engagementBookings) {
-    const agreed = b.agreedAmount == null ? null : Number(b.agreedAmount);
+    const lines = serializePriceLines(b.priceLines);
+    const priced = hasAgreedPrice(lines);
+    const agreed = agreedTotal(lines, estimateHeadcount);
     const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (agreed != null || paid > 0) {
+    if (priced || paid > 0) {
       const row = moneyByCurrency.get(b.agreedCurrency) ?? {
         agreed: 0,
         paid: 0,
         outstanding: 0,
+        unknown: 0,
       };
+      if (priced && agreed == null) row.unknown++;
       row.agreed += agreed ?? 0;
       row.paid += paid;
       row.outstanding += agreed != null ? Math.max(0, agreed - paid) : 0;
@@ -311,7 +372,7 @@ export default async function TripOverviewPage({
     const resolved = resolveSchedule(
       b.paymentSchedule.map(serializeInstallment),
       {
-        agreedAmount: agreed,
+        agreedTotal: agreed,
         paidTotal: paid,
         tripStartDate: trip.startDate,
         bookingDate: b.bookedOn ?? b.createdAt,
@@ -429,8 +490,10 @@ export default async function TripOverviewPage({
         // Engagements not yet financially/administratively closed.
         openEngagements: engagementBookings
           .map((b) => {
-            const agreed =
-              b.agreedAmount == null ? null : Number(b.agreedAmount);
+            const agreed = agreedTotal(
+              serializePriceLines(b.priceLines),
+              estimateHeadcount,
+            );
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
             const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
             // Open until every workflow step is ticked (or, without a
@@ -529,10 +592,14 @@ export default async function TripOverviewPage({
                   region: l.region?.name ?? null,
                 }))}
                 stays={stays.map((s) =>
-                  serializeStay(s, bookingByLocation.get(s.locationId) ?? null),
+                  serializeStay(
+                    s,
+                    bookingByLocation.get(engagementVenue(s.locationId)) ?? null,
+                  ),
                 )}
                 documentsByStay={documentsByStay}
                 progressByLocation={progressByLocation}
+                headcount={estimateHeadcount}
                 suggestedSpan={canEdit ? suggestedSpan : null}
               />
             </CardContent>
@@ -809,9 +876,9 @@ export default async function TripOverviewPage({
                 </CardTitle>
                 <Link
                   href={`/trips/${trip.id}/booking`}
-                  className="text-xs text-muted-foreground hover:underline"
+                  className="text-xs text-muted-foreground link-quiet"
                 >
-                  Bookings →
+                  Bookings
                 </Link>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -830,8 +897,17 @@ export default async function TripOverviewPage({
                         <dd className="text-right font-medium">
                           {r.outstanding > 0
                             ? `${formatMoney(r.outstanding, r.currency)} left`
-                            : "settled"}
+                            : r.unknown > 0
+                              ? "—"
+                              : "settled"}
                         </dd>
+                        {r.unknown > 0 ? (
+                          <dd className="col-span-3 text-xs text-amber-700 dark:text-amber-300">
+                            {r.unknown} per-person price
+                            {r.unknown === 1 ? " has" : "s have"} no total: the
+                            trip has no headcount.
+                          </dd>
+                        ) : null}
                       </div>
                     ))}
                   </dl>

@@ -41,9 +41,16 @@ export default async function TripsPage({
     status && TRIP_LIFECYCLES.includes(status as TripLifecycle)
       ? (status as TripLifecycle)
       : undefined;
+  // No filter = the working set: archived and cancelled trips stay out until
+  // asked for by their own chip or "All".
+  const showAll = status === "all";
   const where: Prisma.TripWhereInput = {
     isTemplate: showTemplates,
-    ...(lifecycle ? tripLifecycleWhere(lifecycle, today) : {}),
+    ...(lifecycle
+      ? tripLifecycleWhere(lifecycle, today)
+      : showAll
+        ? {}
+        : { status: { notIn: ["ARCHIVED", "CANCELLED"] } }),
   };
 
   const trips = await prisma.trip.findMany({
@@ -101,10 +108,10 @@ export default async function TripsPage({
           href={qs({ templates: showTemplates ? "1" : undefined })}
           className={cn(
             "rounded-full border px-3 py-1 text-sm",
-            !status ? "bg-muted font-medium" : "text-muted-foreground",
+            !lifecycle && !showAll ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
-          All
+          Current
         </Link>
         {TRIP_LIFECYCLES.map((s) => (
           <Link
@@ -118,12 +125,21 @@ export default async function TripsPage({
             {TRIP_LIFECYCLE_LABELS[s]}
           </Link>
         ))}
+        <Link
+          href={qs({ status: "all", templates: showTemplates ? "1" : undefined })}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm",
+            showAll ? "bg-muted font-medium" : "text-muted-foreground",
+          )}
+        >
+          All
+        </Link>
         <span className="ml-auto">
           <Link
             href={qs({ status, templates: showTemplates ? undefined : "1" })}
-            className="text-sm text-muted-foreground underline-offset-2 hover:underline"
+            className="text-sm text-muted-foreground link-quiet"
           >
-            {showTemplates ? "← Trips" : "Show templates"}
+            {showTemplates ? "Hide templates" : "Show templates"}
           </Link>
         </span>
       </div>

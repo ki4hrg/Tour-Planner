@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   cascadeFromEdit,
+  fixedTimeOverlaps,
   shiftDayItems,
   type DayScheduleItem,
 } from "./schedule-shift";
@@ -172,5 +173,50 @@ describe("shiftDayItems", () => {
     expect(shape(shiftDayItems(items, -60))).toEqual([
       { id: "a", start: "00:00", end: "00:00" },
     ]);
+  });
+});
+
+describe("fixed-time anchors", () => {
+  const fixed = (it: DayScheduleItem): DayScheduleItem => ({ ...it, fixedTime: true });
+
+  it("stops the edit ripple at the first fixed item", () => {
+    const items = [
+      item("a", 1, "09:00", "10:00"),
+      item("b", 2, "10:30", "11:00"),
+      fixed(item("parade", 3, "14:00", "15:00")),
+      item("coach", 4, "15:30", "16:00"),
+    ];
+    expect(shape(cascadeFromEdit(items, "a", "09:00", "10:30"))).toEqual([
+      { id: "b", start: "11:00", end: "11:30" },
+    ]);
+  });
+
+  it("stops the day slide at the first fixed item after the start", () => {
+    const items = [
+      item("a", 1, "09:00", "10:00"),
+      fixed(item("p", 2, "11:00", "12:00")),
+      item("b", 3, "13:00", "14:00"),
+      fixed(item("q", 4, "15:00", "16:00")),
+      item("c", 5, "17:00", "18:00"),
+    ];
+    expect(shape(shiftDayItems(items, 30))).toEqual([
+      { id: "a", start: "09:30", end: "10:30" },
+    ]);
+    // Starting AT a fixed item skips it and runs to the next anchor.
+    expect(shape(shiftDayItems(items, 30, 2))).toEqual([
+      { id: "b", start: "13:30", end: "14:30" },
+    ]);
+  });
+
+  it("reports a fixed item the shifted run now overlaps", () => {
+    const items = [
+      item("a", 1, "09:00", "10:00"),
+      item("b", 2, "12:00", "13:30"),
+      fixed(item("p", 3, "14:00", "15:00")),
+    ];
+    const ok = shiftDayItems(items, 20);
+    expect(fixedTimeOverlaps(items, ok)).toEqual([]);
+    const late = shiftDayItems(items, 45);
+    expect(fixedTimeOverlaps(items, late)).toEqual(["p"]);
   });
 });

@@ -6,6 +6,7 @@ import {
   Bus,
   CarTaxiFront,
   Footprints,
+  Lock,
   MapPin,
   Moon,
   MoveRight,
@@ -45,6 +46,7 @@ export function TimelineGroups({
   linkVenues = false,
   showVenueContacts = false,
   renderItemExtra,
+  renderVenueExtra,
   itemLinkBase,
   showGaps = false,
 }: {
@@ -60,6 +62,9 @@ export function TimelineGroups({
   // Per-item slot rendered under the row content — the day view mounts its
   // inline quick-edit here. The timeline itself stays a read component.
   renderItemExtra?: (item: SerializedScheduleItem) => React.ReactNode;
+  // Per-venue slot beside each venue subheader name — planner surfaces mount
+  // the engagement's booking progress here.
+  renderVenueExtra?: (locationId: string) => React.ReactNode;
   // Opt-in: link each item row to `${itemLinkBase}#item-{id}` (dashboard → the
   // trip's day view). A plain string so Server Components can pass it; share
   // and print views stay non-interactive by simply not passing it.
@@ -89,6 +94,7 @@ export function TimelineGroups({
             run={run}
             linkVenues={linkVenues}
             showVenueContacts={showVenueContacts}
+            renderVenueExtra={renderVenueExtra}
           />
           <ul className="space-y-1">
             {run.items.map((item) => (
@@ -163,10 +169,12 @@ function RunHeader({
   run,
   linkVenues,
   showVenueContacts,
+  renderVenueExtra,
 }: {
   run: VenueRun;
   linkVenues?: boolean;
   showVenueContacts?: boolean;
+  renderVenueExtra?: (locationId: string) => React.ReactNode;
 }) {
   if (run.venues.length === 0) return null;
   return (
@@ -203,6 +211,11 @@ function RunHeader({
               >
                 <MapPin className="size-3.5" />
               </a>
+            ) : null}
+            {renderVenueExtra ? (
+              <span className="ml-2 inline-flex align-middle font-sans text-xs font-normal tracking-normal">
+                {renderVenueExtra(v.id)}
+              </span>
             ) : null}
           </span>
         );
@@ -251,6 +264,14 @@ function TimelineRow({
   href?: string | null;
 }) {
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
+  // Fixed-time marker — a staff planning cue, so only where bookings show.
+  const fixed =
+    showBookings && item.fixedTime && item.startTime ? (
+      <Lock
+        className="mr-1 inline size-3.5 align-[-2px] text-muted-foreground"
+        aria-label="Fixed time"
+      />
+    ) : null;
   const speakers = effectivePresenters(item);
   const { primary, presentationIsPrimary, labelFromCategory } =
     scheduleItemPrimaryLabel(item);
@@ -271,6 +292,7 @@ function TimelineRow({
           <TravelMethodIcon method={item.travel.method} className="size-4" />
         </span>
         <div className="min-w-0">
+          {fixed}
           <span className="mr-1.5 inline-block align-middle text-muted-foreground sm:hidden">
             <TravelMethodIcon method={item.travel.method} className="size-3.5" />
           </span>
@@ -324,6 +346,7 @@ function TimelineRow({
         {showChip ? <CategoryChip category={item.category!} /> : null}
       </span>
       <div className="min-w-0">
+          {fixed}
         {showChip ? (
           <span className="mr-1.5 align-middle sm:hidden">
             <CategoryChip category={item.category!} />

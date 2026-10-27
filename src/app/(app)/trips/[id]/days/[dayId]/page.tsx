@@ -15,6 +15,8 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { DayTimeline } from "./day-timeline";
+import { VenueEngagementsProvider } from "../../../venue-engagements";
+import { loadVenueEngagements } from "@/lib/venue-engagements";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +98,11 @@ export default async function TripDayPage({
   const lodging = summarizeDayLodging(trip.days, stays)[day.id] ?? null;
 
   const serialized = serializeDay(day);
+  // Each venue's (trip, location) engagement, shown beside the venue subheader.
+  const engagements = await loadVenueEngagements(
+    trip.id,
+    serialized.items.flatMap((it) => it.sites.map((s) => s.locationId)),
+  );
 
   // Rough-plan locations (GH #9) not already realised as a timed stop — a loose
   // "planned" line distinct from the day's timeline below.
@@ -111,9 +118,10 @@ export default async function TripDayPage({
       <div className="flex items-center justify-between gap-3">
         <Link
           href={`/trips/${trip.id}`}
-          className="text-sm text-muted-foreground hover:underline"
+          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
-          ← {trip.name}
+          <ChevronLeft className="size-4" />
+          {trip.name}
         </Link>
         <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
       </div>
@@ -148,13 +156,19 @@ export default async function TripDayPage({
         {serialized.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
         ) : (
-          <DayTimeline
+          <VenueEngagementsProvider
             tripId={trip.id}
-            dayId={day.id}
-            items={serialized.items}
-            lodging={lodging}
             canEdit={canEdit}
-          />
+            engagements={engagements}
+          >
+            <DayTimeline
+              tripId={trip.id}
+              dayId={day.id}
+              items={serialized.items}
+              lodging={lodging}
+              canEdit={canEdit}
+            />
+          </VenueEngagementsProvider>
         )}
       </div>
 

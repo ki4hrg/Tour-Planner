@@ -11,6 +11,7 @@ import type {
 } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
 import { lodgingForDays } from "@/lib/stays";
+import { serializePriceLines, type PriceLine } from "@/lib/costs";
 
 // The STORED status is a manual override only; the day-to-day lifecycle
 // (Planning → In progress → Complete) is derived from dates — see
@@ -176,6 +177,9 @@ export type SerializedBooking = {
   bookedContact: SerializedPerson | null;
   confirmationRef: string | null;
   notes: string | null;
+  // The itemized agreed price (empty when the query didn't load it).
+  agreedCurrency: string;
+  priceLines: PriceLine[];
 };
 
 export type SerializedItemPresentation = {
@@ -265,6 +269,7 @@ export type SerializedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime: boolean; // times we don't control; shifts/reorders never move it
   presentationId: string | null;
   presentation: SerializedItemPresentation | null;
   presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
@@ -284,7 +289,11 @@ export type SerializedScheduleItem = {
 //      is uninformative, so a located category-labelled item reads
 //      "Visit: The Old Rectory" (self-describing kinds like Free time / Break are
 //      location-less, so they stay bare),
-//   5. "Untitled item".
+//   5. with no category, the venue(s) themselves — or "Visit" when the caller
+//      already shows the venue as the heading (`venueInHeading: false`, e.g. a
+//      venue's session list),
+//   6. the first line of the notes, else "Item" (an item must have a title or
+//      a location, so this is only reachable for legacy rows).
 // `presentationIsPrimary` is true when the talk title IS the heading, so callers
 // avoid echoing it. `labelFromCategory` is true when the category name drives the
 // heading, so callers drop the (now redundant) category chip and instead tint
@@ -293,17 +302,19 @@ export function scheduleItemPrimaryLabel(item: {
   title: string | null;
   presentation: { title: string } | null;
   category: { name: string } | null;
+  notes?: string | null;
   sites?: { location: { name: string } }[];
   travel?: {
     method: TravelMethod;
     toLocation: { name: string } | null;
     toLabel: string | null;
   } | null;
-}): {
+}, opts: { venueInHeading?: boolean } = {}): {
   primary: string;
   presentationIsPrimary: boolean;
   labelFromCategory: boolean;
 } {
+  const venueInHeading = opts.venueInHeading ?? true;
   if (item.title) {
     return {
       primary: item.title,
@@ -327,8 +338,10 @@ export function scheduleItemPrimaryLabel(item: {
       labelFromCategory: false,
     };
   }
+  const venues = venueInHeading
+    ? (item.sites ?? []).map((s) => s.location.name)
+    : [];
   if (item.category) {
-    const venues = (item.sites ?? []).map((s) => s.location.name);
     return {
       primary: venues.length
         ? `${item.category.name}: ${venues.join(", ")}`
@@ -338,7 +351,11 @@ export function scheduleItemPrimaryLabel(item: {
     };
   }
   return {
-    primary: "Untitled item",
+    primary: venues.length
+      ? venues.join(", ")
+      : !venueInHeading
+        ? "Visit"
+        : item.notes?.split("\n")[0].trim() || "Item",
     presentationIsPrimary: false,
     labelFromCategory: false,
   };
@@ -476,6 +493,8 @@ type ItemLocationRow = {
 
 type BookingRow = Booking & {
   bookedContact: { id: string; name: string } | null;
+  // Optional: present only when the caller's query loaded PRICE_LINES_SELECT.
+  priceLines?: Parameters<typeof serializePriceLines>[0];
 };
 
 type TravelLegRow = {
@@ -523,6 +542,8 @@ export function serializeBooking(b: BookingRow): SerializedBooking {
       : null,
     confirmationRef: b.confirmationRef,
     notes: b.notes,
+    agreedCurrency: b.agreedCurrency,
+    priceLines: serializePriceLines(b.priceLines ?? []),
   };
 }
 
@@ -542,6 +563,7 @@ export function serializeScheduleItem(
     endTime: item.endTime,
     notes: item.notes,
     isBlock: item.isBlock,
+    fixedTime: item.fixedTime,
     presentationId: item.presentationId,
     presentation: item.presentation
       ? {
@@ -638,11 +660,14 @@ export function serializeDay(
     plannedLocations?: PlannedLocationRow[];
   },
 ): SerializedDay {
+  // The raw relations stay out of the spread: they'd ride into the RSC payload
+  // un-serialized (e.g. booking price-line Decimals, which can't cross).
+  const { scheduleItems, plannedLocations, ...rest } = day;
   return {
-    ...day,
+    ...rest,
     date: day.date ? toDateInput(day.date) : null,
-    items: day.scheduleItems.map(serializeScheduleItem),
-    plannedLocations: (day.plannedLocations ?? []).map((p) => ({
+    items: scheduleItems.map(serializeScheduleItem),
+    plannedLocations: (plannedLocations ?? []).map((p) => ({
       id: p.id,
       locationId: p.locationId,
       name: p.location.name,
@@ -682,10 +707,17 @@ export type SerializedStay = {
   // The venue-engagement booking covering this stay's location (resolved by the
   // caller from the trip's engagements), or null. Lodging no longer owns a booking.
   booking: SerializedBooking | null;
+  // The parent venue whose engagement covers this lodging, when the stay's
+  // location is booked via one (null otherwise).
+  bookedVia: { id: string; name: string } | null;
 };
 
 type StayRow = Stay & {
-  location: { id: string; name: string };
+  location: {
+    id: string;
+    name: string;
+    bookedVia?: { id: string; name: string } | null;
+  };
 };
 
 // A compact, client-safe summary of the night's lodging for a single day — what
@@ -748,6 +780,9 @@ export function serializeStay(
     priority: stay.priority,
     notes: stay.notes,
     booking,
+    bookedVia: stay.location.bookedVia
+      ? { id: stay.location.bookedVia.id, name: stay.location.bookedVia.name }
+      : null,
   };
 }
 

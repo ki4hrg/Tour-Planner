@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { BookingStatus } from "@prisma/client";
+import type { BookingStatus, StepActor } from "@prisma/client";
 
 // The admin-defined booking workflows, loaded once by the (app) layout and read
 // by every booking status control — so the many pages that render one don't
@@ -12,6 +12,7 @@ export type WorkflowStepOption = {
   label: string;
   sortOrder: number;
   status: BookingStatus;
+  actor: StepActor;
 };
 
 export type WorkflowOption = {

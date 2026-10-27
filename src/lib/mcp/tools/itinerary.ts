@@ -13,6 +13,7 @@ import {
   movePlannedLocationTo,
   previewDayReorder,
   reorderTripDays,
+  reslotEditedItem,
 } from "@/lib/itinerary-mutations";
 
 // A travel span (GH #80) on add/update-schedule-item. Setting it makes the item
@@ -252,7 +253,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Schedule Item",
       description:
-        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items.",
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it.",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
@@ -264,6 +265,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         presentationId: z.string().optional(),
         presenterIds: z.array(z.string()).optional(),
         isBlock: z.boolean().optional(),
+        fixedTime: z.boolean().optional(),
         travel: travelInputSchema.optional(),
       },
       annotations: {
@@ -284,6 +286,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       presentationId,
       presenterIds,
       isBlock,
+      fixedTime,
       travel,
     }) => {
       try {
@@ -317,6 +320,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               endTime: endTime || null,
               notes: notes || null,
               isBlock: isBlock ?? false,
+              fixedTime: fixedTime ?? false,
               presentationId: presentationId || null,
               presenters: presenterIds?.length
                 ? { connect: presenterIds.map((id) => ({ id })) }
@@ -366,7 +370,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Schedule Item",
       description:
-        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one.",
+        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples).",
       inputSchema: {
         itemId: z.string(),
         title: z.string().optional(),
@@ -377,6 +381,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         locationIds: z.array(z.string()).optional(),
         presentationId: z.string().optional(),
         presenterIds: z.array(z.string()).optional(),
+        fixedTime: z.boolean().optional(),
         travel: travelInputSchema.nullable().optional(),
       },
       annotations: {
@@ -396,6 +401,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       locationIds,
       presentationId,
       presenterIds,
+      fixedTime,
       travel,
     }) => {
       try {
@@ -409,6 +415,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         const existing = await prisma.scheduleItem.findUnique({
           where: { id: itemId },
           select: {
+            dayId: true,
             title: true,
             travel: { select: { id: true } },
             _count: { select: { sites: true } },
@@ -452,6 +459,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         if (startTime !== undefined) updateData.startTime = startTime || null;
         if (endTime !== undefined) updateData.endTime = endTime || null;
         if (notes !== undefined) updateData.notes = notes || null;
+        if (fixedTime !== undefined) updateData.fixedTime = fixedTime;
         if (presentationId !== undefined)
           updateData.presentationId = presentationId || null;
         if (presenterIds !== undefined) {
@@ -507,6 +515,10 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             where: { id: itemId },
             data: updateData,
           });
+          // A changed start can leave the item out of sequence; slot it back in.
+          if (startTime !== undefined) {
+            await reslotEditedItem(tx, existing.dayId, itemId);
+          }
         });
 
         return {

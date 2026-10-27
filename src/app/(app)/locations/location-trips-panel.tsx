@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BookingProgressView } from "@/lib/booking-workflow";
-import { WorkflowControl } from "../trips/workflow-control";
+import { CompactProgress } from "../trips/booking-progress";
 
 // One row per trip that touches this venue right now or soon: the engagement's
 // one-click booking status, what the trip runs here, and a jump to today.
@@ -58,9 +58,9 @@ export function LocationTripsPanel({
               {r.ongoing ? (
                 <Link
                   href={`/trips/${r.tripId}/today`}
-                  className="shrink-0 text-xs text-muted-foreground hover:underline"
+                  className="shrink-0 text-xs text-muted-foreground link-quiet"
                 >
-                  Today →
+                  Today
                 </Link>
               ) : null}
             </div>
@@ -69,9 +69,10 @@ export function LocationTripsPanel({
               {coverage ? ` · ${coverage}` : ""}
             </p>
             {bookable ? (
-              <WorkflowControl
+              <CompactProgress
                 target={{ tripId: r.tripId, locationId }}
                 progress={r.booking}
+                showAge
                 canEdit={canEdit}
               />
             ) : null}

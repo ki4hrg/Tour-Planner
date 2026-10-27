@@ -7,11 +7,20 @@ const optionalId = z.preprocess(
   z.string().optional(),
 );
 
-// Empty string / null → undefined; strings coerce to numbers (form inputs).
-const optionalMoney = z.preprocess(
-  (v) => (v === "" || v == null ? undefined : Number(v)),
-  z.number().nonnegative("Amount can't be negative.").optional(),
-);
+// One line of the itemized agreed price (mirrors a venue Cost line). Amounts
+// coerce from form strings; the label may be blank (a lone "the price" line).
+export const priceLineSchema = z.object({
+  label: z.string().trim().default(""),
+  amount: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : Number(v)),
+    z
+      .number({ error: "Each price line needs an amount." })
+      .nonnegative("Amount can't be negative."),
+  ),
+  unit: z.enum(["PER_PERSON", "PER_GROUP"]),
+});
+
+export type PriceLineInput = z.infer<typeof priceLineSchema>;
 
 export const bookingSchema = z.object({
   // Which member location this booking is for (empty = the item as a whole).
@@ -26,13 +35,11 @@ export const bookingSchema = z.object({
     (v) => (v === "" || v == null ? undefined : v),
     calendarDate("Use a real yyyy-mm-dd date.").optional(),
   ),
-  // The negotiated engagement price (asking price lives in the cost catalog).
-  agreedAmount: optionalMoney,
+  // The negotiated price (asking price lives in the cost catalog), itemized.
+  // `priceLines` REPLACES the set when present (`[]` clears it); omitted leaves
+  // the stored lines untouched. One currency for the whole booking.
   agreedCurrency: z.string().trim().optional(),
-  agreedUnit: z.preprocess(
-    (v) => (v === "" || v == null ? undefined : v),
-    z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
-  ),
+  priceLines: z.array(priceLineSchema).optional(),
 });
 
 export type BookingInput = z.infer<typeof bookingSchema>;
@@ -103,6 +110,17 @@ export type PaymentScheduleInput = z.infer<typeof paymentScheduleSchema>;
 // Parsed installments → Prisma scalar rows shared by every write site (booking +
 // location schedules, web action + MCP). Callers spread bookingId / locationId
 // on top. NONE clears the offset fields to satisfy the payment_schedule_anchor CHECK.
+// Parsed price lines → BookingPriceLine create rows (shared by the web actions
+// and the MCP tools). Callers spread bookingId on top.
+export function priceLineRows(lines: PriceLineInput[]) {
+  return lines.map((l, idx) => ({
+    label: l.label,
+    amount: l.amount,
+    unit: l.unit,
+    order: idx,
+  }));
+}
+
 export function installmentRows(installments: PaymentScheduleInput["installments"]) {
   return installments.map((i, idx) => ({
     label: i.label || null,

@@ -19,6 +19,7 @@ import {
   paymentSchema,
   paymentScheduleSchema,
   installmentRows,
+  priceLineRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate, todayUtc } from "@/lib/dates";
@@ -45,11 +46,18 @@ import {
   previewDayReorder,
   reorderDayItems,
   reorderTripDays,
+  reslotEditedItem,
   type StayFollowLine,
 } from "@/lib/itinerary-mutations";
 import { travelLegCreateData } from "@/lib/travel";
-import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
+import {
+  cascadeFromEdit,
+  fixedTimeOverlaps,
+  shiftDayItems,
+} from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
+import { engagementLocationIdFor } from "@/lib/booked-via.server";
+import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
 import {
   seedWorkflowFor,
   setBookingStage,
@@ -110,6 +118,7 @@ const TEMPLATE_DAYS_SELECT = {
       endTime: true,
       notes: true,
       isBlock: true,
+      fixedTime: true,
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
@@ -216,7 +225,10 @@ export async function createTrip(
     // to the venue's standing terms (GH #86). Both beat an empty schedule.
     venueBookingsCreate = await applyLocationWorkflowDefaults(
       await applyLocationScheduleDefaults(
-        instantiateVenueBookings(template.bookings),
+        instantiateVenueBookings(
+          template.bookings,
+          await engagementVenueResolver(template.bookings),
+        ),
       ),
     );
     // Day-relative template stays resolve to dates against the new startDate (or
@@ -315,7 +327,10 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
   });
   if (!source) return;
 
-  const venueBookingsCreate = instantiateVenueBookings(source.bookings);
+  const venueBookingsCreate = instantiateVenueBookings(
+    source.bookings,
+    await engagementVenueResolver(source.bookings),
+  );
   // Capture lodging as day-relative anchors (dates → day indices, measured from
   // this trip's startDate). Stays that can't be anchored — the source trip is
   // itself date-less — are dropped; a template stay must carry day indices.
@@ -612,6 +627,7 @@ export type ScheduleItemInputData = {
   endTime?: string;
   notes?: string;
   isBlock?: boolean;
+  fixedTime?: boolean;
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
@@ -653,6 +669,9 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     endTime: d.endTime || null,
     notes: d.notes || null,
     isBlock: d.isBlock ?? false,
+    // Omitted ⇒ untouched on update (quick edits don't round-trip it); the
+    // column defaults to false on create.
+    fixedTime: d.fixedTime,
     presentationId: d.presentationId || null,
   };
 }
@@ -720,8 +739,8 @@ export async function updateScheduleItem(
   input: ScheduleItemInputData,
   // When `cascade` is set, ripple a start/end change through the rest of the day:
   // every later timed item shifts by the delta this item's trailing edge moved,
-  // preserving downstream gaps (see cascadeFromEdit). Opt-in so a planner can leave
-  // a fixed downstream anchor (a booked tour) in place.
+  // preserving downstream gaps, stopping at the next fixed-time item (see
+  // cascadeFromEdit). Opt-in so a planner can still decline it per edit.
   options?: { cascade?: boolean },
 ): Promise<FormState> {
   await assertRole("PLANNER");
@@ -744,6 +763,7 @@ export async function updateScheduleItem(
 
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
+  let overlapsFixed = false;
   const item = await prisma.$transaction(async (tx) => {
     // Snapshot the day (with the edited item's OLD times) before mutating, so the
     // ripple measures against pre-edit spacing.
@@ -751,7 +771,13 @@ export async function updateScheduleItem(
     const siblings = cascade
       ? await tx.scheduleItem.findMany({
           where: { dayId: existing.dayId },
-          select: { id: true, order: true, startTime: true, endTime: true },
+          select: {
+            id: true,
+            order: true,
+            startTime: true,
+            endTime: true,
+            fixedTime: true,
+          },
         })
       : [];
 
@@ -778,7 +804,20 @@ export async function updateScheduleItem(
           data: { startTime: s.startTime, endTime: s.endTime },
         });
       }
+      // The edited item's own new times count too — it can run into the anchor.
+      overlapsFixed =
+        fixedTimeOverlaps(siblings, [
+          ...shifts,
+          {
+            id: itemId,
+            startTime: parsed.data.startTime ?? null,
+            endTime: parsed.data.endTime ?? null,
+          },
+        ]).length > 0;
     }
+
+    // A changed start can leave the item out of sequence; slot it back in.
+    await reslotEditedItem(tx, existing.dayId, itemId);
 
     // Travel leg (GH #80): an object replaces the leg wholesale, null removes
     // it, undefined leaves an existing leg untouched.
@@ -823,7 +862,12 @@ export async function updateScheduleItem(
   });
 
   revalidateTrip(item.day.tripId);
-  return { ok: true, message: "Item saved." };
+  return {
+    ok: true,
+    message: overlapsFixed
+      ? "Item saved. It now overlaps a fixed-time item."
+      : "Item saved.",
+  };
 }
 
 export async function deleteScheduleItem(itemId: string): Promise<FormState> {
@@ -882,7 +926,8 @@ export async function moveScheduleItem(
 // Day reflow — "we're running behind": slide a run of timed items by a fixed
 // number of minutes (negative = earlier). `fromItemId` scopes it to that item and
 // everything ordered after it; omit it to shift the whole day. Untimed items and
-// items before the anchor are left alone.
+// items before the anchor are left alone, and the run stops at the next
+// fixed-time item (see shiftDayItems).
 export async function shiftDaySchedule(
   dayId: string,
   deltaMinutes: number,
@@ -895,7 +940,13 @@ export async function shiftDaySchedule(
 
   const items = await prisma.scheduleItem.findMany({
     where: { dayId },
-    select: { id: true, order: true, startTime: true, endTime: true },
+    select: {
+      id: true,
+      order: true,
+      startTime: true,
+      endTime: true,
+      fixedTime: true,
+    },
   });
   const fromOrder = fromItemId
     ? (items.find((it) => it.id === fromItemId)?.order ?? 1)
@@ -903,7 +954,7 @@ export async function shiftDaySchedule(
 
   const shifts = shiftDayItems(items, deltaMinutes, fromOrder);
   if (shifts.length === 0) {
-    return { error: "No timed items to shift." };
+    return { error: "No movable timed items to shift." };
   }
 
   await prisma.$transaction(
@@ -920,9 +971,19 @@ export async function shiftDaySchedule(
 
   const n = shifts.length;
   const dir = deltaMinutes > 0 ? "later" : "earlier";
+  const stopped = items.some(
+    (it) => it.fixedTime && it.order > fromOrder,
+  );
+  const overlaps = fixedTimeOverlaps(items, shifts).length > 0;
   return {
     ok: true,
-    message: `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.`,
+    message:
+      `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.` +
+      (overlaps
+        ? " It now overlaps a fixed-time item."
+        : stopped
+          ? " Stopped at a fixed-time item."
+          : ""),
   };
 }
 
@@ -937,9 +998,9 @@ export type BookingInputData = {
   confirmationRef?: string;
   notes?: string;
   bookedOn?: string; // "yyyy-mm-dd"
-  agreedAmount?: number | string;
   agreedCurrency?: string;
-  agreedUnit?: string;
+  // The itemized agreed price; REPLACES the set when given, omitted = untouched.
+  priceLines?: { label?: string; amount: number | string; unit: string }[];
 };
 
 function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
@@ -950,10 +1011,24 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
     bookedOn: d.bookedOn ? parseDateInput(d.bookedOn) : null,
-    agreedAmount: d.agreedAmount ?? null,
-    agreedCurrency: d.agreedCurrency || "USD",
-    agreedUnit: d.agreedUnit ?? null,
+    // Omitted currency keeps the stored one (DB default USD on create).
+    ...(d.agreedCurrency ? { agreedCurrency: d.agreedCurrency } : {}),
   };
+}
+
+// Nested price-line writes. Create: the lines as given. Update: replace the
+// whole set (deleteMany + create run in the update's own transaction), or leave
+// it untouched when the input carries no `priceLines` (e.g. the itinerary's
+// booking form, which doesn't edit the price).
+function priceLinesCreate(d: ReturnType<typeof bookingSchema.parse>) {
+  return d.priceLines?.length
+    ? { priceLines: { create: priceLineRows(d.priceLines) } }
+    : {};
+}
+function priceLinesReplace(d: ReturnType<typeof bookingSchema.parse>) {
+  return d.priceLines
+    ? { priceLines: { deleteMany: {}, create: priceLineRows(d.priceLines) } }
+    : {};
 }
 
 export async function addBooking(
@@ -983,6 +1058,7 @@ export async function addBooking(
     data: {
       scheduleItemId: itemId,
       ...toBookingScalars(parsed.data),
+      ...priceLinesCreate(parsed.data),
       ...(await seedWorkflowFor(null)),
     },
   });
@@ -990,6 +1066,24 @@ export async function addBooking(
   const tripId = await tripIdForItem(itemId);
   if (tripId) revalidateTrip(tripId);
   return { ok: true, message: "Booking added." };
+}
+
+// Child site → parent resolver for the engagements being copied (one query):
+// an engagement still sitting on a since-reparented child lands on the parent.
+async function engagementVenueResolver(
+  bookings: { locationId: string | null }[],
+): Promise<(locationId: string) => string> {
+  const ids = [
+    ...new Set(bookings.flatMap((b) => (b.locationId ? [b.locationId] : []))),
+  ];
+  const locs = ids.length
+    ? await prisma.location.findMany({
+        where: { id: { in: ids }, bookedViaId: { not: null } },
+        select: { id: true, bookedViaId: true },
+      })
+    : [];
+  const map = bookedViaMap(locs);
+  return (id) => engagementLocationId(id, map);
 }
 
 // Engagements copied without a workflow fall back to the venue's default
@@ -1038,12 +1132,14 @@ async function applyLocationScheduleDefaults(
 // A not-bookable location (walk-by stop) is refused (`assertBookable`).
 export async function upsertVenueBooking(
   tripId: string,
-  locationId: string,
+  siteId: string,
   input: BookingInputData,
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  // A site booked via a parent is covered by the parent's engagement.
+  const locationId = await engagementLocationIdFor(siteId);
   const notBookable = await assertBookable(locationId);
   if (notBookable) return { error: notBookable };
 
@@ -1060,10 +1156,11 @@ export async function upsertVenueBooking(
     create: {
       tripId,
       ...detailScalars,
+      ...priceLinesCreate(parsed.data),
       ...workflow,
       ...(schedule ? { paymentSchedule: schedule } : {}),
     },
-    update: detailScalars,
+    update: { ...detailScalars, ...priceLinesReplace(parsed.data) },
   });
 
   revalidateTrip(tripId);
@@ -1087,15 +1184,17 @@ async function resolveBookingTarget(
     };
   }
   // An existing engagement is used as-is (even at a since-archived venue);
-  // only a first touch goes through the create-time checks + seeding.
+  // only a first touch goes through the create-time checks + seeding. A site
+  // booked via a parent acts on the parent's engagement.
+  const locationId = await engagementLocationIdFor(target.locationId);
   const existing = await prisma.booking.findUnique({
     where: {
-      tripId_locationId: { tripId: target.tripId, locationId: target.locationId },
+      tripId_locationId: { tripId: target.tripId, locationId },
     },
     select: { id: true },
   });
   if (existing) return { bookingId: existing.id, tripId: target.tripId };
-  const res = await ensureVenueEngagement(target.tripId, target.locationId);
+  const res = await ensureVenueEngagement(target.tripId, locationId);
   if ("error" in res) return res;
   return { bookingId: res.bookingId, tripId: target.tripId };
 }
@@ -1419,7 +1518,7 @@ export async function updateBooking(
 
   await prisma.booking.update({
     where: { id: bookingId },
-    data: toBookingScalars(parsed.data),
+    data: { ...toBookingScalars(parsed.data), ...priceLinesReplace(parsed.data) },
   });
 
   const tripId = await tripIdForBooking(bookingId);

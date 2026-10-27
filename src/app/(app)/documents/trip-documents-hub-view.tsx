@@ -264,7 +264,7 @@ function GroupHeading({
       {canEdit ? (
         <button
           type="button"
-          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+          className="text-xs text-muted-foreground hover:text-foreground link-quiet"
           onClick={onUpload}
         >
           Upload here

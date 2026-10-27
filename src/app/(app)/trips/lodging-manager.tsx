@@ -16,7 +16,7 @@ import {
 import { formatDate } from "@/lib/dates";
 import Link from "next/link";
 import type { SerializedStay } from "@/lib/trips";
-import { stayNights, stayTotal } from "@/lib/stays";
+import { stayHeadcount, stayNights, stayTotal } from "@/lib/stays";
 import { currencyOptions } from "@/lib/money";
 import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
@@ -65,6 +65,7 @@ export function LodgingManager({
   currencies,
   documentsByStay,
   progressByLocation,
+  headcount,
   suggestedSpan = null,
 }: {
   tripId: string;
@@ -83,6 +84,9 @@ export function LodgingManager({
   documentsByStay: Record<string, SerializedDocument[]>;
   // Workflow state of each lodging venue's engagement (keyed by location).
   progressByLocation: Record<string, BookingProgressView>;
+  // Trip headcount (participants ?? capacity): prices a stay that has no
+  // headcount of its own, matching the trip cost estimate.
+  headcount: number | null;
   suggestedSpan?: SuggestedStaySpan | null;
 }) {
   const { pending, run } = useAction();
@@ -106,6 +110,7 @@ export function LodgingManager({
               currencies={currencies}
               documents={documentsByStay[stay.id] ?? []}
               progress={progressByLocation[stay.locationId]}
+              tripHeadcount={headcount}
             />
           ))}
         </div>
@@ -168,6 +173,7 @@ function StayRow({
   currencies,
   documents,
   progress,
+  tripHeadcount,
 }: {
   tripId: string;
   stay: SerializedStay;
@@ -178,6 +184,7 @@ function StayRow({
   currencies: string[];
   documents: SerializedDocument[];
   progress: BookingProgressView | undefined;
+  tripHeadcount: number | null;
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
@@ -194,7 +201,8 @@ function StayRow({
     : null;
   const span = { ...stay, checkIn: checkInDate, checkOut: checkOutDate };
   const nights = stayNights(span);
-  const total = stayTotal(span);
+  const heads = stayHeadcount(stay, tripHeadcount);
+  const total = stayTotal(span, tripHeadcount);
 
   const dateSpan = dayRelative
     ? `Day ${stay.checkInDayIndex} → Day ${stay.checkOutDayIndex}`
@@ -230,13 +238,20 @@ function StayRow({
               </div>
 
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {stay.headcount != null ? <span>· {stay.headcount} person{stay.headcount === 1 ? "" : "s"}</span> : null}
-                {stay.costPerPersonPerNight != null ? (
-                  <span>
-                    · {stay.currency} {stay.costPerPersonPerNight.toFixed(2)}/night
+                {heads != null ? (
+                  <span
+                    title={stay.headcount == null ? "Trip headcount" : undefined}
+                  >
+                    · {heads} person{heads === 1 ? "" : "s"}
                   </span>
                 ) : null}
-                {nights > 0 && stay.costPerPersonPerNight != null ? (
+                {stay.costPerPersonPerNight != null ? (
+                  <span>
+                    · {stay.currency} {stay.costPerPersonPerNight.toFixed(2)}/person/night
+                  </span>
+                ) : null}
+                {/* No headcount anywhere → the total is unknown, not zero. */}
+                {nights > 0 && stay.costPerPersonPerNight != null && heads != null ? (
                   <span>
                     · {nights} night{nights === 1 ? "" : "s"}: {stay.currency}{" "}
                     {total.toFixed(2)}
@@ -246,12 +261,18 @@ function StayRow({
 
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {/* Lodging's booking state IS the venue engagement — set it
-                    right here (the first status set creates the engagement). */}
+                    right here (the first status set creates the engagement).
+                    A site booked via a parent acts on the parent's. */}
                 <WorkflowControl
                   target={{ tripId, locationId: stay.locationId }}
                   progress={progress ?? progressView(null)}
                   canEdit={canEdit}
                 />
+                {stay.bookedVia ? (
+                  <span className="text-xs text-muted-foreground">
+                    via {stay.bookedVia.name}
+                  </span>
+                ) : null}
                 {stay.booking?.bookedContact ? (
                   <span className="text-xs text-muted-foreground">
                     {stay.booking.bookedContact.name}
@@ -263,15 +284,15 @@ function StayRow({
                   </span>
                 ) : null}
                 <Link
-                  href={`/trips/${tripId}/booking?venue=${stay.locationId}`}
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  href={`/trips/${tripId}/booking?venue=${stay.bookedVia?.id ?? stay.locationId}`}
+                  className="text-xs text-muted-foreground link-quiet"
                 >
-                  Booking →
+                  Booking
                 </Link>
                 {canEdit || documents.length > 0 ? (
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    className="text-xs text-muted-foreground link-quiet"
                     onClick={() => setShowFiles((v) => !v)}
                     aria-expanded={showFiles}
                   >

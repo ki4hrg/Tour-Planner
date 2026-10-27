@@ -46,7 +46,7 @@ minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
 `plannedLocations` + `cityRegion`), `add-day` (P),
 `update-day` (P, title + logistical/participant notes + primary location/city), `delete-day` (P, renumbers +
-recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P), `update-schedule-item` (P),
+recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P, `fixedTime` pins times reorders/shifts never move), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
 (P, rough day→location assignment with no times — GH #9; idempotent per
 `(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
@@ -58,19 +58,22 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + paid total + workflow progress), `add-booking` (P, upserts the `(trip, location)`
-engagement — refuses not-bookable venues, seeds standing terms + default workflow on create; item target
-only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
-`update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
-`list-booking-workflows` (V, resolves `workflowId`/`stepId`), `set-booking-step` (P, tick/untick
+incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
+engagement — a booked-via child resolves to its parent's (returns `engagementLocationId`) —
+refuses not-bookable venues, seeds standing terms + default workflow on create; item target
+only for site-less items; idempotent; takes `bookedOn` + `agreedCurrency` + `priceLines`
+`[{label, amount, unit}]`, which REPLACES the set — omitted = untouched),
+`update-booking` (P, incl. `bookedOn` + `priceLines`; status goes through the workflow rules),
+`list-booking-workflows` (V, resolves `workflowId`/`stepId`; each step's `actor`), `set-booking-step` (P, tick/untick
 one step, back-datable), `set-booking-workflow` (P, switch workflow; clears ticked steps),
 `list-payments` (V, the payment log +
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
 **locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
-payment terms, host site + Google place link), `list-regions` (V, resolves `regionId`), `list-trip-types`
+payment terms, host site + Google place link, `bookedVia` + `coveredSites`), `list-regions` (V, resolves `regionId`), `list-trip-types`
 (V, resolves `tripTypeId`), `create-location` (P), `update-location` (P; both take
-`googlePlaceId` + `lat`/`lng`, the coords both-or-neither),
+`googlePlaceId` + `lat`/`lng`, the coords both-or-neither, and `bookedViaId` — null clears;
+on update, gaining a parent folds the site's own engagements into the parent's, reported as `movedBookings`),
 `set-host-site` (P, upserts capability flags or `remove`s host-site status),
 `set-primary-contact` (P, links the contact + marks it primary, or clears the
 designation), `add-location-cost` (P), `update-location-cost` (P),
@@ -226,6 +229,11 @@ npm test                          # vitest
   fragments ("Shown once — copy it now", "Unticked = staff only") that blur fact
   and instruction. Write a plain sentence for the fact and make the action the
   control ("This key will only be shown once. Click to copy." on a clickable key).
+- **Links look like links**: small inline links (muted metadata-row links,
+  "Booking", "Files", "Show archived") use the `link-quiet` utility
+  (`globals.css` — a faint underline at rest), never a hover-only underline.
+  No "→" as a link marker (an arrow reads as a process/transition — keep it for
+  ranges like "Mon → Wed"); back links use a `ChevronLeft` icon, not "←".
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.
@@ -270,7 +278,8 @@ npm test                          # vitest
 - **Data model**: `prisma/schema.prisma` is the source of truth. Key shapes: `Trip` →
   `ItineraryDay` (`dayIndex`/`order` are Int, **NOT unique** — renumber in a txn) →
   `ScheduleItem` → `ScheduleItemSite` (0 = info line, 1 = stop, many = block).
-  `Location` (renamed from `Site`) has a 1:1 `HostSite` extension; `Stay` is per-trip
+  `Location` (renamed from `Site`) has a 1:1 `HostSite` extension and an optional
+  self-relation `bookedVia` / `coveredSites` (`bookedViaId`, see "Booked via" below); `Stay` is per-trip
   lodging; `Region` is a hierarchical catalog. A `Stay` anchors EITHER by calendar
   dates (`checkIn`/`checkOut`) on a dated trip OR by 1-based day indices
   (`checkInDayIndex`/`checkOutDayIndex`) on a date-less template — exactly one mode
@@ -298,14 +307,48 @@ npm test                          # vitest
   host site visited across many sessions is one booking, not one per session. Lodging
   has **no** booking of its own; the `Stay`'s booking state is its venue engagement.
   The item target is only for **site-less** bookings (a coach, a label-only reservation).
+  **Booked via (location-level parent)**: `Location.bookedViaId` points a child site at
+  a parent venue whose ONE engagement covers it (a museum booking covering several
+  sites nearby). The child still shows as itself on itineraries, share pages, ICS
+  feeds and the WP export; administratively its sessions, planned visits and stays
+  belong to the PARENT's `(trip, parent)` engagement. Single level only (a parent has
+  no parent; a site that covers others can't take one) — enforced in
+  `bookedViaError` (`src/lib/booked-via.ts`); not-self is also DB CHECK
+  `location_booked_via_not_self`. **Every engagement lookup/create resolves
+  child → parent** through `src/lib/booked-via.ts` (`bookedViaMap` /
+  `engagementLocationId` / `withBookedViaParentsWhere` for loading parents with
+  their children) or `engagementLocationIdFor` (`booked-via.server.ts`): dashboard
+  rows (child sessions fold into the parent row labelled "Visit · <Site>"),
+  `ensureVenueEngagement`, `upsertVenueBooking`, `resolveBookingTarget`,
+  `loadVenueEngagements` (child shows parent progress "via <Parent>"), the lodging
+  panel + trip cost estimate, the documents hub, template instantiation, MCP
+  `add-booking`. Setting a parent (`setBookedVia`) FOLDS the child's own existing
+  engagements into the parent's (same rules as a location merge, via the shared
+  `foldVenueEngagements`); the Location page's "Booked via" card confirms first,
+  naming the trips. A child's Location page shows its parent's booking progress
+  ("via <Parent>") and hides its own workflow/payment-terms cards.
   `Location.bookable` (default true) marks never-bookable walk-by stops (no booking
   allowed; hidden from the dashboard's attention filters); `BookingStatus.NOT_NEEDED`
   is a per-trip "skip this one". Row-building lives in `src/lib/booking-dashboard.ts`
   (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
   the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
   in `src/app/(app)/trips/actions.ts`.
+- **Agreed price**: itemized like the venue's `Cost` catalog — a booking (venue
+  engagement or site-less item booking) carries `BookingPriceLine`s (`label`, `amount`,
+  `unit` PER_PERSON | PER_GROUP, `order`) in ONE `Booking.agreedCurrency`. The total is
+  per-person sum × the trip headcount (`participantCount ?? capacity`, `tripHeadcount`)
+  + per-group sum, so it follows the headcount as it changes. Every balance / settled /
+  schedule-percent / Money-panel / estimate / MCP calculation goes through
+  `agreedTotal(lines, headcount)` in `src/lib/costs.ts` (unit-tested, with
+  `hasAgreedPrice`, `formatPriceBreakdown`, `listPriceLines`) — null with no lines, or
+  per-person lines and no headcount (treated like no agreed price, flagged "no
+  headcount" in the UI). Queries spread `PRICE_LINES_SELECT`; `serializePriceLines`
+  flattens the Decimals. Writes REPLACE the set (nested `deleteMany` + `create` in the
+  booking update; `priceLines` omitted = untouched). The editor is
+  `trips/price-lines-editor.tsx` (booking dashboard + itinerary item bookings); "Use
+  list price" copies the venue's Cost lines 1:1. "Missing price" = no lines.
 - **Payment schedules (GH #51, anchors #86)**: a booking may carry `PaymentScheduleItem`
-  installments — EITHER a `percent` of the agreed price OR a `fixedAmount` (DB CHECK
+  installments — EITHER a `percent` of the agreed price (`agreedTotal`) OR a `fixedAmount` (DB CHECK
   `payment_schedule_amount`). The due date is `offsetValue` `offsetUnit`s
   (DAY/WEEK/MONTH, calendar-aware) from a selectable `anchor` (DB CHECK
   `payment_schedule_anchor`: NONE ⇒ offset null, else both set):
@@ -317,7 +360,8 @@ npm test                          # vitest
   (amounts, due dates via `describeCadence` for the human "rule", earliest-due-first
   ordering + allocation, paid/overdue/upcoming/unscheduled state) is pure in
   `src/lib/payment-schedule.ts` (`resolveSchedule`/`scheduleAttention`, unit-tested);
-  every caller passes both `tripStartDate` and `bookingDate` (`bookedOn ?? createdAt`).
+  every caller passes the `agreedTotal` (from the price lines) plus both `tripStartDate`
+  and `bookingDate` (`bookedOn ?? createdAt`).
   Editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
   MCP tool; `installmentRows` in `validators/booking.ts` is the shared parsed→row map).
   Surfaces: booking-row schedule editor (anchor/unit selectors + `bookedOn` field) +
@@ -366,9 +410,27 @@ npm test                          # vitest
   (`trips/booking-progress.tsx`, `?view=progress`) lists every booking across
   workflows with its full step strip — one-click step toggles, plus multi-select
   "Mark done" matched by step LABEL (`setBookingStepsBulk`), since selected rows
-  may follow different workflows. Rough-plan planned locations also
+  may follow different workflows. **Owner per step**: each step has an
+  `actor` (`StepActor` US | VENUE, default US, set per step at `/admin/workflows`);
+  the booking's upcoming step (`upcomingStep`) says whose move it is.
+  `waitingOn`/`waitingView` (pure, unit-tested) give `{ step, actor, since }` —
+  `since` = the latest tick, else `bookedOn ?? createdAt` — and days waiting
+  against a passed-in `today`. Surfaces: `CompactProgress` / Progress view /
+  Location page lead with "Your move: …" (amber) vs "Waiting on venue: … · 12d"
+  (muted, `waiting-note.tsx`); dashboard rows carry `waiting` (only for a booking
+  that exists — pass `workflows: loadWorkflowCatalog()` to `buildDashboardRows`),
+  feeding the "Your move" attention filter (trip dashboard + `/bookings`,
+  `isYourMove`) and the home card's "Your move" section; MCP `list-bookings`
+  returns it. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
+- **Fixed-time items**: `ScheduleItem.fixedTime` marks times the group doesn't
+  control (a public event, a timetabled train). The edit ripple (`cascadeFromEdit`)
+  and day slide (`shiftDayItems`) never move a fixed item and STOP at the first one
+  they reach; the reorder cascade (`cascadeReorderedTimes`) keeps fixed items' times
+  and re-lays only the movable ones. `fixedTimeOverlaps` flags a run that now
+  collides with an anchor (surfaced in the toast). On update an omitted `fixedTime`
+  leaves it untouched. See `docs/itinerary-time-editing.md`.
 - **Day reorder + lodging**: dates belong to day POSITIONS, so reordering days
   redates them; stays don't follow on their own. `staysFollowingDays`
   (`src/lib/stay-shift.ts`, unit-tested) finds stays whose nights' days moved
@@ -382,9 +444,14 @@ npm test                          # vitest
   fields, long text concatenates (pure `merge*Fields`, unit-tested). Unique
   collisions are resolved, not failed: item/day already at the target drops the
   source row; same-trip engagements fold into the target's booking (payments/
-  notes/docs move, further-along status kept, source schedule only if target has
+  notes/docs move, further-along status kept, source price lines only if target has
+  none, source schedule only if target has
   none, source step completions move when both follow the same workflow, then
-  status recomputes); host sites OR together; standing terms adopted only if target has none.
+  status recomputes); host sites OR together; standing terms adopted only if target has none;
+  sites booked via the source repoint to the target, and the source's own parent fills
+  the target's only if the target will cover no sites (pure `mergeBookedVia`, which
+  refuses a merge that would nest parents; a target that ends with a parent folds its
+  engagements into it).
   **When adding a new FK to `Location`, repoint it in `mergeLocations`** or the
   cascade on delete will silently drop that data.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to

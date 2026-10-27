@@ -1,4 +1,5 @@
 import type { CostUnit } from "@prisma/client";
+import { formatMoney } from "./money";
 
 // Cost rollups are estimates only (plan decision 6) and per-currency — a trip
 // type is single-currency, so no FX conversion. Per-person costs scale with the
@@ -49,4 +50,147 @@ export function rollUpCosts(
       total: perPersonPerHead * heads + perGroup,
     }))
     .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+/**
+ * The trip's headcount for per-person pricing: confirmed participants, else
+ * capacity (the same fallback the trip overview's cost estimate uses). Null when
+ * neither is set.
+ */
+export function tripHeadcount(trip: {
+  participantCount?: number | null;
+  capacity?: number | null;
+}): number | null {
+  return trip.participantCount ?? trip.capacity ?? null;
+}
+
+// One line of a booking's agreed price (`BookingPriceLine`), mirroring the
+// venue's Cost lines. Amount is in the booking's `agreedCurrency`.
+export type PriceLine = {
+  label: string;
+  amount: number;
+  unit: CostUnit;
+};
+
+/** The Prisma `priceLines` relation select every booking query spreads. */
+export const PRICE_LINES_SELECT = {
+  orderBy: { order: "asc" },
+  select: { label: true, amount: true, unit: true, order: true },
+} as const;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Prisma rows (Decimal amounts) → plain, ordered PriceLines — safe to pass to a
+ * Client Component. Accepts anything `Number()` can read (Decimal, string).
+ */
+export function serializePriceLines(
+  lines: { label: string; amount: unknown; unit: CostUnit; order?: number }[],
+): PriceLine[] {
+  return [...lines]
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((l) => ({ label: l.label, amount: Number(l.amount), unit: l.unit }));
+}
+
+/** A booking has an agreed price once it carries at least one price line. */
+export function hasAgreedPrice(lines: readonly PriceLine[]): boolean {
+  return lines.length > 0;
+}
+
+/** Per-person sum (cost for ONE head) and per-group sum of a line set. */
+export function priceLineSums(lines: readonly PriceLine[]): {
+  perPerson: number;
+  perGroup: number;
+  hasPerPerson: boolean;
+} {
+  let perPerson = 0;
+  let perGroup = 0;
+  let hasPerPerson = false;
+  for (const l of lines) {
+    if (l.unit === "PER_PERSON") {
+      perPerson += l.amount;
+      hasPerPerson = true;
+    } else perGroup += l.amount;
+  }
+  return { perPerson: round2(perPerson), perGroup: round2(perGroup), hasPerPerson };
+}
+
+/**
+ * The agreed engagement TOTAL a booking's balance, settled state and payment
+ * schedule are measured against: per-person lines × the trip headcount plus the
+ * per-group lines — so it follows the headcount as it changes. Null when there
+ * are no lines, or per-person lines with no known headcount — the total is then
+ * unknown, and callers treat it like no agreed price.
+ */
+export function agreedTotal(
+  lines: readonly PriceLine[],
+  headcount: number | null,
+): number | null {
+  if (!hasAgreedPrice(lines)) return null;
+  const { perPerson, perGroup, hasPerPerson } = priceLineSums(lines);
+  if (!hasPerPerson) return perGroup;
+  if (headcount == null) return null;
+  return round2(perPerson * headcount + perGroup);
+}
+
+/**
+ * Compact one-line breakdown of a price-line set:
+ * "Admission £12.00 + Lunch £20.00 /person × 40 + Group charge £90.00 = £1,370.00".
+ * Per-person lines come first (with "/person × N", or "/person" alone when the
+ * headcount is unknown — no total then); per-group lines follow. A single
+ * per-group line is just its amount. Empty string for no lines.
+ */
+export function formatPriceBreakdown(
+  lines: readonly PriceLine[],
+  currency: string,
+  headcount: number | null,
+): string {
+  if (lines.length === 0) return "";
+  const fmt = (l: PriceLine) =>
+    `${l.label.trim() ? `${l.label.trim()} ` : ""}${formatMoney(l.amount, currency)}`;
+  const pp = lines.filter((l) => l.unit === "PER_PERSON");
+  const grp = lines.filter((l) => l.unit !== "PER_PERSON");
+  const parts: string[] = [];
+  if (pp.length > 0) {
+    parts.push(
+      `${pp.map(fmt).join(" + ")} /person${headcount != null ? ` × ${headcount}` : ""}`,
+    );
+  }
+  parts.push(...grp.map(fmt));
+  const total = agreedTotal(lines, headcount);
+  if (lines.length === 1 && pp.length === 0) return formatMoney(lines[0].amount, currency);
+  return total != null ? `${parts.join(" + ")} = ${formatMoney(total, currency)}` : parts.join(" + ");
+}
+
+export type ListPriceLines = {
+  currency: string;
+  lines: PriceLine[];
+  skipped: number; // venue lines in another currency, left out
+};
+
+/**
+ * The venue's list prices (its Cost catalog) as agreed-price lines, copied 1:1
+ * (label, amount, unit) — no collapsing, so a mixed set keeps following the
+ * headcount. A booking has one currency: lines are taken in `preferredCurrency`
+ * (the booking's) when the venue lists any in it, else the venue's most-used
+ * currency; lines in other currencies are counted in `skipped`. Null when the
+ * venue has no list prices.
+ */
+export function listPriceLines(
+  costs: (CostLike & { label: string })[],
+  preferredCurrency?: string | null,
+): ListPriceLines | null {
+  if (costs.length === 0) return null;
+  let currency: string;
+  if (preferredCurrency && costs.some((c) => c.currency === preferredCurrency)) {
+    currency = preferredCurrency;
+  } else {
+    const counts = new Map<string, number>();
+    for (const c of costs) counts.set(c.currency, (counts.get(c.currency) ?? 0) + 1);
+    currency = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+  const lines = costs
+    .filter((c) => c.currency === currency)
+    .map((c) => ({ label: c.label, amount: c.amount, unit: c.unit }));
+  return { currency, lines, skipped: costs.length - lines.length };
 }

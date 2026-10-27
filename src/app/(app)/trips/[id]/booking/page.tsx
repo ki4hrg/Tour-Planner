@@ -4,9 +4,12 @@ import { requireUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
+import { withBookedViaParentsWhere } from "@/lib/booked-via";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
+import { loadWorkflowCatalog } from "@/lib/booking-workflow-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +32,12 @@ export default async function BookingDashboardPage({
       name: true,
       currencies: true,
       startDate: true,
+      participantCount: true,
+      capacity: true,
       days: {
         orderBy: { dayIndex: "asc" },
         select: {
+          id: true,
           dayIndex: true,
           date: true,
           plannedLocations: { select: { locationId: true } },
@@ -61,6 +67,8 @@ export default async function BookingDashboardPage({
                   ...BOOKING_PROGRESS_SELECT,
                   confirmationRef: true,
                   bookedContact: { select: { name: true } },
+                  agreedCurrency: true,
+                  priceLines: PRICE_LINES_SELECT,
                 },
               },
             },
@@ -82,9 +90,8 @@ export default async function BookingDashboardPage({
           },
           bookedOn: true,
           createdAt: true,
-          agreedAmount: true,
           agreedCurrency: true,
-          agreedUnit: true,
+          priceLines: PRICE_LINES_SELECT,
           payments: { orderBy: { paidOn: "asc" } },
           paymentSchedule: true,
         },
@@ -116,10 +123,12 @@ export default async function BookingDashboardPage({
   ];
   const locations = locationIds.length
     ? await prisma.location.findMany({
-        where: { id: { in: locationIds } },
+        // + the parents child sites are booked via (their rows' heading).
+        where: withBookedViaParentsWhere(locationIds),
         select: {
           id: true,
           name: true,
+          bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
           defaultWorkflowId: true,
@@ -157,7 +166,13 @@ export default async function BookingDashboardPage({
     stays: trip.stays,
     locations,
     tripStartDate: trip.startDate,
+    headcount: tripHeadcount(trip),
+    workflows: await loadWorkflowCatalog(),
   });
+  // A deep link to a site booked via a parent opens the parent's row.
+  const focusVenue = venue
+    ? (locations.find((l) => l.id === venue)?.bookedViaId ?? venue)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -178,7 +193,7 @@ export default async function BookingDashboardPage({
             contacts={contacts}
             currencies={trip.currencies}
             documentsByBooking={documentsByBooking}
-            focusLocationId={venue ?? null}
+            focusLocationId={focusVenue}
           />
         </CardContent>
       </Card>

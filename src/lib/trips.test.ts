@@ -34,6 +34,7 @@ function item(
     endTime: null,
     notes: null,
     isBlock: false,
+    fixedTime: false,
     presentationId: null,
     presentation: null,
     presenters: [],
@@ -107,14 +108,34 @@ describe("scheduleItemPrimaryLabel", () => {
     expect(r.primary).toBe("Visit: Close Walk, Old Sarum");
   });
 
-  it("falls back to 'Untitled item' when nothing identifies it", () => {
+  it("names a category-less venue item after its venue", () => {
     const r = scheduleItemPrimaryLabel({
       title: null,
       presentation: null,
       category: null,
+      sites: [{ location: { name: "Old Sarum" } }],
     });
-    expect(r.primary).toBe("Untitled item");
+    expect(r.primary).toBe("Old Sarum");
     expect(r.labelFromCategory).toBe(false);
+  });
+
+  it("reads 'Visit' where the venue is already the heading", () => {
+    const r = scheduleItemPrimaryLabel(
+      {
+        title: null,
+        presentation: null,
+        category: null,
+        sites: [{ location: { name: "Old Sarum" } }],
+      },
+      { venueInHeading: false },
+    );
+    expect(r.primary).toBe("Visit");
+  });
+
+  it("falls back to the notes, then 'Item', when nothing identifies it", () => {
+    const base = { title: null, presentation: null, category: null };
+    expect(scheduleItemPrimaryLabel({ ...base, notes: "Meet at gate\nbring id" }).primary).toBe("Meet at gate");
+    expect(scheduleItemPrimaryLabel(base).primary).toBe("Item");
   });
 });
 

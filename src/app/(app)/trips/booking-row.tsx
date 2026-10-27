@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +22,7 @@ import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
+import { hasAgreedPrice } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -37,6 +39,13 @@ import {
   setPaymentSchedule,
 } from "./actions";
 import { WorkflowControl } from "./workflow-control";
+import { WaitingNote } from "./waiting-note";
+import {
+  AgreedPrice,
+  PriceLinesEditor,
+  draftsFromLines,
+  draftsToInput,
+} from "./price-lines-editor";
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
@@ -81,19 +90,15 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable)
     return <span className="text-muted-foreground">—</span>;
   // The negotiated engagement price beats the catalog's asking price.
-  if (row.agreedAmount != null) {
+  if (hasAgreedPrice(row.priceLines)) {
     return (
       <div className="space-y-0.5">
-        <div className="flex items-center gap-1.5">
-          <span>
-            {formatMoney(row.agreedAmount, row.agreedCurrency)}
-            {row.agreedUnit ? (
-              <span className="text-muted-foreground">
-                {" "}
-                {COST_UNIT_LABELS[row.agreedUnit]}
-              </span>
-            ) : null}
-          </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <AgreedPrice
+            lines={row.priceLines}
+            currency={row.agreedCurrency}
+            headcount={row.headcount}
+          />
           <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
             agreed
           </span>
@@ -112,14 +117,26 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
         <PaymentState row={row} />
       </div>
     );
+  // No agreed price yet: fall back to the venue's list prices (its Cost
+  // catalog, edited on the Location page), each named, and tagged "list" so
+  // they read as reference prices, not this trip's deal.
   return (
     <div className="space-y-0.5">
-      {row.costs.map((c) => (
-        <div key={c.id} className="flex items-center gap-1.5">
+      {row.costs.map((c, i) => (
+        <div key={c.id} className="flex flex-wrap items-center gap-x-1.5">
+          <span className="text-muted-foreground">{c.label}</span>
           <span>
             {formatMoney(c.amount, c.currency)}
             <span className="text-muted-foreground"> {COST_UNIT_LABELS[c.unit]}</span>
           </span>
+          {i === 0 ? (
+            <span
+              className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
+              title="Venue list price"
+            >
+              list
+            </span>
+          ) : null}
           {isCostStale(c.confirmedAt) ? (
             <span
               className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
@@ -144,7 +161,8 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </span>
     );
-  if (row.agreedAmount == null) return null;
+  // No agreed price, or a per-person rate with no headcount: no known total.
+  if (row.agreedTotal == null) return null;
   if (row.settled)
     return (
       <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -205,14 +223,15 @@ export function VenueDetails({
   const [contactId, setContactId] = useState(row.bookedContactId ?? NONE);
   const [confirmationRef, setConfirmationRef] = useState(row.confirmationRef ?? "");
   const [notes, setNotes] = useState(row.notes ?? "");
-  const [agreedAmount, setAgreedAmount] = useState(
-    row.agreedAmount != null ? String(row.agreedAmount) : "",
+  // The itemized agreed price — per-person / per-group lines like the venue's
+  // Cost catalog ("Use list price" copies those in), one currency per booking.
+  const [priceDrafts, setPriceDrafts] = useState(() =>
+    draftsFromLines(row.priceLines),
   );
   const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
-  const [agreedUnit, setAgreedUnit] = useState<string>(row.agreedUnit ?? NONE);
   const [bookedOn, setBookedOn] = useState(row.bookedOn ?? "");
   // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
-  const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
+  const currencyChoices = currencyOptions(currencies, agreedCurrency);
 
   // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
@@ -227,9 +246,8 @@ export function VenueDetails({
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
         bookedOn: bookedOn || undefined,
-        agreedAmount: agreedAmount.trim() || undefined,
         agreedCurrency,
-        agreedUnit: agreedUnit === NONE ? undefined : agreedUnit,
+        priceLines: draftsToInput(priceDrafts),
       }),
     );
 
@@ -252,7 +270,18 @@ export function VenueDetails({
                   D{s.dayIndex}
                 </span>
                 <span className="min-w-0">
-                  {s.label}
+                  {s.dayId ? (
+                    <Link
+                      href={`/trips/${tripId}/days/${s.dayId}${
+                        s.planned ? "" : `#item-${s.id}`
+                      }`}
+                      className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                    >
+                      {s.label}
+                    </Link>
+                  ) : (
+                    s.label
+                  )}
                   <span className="text-muted-foreground">
                     {s.startTime || s.endTime
                       ? ` · ${[s.startTime, s.endTime].filter(Boolean).join("–")}`
@@ -295,43 +324,16 @@ export function VenueDetails({
               className="w-40"
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Agreed price</Label>
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={agreedAmount}
-                onChange={(e) => setAgreedAmount(e.target.value)}
-                placeholder="e.g. 450"
-                className="w-28"
-              />
-              <Select value={agreedCurrency} onValueChange={setAgreedCurrency}>
-                <SelectTrigger size="sm" className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {currencyChoices.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={agreedUnit} onValueChange={setAgreedUnit}>
-                <SelectTrigger size="sm" className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>— flat —</SelectItem>
-                  <SelectItem value="PER_PERSON">per person</SelectItem>
-                  <SelectItem value="PER_GROUP">per group</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <PriceLinesEditor
+            drafts={priceDrafts}
+            onDraftsChange={setPriceDrafts}
+            currency={agreedCurrency}
+            onCurrencyChange={setAgreedCurrency}
+            currencyChoices={currencyChoices}
+            headcount={row.headcount}
+            listCosts={row.costs}
+            disabled={pending}
+          />
           <div className="space-y-1">
             <Label className="text-xs">Point of contact</Label>
             <Select value={contactId} onValueChange={setContactId}>
@@ -718,10 +720,10 @@ function PaymentLog({
     <div className="space-y-2 border-t pt-2">
       <p className="text-xs font-medium text-muted-foreground">
         Payments
-        {row.agreedAmount != null ? (
+        {row.agreedTotal != null ? (
           <span className="ml-2 font-normal">
             {formatMoney(row.paidTotal, row.agreedCurrency)} of{" "}
-            {formatMoney(row.agreedAmount, row.agreedCurrency)} paid
+            {formatMoney(row.agreedTotal, row.agreedCurrency)} paid
           </span>
         ) : null}
       </p>
@@ -854,7 +856,8 @@ export function VenueRow({
           defaultOpen && "ring-2 ring-primary/40 ring-inset",
         )}
       >
-        <TableCell>
+        {/* Long venue names wrap rather than pushing the other columns off. */}
+        <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -894,11 +897,15 @@ export function VenueRow({
         </TableCell>
         <TableCell>
           {row.bookable ? (
-            <WorkflowControl
-              target={{ tripId, locationId: row.locationId }}
-              progress={row.progress}
-              canEdit={canEdit}
-            />
+            <>
+              <WorkflowControl
+                target={{ tripId, locationId: row.locationId }}
+                progress={row.progress}
+                canEdit={canEdit}
+                showAge={!row.waiting}
+              />
+              <WaitingNote waiting={row.waiting} className="mt-1 block" />
+            </>
           ) : (
             <span className="text-xs italic text-muted-foreground">
               No booking needed
@@ -979,13 +986,17 @@ export function VenueCard({
             ) : null}
           </span>
         </button>
-        <span className="shrink-0">
+        <span className="shrink-0 text-right">
           {row.bookable ? (
-            <WorkflowControl
-              target={{ tripId, locationId: row.locationId }}
-              progress={row.progress}
-              canEdit={canEdit}
-            />
+            <>
+              <WorkflowControl
+                target={{ tripId, locationId: row.locationId }}
+                progress={row.progress}
+                canEdit={canEdit}
+                showAge={!row.waiting}
+              />
+              <WaitingNote waiting={row.waiting} className="mt-1 block" />
+            </>
           ) : (
             <span className="text-xs italic text-muted-foreground">
               No booking needed
@@ -1051,7 +1062,7 @@ export function ItemRow({
   return (
     <>
     <TableRow>
-      <TableCell>
+      <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
         <button
           type="button"
           className="text-left font-medium hover:underline"
@@ -1067,7 +1078,9 @@ export function ItemRow({
         </span>
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">—</TableCell>
-      <TableCell className="text-sm text-muted-foreground">—</TableCell>
+      <TableCell className="text-sm">
+        <ItemPrice row={row} />
+      </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         {row.contactName ?? "—"}
         {row.confirmationRef ? (
@@ -1079,7 +1092,9 @@ export function ItemRow({
           target={{ bookingId: row.bookingId }}
           progress={row.progress}
           canEdit={canEdit}
+          showAge={!row.waiting}
         />
+        <WaitingNote waiting={row.waiting} className="mt-1 block" />
       </TableCell>
     </TableRow>
     {open ? (
@@ -1097,6 +1112,21 @@ export function ItemRow({
       </TableRow>
     ) : null}
     </>
+  );
+}
+
+// A one-off booking's agreed price (set on the itinerary item), or a dash.
+function ItemPrice({ row }: { row: ItemBookingRow }) {
+  if (!hasAgreedPrice(row.priceLines))
+    return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      <AgreedPrice
+        lines={row.priceLines}
+        currency={row.agreedCurrency}
+        headcount={row.headcount}
+      />
+    </span>
   );
 }
 
@@ -1133,13 +1163,20 @@ export function ItemCard({
               ? ` · ${documents.length} file${documents.length === 1 ? "" : "s"}`
               : ""}
           </span>
+          {hasAgreedPrice(row.priceLines) ? (
+            <span className="mt-0.5 block text-sm">
+              <ItemPrice row={row} />
+            </span>
+          ) : null}
         </span>
-        <span className="shrink-0">
+        <span className="shrink-0 text-right">
           <WorkflowControl
             target={{ bookingId: row.bookingId }}
             progress={row.progress}
             canEdit={canEdit}
+            showAge={!row.waiting}
           />
+          <WaitingNote waiting={row.waiting} className="mt-1 block" />
         </span>
       </div>
 

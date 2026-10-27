@@ -19,9 +19,23 @@ const DOCS = {
   select: DOCUMENT_SELECT,
 } as const;
 
-const VENUE_SELECT = { select: { id: true, name: true, bookable: true } } as const;
+const VENUE_SELECT = {
+  select: {
+    id: true,
+    name: true,
+    bookable: true,
+    // A site booked via a parent files its booking paperwork on the parent's
+    // engagement.
+    bookedVia: { select: { id: true, name: true, bookable: true } },
+  },
+} as const;
 
-type Venue = { id: string; name: string; bookable: boolean };
+type Venue = {
+  id: string;
+  name: string;
+  bookable: boolean;
+  bookedVia?: { id: string; name: string; bookable: boolean } | null;
+};
 
 // "6 Jul – 9 Jul 2026" on a dated trip, "Days 2–4" on a date-less template.
 function stayRange(stay: {
@@ -136,6 +150,13 @@ export async function TripDocumentsHub({
   for (const stay of trip.stays) addVenue(stay.location);
   for (const b of trip.bookings) addVenue(b.location);
 
+  // One booking group per ENGAGED venue: a child site's group is its parent's.
+  const engagedVenues = new Map<string, Venue>();
+  for (const v of venues.values()) {
+    const e = v.bookedVia ?? v;
+    if (!engagedVenues.has(e.id)) engagedVenues.set(e.id, e);
+  }
+
   const engagementByVenue = new Map(
     trip.bookings
       .filter((b) => b.location)
@@ -162,7 +183,7 @@ export async function TripDocumentsHub({
     upload: { kind: "document", target: "trip", targetId: trip.id },
   });
 
-  for (const venue of venues.values()) {
+  for (const venue of engagedVenues.values()) {
     const booking = engagementByVenue.get(venue.id);
     // A never-bookable walk-by stop can't hold an engagement, so it gets no
     // group and no upload target unless one somehow exists already.

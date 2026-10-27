@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { timedInsertIndex } from "./schedule-order";
+import { reslotAfterTimeEdit, timedInsertIndex } from "./schedule-order";
 
 const item = (order: number, startTime: string | null) => ({ order, startTime });
 
@@ -55,5 +55,29 @@ describe("timedInsertIndex", () => {
   it("appends a new untimed item to an all-untimed day", () => {
     const items = [item(1, null), item(2, null)];
     expect(timedInsertIndex(items, null)).toBe(2);
+  });
+});
+
+describe("reslotAfterTimeEdit", () => {
+  const it3 = (id: string, order: number, startTime: string | null) => ({
+    id,
+    order,
+    startTime,
+  });
+
+  it("moves an item whose new start breaks chronology", () => {
+    const items = [it3("a", 1, "15:00"), it3("b", 2, "10:00"), it3("c", 3, "12:00")];
+    expect(reslotAfterTimeEdit(items, "a")).toEqual(["b", "c", "a"]);
+  });
+
+  it("leaves an item that still fits between its timed neighbours", () => {
+    const items = [it3("a", 1, "09:00"), it3("b", 2, "10:30"), it3("c", 3, "12:00")];
+    expect(reslotAfterTimeEdit(items, "b")).toBeNull();
+  });
+
+  it("skips untimed neighbours and never moves an untimed item", () => {
+    const items = [it3("a", 1, "09:00"), it3("x", 2, null), it3("b", 3, "08:00")];
+    expect(reslotAfterTimeEdit(items, "b")).toEqual(["b", "a", "x"]);
+    expect(reslotAfterTimeEdit(items, "x")).toBeNull();
   });
 });

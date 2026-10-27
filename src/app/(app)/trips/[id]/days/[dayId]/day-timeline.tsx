@@ -8,11 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Lock } from "lucide-react";
 import type { FormState } from "@/lib/forms";
 import type { DayLodgingSummary, SerializedScheduleItem } from "@/lib/trips";
 import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
 import { scheduleItemPrimaryLabel } from "@/lib/trips";
 import { TimelineGroups } from "../../../itinerary-timeline";
+import { VenueEngagementStatus } from "../../../venue-engagements";
 import { updateScheduleItem, shiftDaySchedule } from "../../../actions";
 
 // Local direct-call action helper — same shape as booking-row / itinerary-editor
@@ -61,6 +63,7 @@ export function DayTimeline({
         linkVenues
         showVenueContacts
         showGaps
+        renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
         renderItemExtra={
           canEdit
             ? (item) => <QuickEdit key={item.id} tripId={tripId} item={item} />
@@ -107,9 +110,9 @@ function DayShiftControl({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="text-xs text-muted-foreground link-quiet"
       >
-        Slide times →
+        Slide times
       </button>
     );
   }
@@ -173,7 +176,7 @@ function DayShiftControl({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="text-xs text-muted-foreground link-quiet"
       >
         Cancel
       </button>
@@ -194,6 +197,7 @@ function QuickEdit({
   const [title, setTitle] = useState(item.title ?? "");
   const [startTime, setStartTime] = useState(item.startTime ?? "");
   const [endTime, setEndTime] = useState(item.endTime ?? "");
+  const [fixedTime, setFixedTime] = useState(item.fixedTime);
   const [notes, setNotes] = useState(item.notes ?? "");
   // Ripple a time change through the rest of the day (default on).
   const [cascade, setCascade] = useState(true);
@@ -235,6 +239,7 @@ function QuickEdit({
             endTime: endTime || undefined,
             notes: notes.trim() || undefined,
             isBlock: item.isBlock,
+            fixedTime: !!startTime && fixedTime,
             presentationId: item.presentationId ?? undefined,
             presenterIds: item.presenters.map((p) => p.id),
             locationIds: item.sites.map((s) => s.locationId),
@@ -249,7 +254,7 @@ function QuickEdit({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-0.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        className="mt-0.5 text-xs text-muted-foreground link-quiet"
       >
         Edit
       </button>
@@ -291,15 +296,32 @@ function QuickEdit({
         </p>
       ) : null}
 
-      {canCascade ? (
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            checked={cascade}
-            onCheckedChange={(v) => setCascade(v === true)}
-          />
-          <span>Shift later items</span>
-        </label>
+      {startTime ? (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* A fixed time is one we don't control (a public event): shifting
+              and reordering never move it, and a ripple stops there. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={fixedTime}
+              onCheckedChange={(v) => setFixedTime(v === true)}
+            />
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3.5" aria-hidden />
+              Fixed time
+            </span>
+          </label>
+          {canCascade ? (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={cascade}
+                onCheckedChange={(v) => setCascade(v === true)}
+              />
+              <span>Shift later items</span>
+            </label>
+          ) : null}
+        </div>
       ) : null}
       <div className="space-y-1">
         <Label className="text-xs" htmlFor={`qe-title-${item.id}`}>
@@ -341,9 +363,9 @@ function QuickEdit({
         </Button>
         <Link
           href={`/trips/${tripId}/itinerary#item-${item.id}`}
-          className="ml-auto text-xs text-muted-foreground hover:underline"
+          className="ml-auto text-xs text-muted-foreground link-quiet"
         >
-          All options →
+          All options
         </Link>
       </div>
     </div>

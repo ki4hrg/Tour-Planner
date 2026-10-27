@@ -28,7 +28,8 @@ type Line = {
 
 // The home dashboard's single booking card (replacing the separate "Booking
 // windows open" and "Payments due" cards): what needs doing across every trip
-// in play — overdue payments, open booking windows, installments coming due —
+// in play — overdue payments, bookings where it's our move, open booking
+// windows, installments coming due —
 // from the same rows the booking dashboards use, so a venue with no booking
 // record yet still surfaces once its window opens.
 export async function BookingActionsCard({ today }: { today: Date }) {
@@ -40,6 +41,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
 
   const items = actionItems(groups);
   const overdue: Line[] = [];
+  const yourMove: Line[] = [];
   const bookNow: Line[] = [];
   let missingPrice = 0;
   for (const i of items) {
@@ -54,6 +56,15 @@ export async function BookingActionsCard({ today }: { today: Date }) {
       });
     } else if (!ahead(i.trip)) {
       continue;
+    } else if (i.reason === "yourMove") {
+      yourMove.push({
+        key: i.key,
+        venue: i.locationName,
+        trip: i.trip,
+        detail: i.text,
+        href: i.href,
+        tone: "amber",
+      });
     } else if (i.reason === "windowOpen") {
       bookNow.push({
         key: i.key,
@@ -94,7 +105,8 @@ export async function BookingActionsCard({ today }: { today: Date }) {
     )
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
-  const total = overdue.length + bookNow.length + dueSoon.length;
+  const total =
+    overdue.length + yourMove.length + bookNow.length + dueSoon.length;
 
   return (
     <Card>
@@ -116,9 +128,9 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         </CardTitle>
         <Link
           href="/bookings"
-          className="text-sm text-muted-foreground hover:underline"
+          className="text-sm text-muted-foreground link-quiet"
         >
-          All bookings →
+          All bookings
         </Link>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
@@ -127,6 +139,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         ) : (
           <>
             <Section title="Overdue payments" lines={overdue} />
+            <Section title="Your move" lines={yourMove} />
             <Section title="Window open" lines={bookNow} />
             <Section
               title={`Due in ${DUE_SOON_DAYS} days`}
@@ -137,7 +150,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         {missingPrice > 0 ? (
           <p className="text-xs text-muted-foreground">
             <Link href="/bookings" className="hover:underline">
-              {missingPrice} without agreed price →
+              {missingPrice} without agreed price
             </Link>
           </p>
         ) : null}
@@ -183,9 +196,9 @@ function Section({ title, lines }: { title: string; lines: Line[] }) {
       {more > 0 ? (
         <Link
           href="/bookings"
-          className="mt-1 inline-block text-xs text-muted-foreground hover:underline"
+          className="mt-1 inline-block text-xs text-muted-foreground link-quiet"
         >
-          +{more} more →
+          +{more} more
         </Link>
       ) : null}
     </section>

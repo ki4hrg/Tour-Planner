@@ -1,8 +1,10 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
+import type { BookingStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,10 +17,19 @@ import {
 import {
   useBookingWorkflows,
   type WorkflowOption,
+  type WorkflowStepOption,
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
 import { stepGate } from "@/lib/booking-workflow";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
+import {
+  daysWaiting,
+  upcomingStep,
+  waitingFromView,
+  waitingView,
+  type BookingProgressView,
+  type WaitingView,
+} from "@/lib/booking-workflow";
 import { BOOKING_STATUS_CLASSES } from "@/lib/trips";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
@@ -30,80 +41,139 @@ import {
 } from "./actions";
 import { WorkflowControl } from "./workflow-control";
 import { coverageLine } from "./booking-row";
+import { ACTOR_PREFIX, OURS_CHIP_CLASSES, WaitingNote } from "./waiting-note";
 
 // Progress view of the booking dashboard: every booking on the trip, whatever
 // workflow it follows, one row each with its whole step strip — so a planner
 // sees at a glance where everything stands, ticks a step with one click, or
 // selects several rows and marks a step done on all of them (steps are matched
 // by label, since the rows may follow different workflows).
+//
+// The pieces are reused elsewhere: `ProgressList` on the Location page (one
+// row per trip engaging that venue), `CompactProgress` ("Your move: …" /
+// "Waiting on venue: …" + the status control) wherever a booking is shown in a
+// single line. Owners (whose move) come from ./waiting-note.
 
-type Line = {
-  key: string;
-  name: string;
-  detail: string;
-  firstDay: number | null; // earliest itinerary day, for ordering
-  target: BookingTarget;
-  row: VenueBookingRow | ItemBookingRow;
-  workflow: WorkflowOption | null;
-};
-
-const normalize = (label: string) => label.trim().toLowerCase();
-
-export function BookingProgress({
-  tripId,
-  canEdit,
-  venueRows,
-  itemRows,
-}: {
-  tripId: string;
-  canEdit: boolean;
-  venueRows: VenueBookingRow[];
-  itemRows: ItemBookingRow[];
-}) {
+/** The workflow a booking follows — for a not-yet-created engagement, the one its first touch will seed. */
+export function useWorkflowFor() {
   const workflows = useBookingWorkflows();
   const globalDefault = workflows.find((w) => w.isDefault)?.id ?? null;
-  const workflowFor = (row: VenueBookingRow | ItemBookingRow) => {
-    const id = row.progress.exists
-      ? row.progress.workflowId
-      : (row.progress.locationDefaultWorkflowId ?? globalDefault);
+  return (progress: BookingProgressView): WorkflowOption | null => {
+    const id = progress.exists
+      ? progress.workflowId
+      : (progress.locationDefaultWorkflowId ?? globalDefault);
     return workflows.find((w) => w.id === id) ?? null;
   };
+}
 
-  const lines: Line[] = [
-    ...venueRows
-      .filter((r) => r.bookable)
-      .map((r) => {
-        const days = r.sessions.map((s) => s.dayIndex);
-        return {
-          key: `v:${r.locationId}`,
-          name: r.locationName,
-          detail: coverageLine(r),
-          firstDay: days.length ? Math.min(...days) : null,
-          target: { tripId, locationId: r.locationId },
-          row: r,
-          workflow: workflowFor(r),
-        };
-      }),
-    ...itemRows.map((r) => ({
-      key: `i:${r.bookingId}`,
-      name: r.label,
-      detail: `Day ${r.dayIndex}${r.date ? ` · ${formatDate(r.date)}` : ""}`,
-      firstDay: r.dayIndex,
-      target: { bookingId: r.bookingId },
-      row: r,
-      workflow: workflowFor(r),
-    })),
-  ].sort(
-    (a, b) =>
-      (a.firstDay ?? Infinity) - (b.firstDay ?? Infinity) ||
-      a.name.localeCompare(b.name),
+/** One step chip: filled when done, outlined when it's the next one, dashed otherwise. */
+function StepChip({
+  step,
+  done,
+  doneOn,
+  isNext,
+  locked = false,
+  canEdit,
+  pending,
+  onToggle,
+  children,
+}: {
+  step: WorkflowStepOption;
+  done: boolean;
+  doneOn?: string;
+  isNext: boolean; // the upcoming step — outlined, amber when it's ours
+  // Steps go in order (stepGate): locked = can't be done yet (an earlier step
+  // is open) or undone yet (a later step is done).
+  locked?: boolean;
+  canEdit: boolean;
+  pending: boolean;
+  onToggle: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={!canEdit || pending || locked}
+      aria-pressed={done}
+      title={[
+        step.label,
+        step.actor === "VENUE" ? "Venue" : "Us",
+        done && doneOn ? formatDate(doneOn) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+      onClick={onToggle}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default",
+        done
+          ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[step.status])
+          : isNext
+            ? step.actor === "VENUE"
+              ? "border-foreground/30 text-muted-foreground"
+              : cn("font-medium", OURS_CHIP_CLASSES)
+            : "border-dashed text-muted-foreground",
+        canEdit && !locked && !done && "hover:border-foreground/60",
+      )}
+    >
+      {done ? <Check className="size-3" aria-hidden /> : null}
+      {children ?? step.label}
+    </button>
   );
+}
 
-  const [pending, start] = useTransition();
-  // Done step ids per row, optimistically patched by clicks and bulk marks.
-  const [done, patchDone] = useOptimistic(
+/** A booking's whole step strip, one click per step. */
+export function StepStrip({
+  name,
+  steps,
+  done,
+  doneOn,
+  status,
+  canEdit,
+  pending,
+  onToggle,
+}: {
+  name: string;
+  steps: WorkflowStepOption[];
+  done: Set<string>;
+  doneOn: Map<string, string>;
+  status: BookingStatus;
+  canEdit: boolean;
+  pending: boolean;
+  onToggle: (stepId: string) => void;
+}) {
+  const next = upcomingStep(
+    steps,
+    [...done].map((stepId) => ({ stepId })),
+    status,
+  );
+  const gate = stepGate(steps, done);
+  return (
+    <ol className="flex min-w-0 flex-1 flex-wrap gap-1" aria-label={`${name} steps`}>
+      {steps.map((s) => (
+        <li key={s.id}>
+          <StepChip
+            step={s}
+            done={done.has(s.id)}
+            doneOn={doneOn.get(s.id)}
+            isNext={s.id === next?.id}
+            locked={
+              !(done.has(s.id) ? gate.get(s.id)?.canUndo : gate.get(s.id)?.canComplete)
+            }
+            canEdit={canEdit}
+            pending={pending}
+            onToggle={() => onToggle(s.id)}
+          />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// Optimistic done-step sets per booking key, patched by clicks and bulk marks.
+function useDoneSteps(lines: { key: string; progress: BookingProgressView }[]) {
+  return useOptimistic(
     new Map(
-      lines.map((l) => [l.key, new Set(l.row.progress.completions.map((c) => c.stepId))]),
+      lines.map((l) => [l.key, new Set(l.progress.completions.map((c) => c.stepId))]),
     ),
     (prev, patch: { key: string; stepId: string; on: boolean }[]) => {
       const next = new Map(prev);
@@ -116,21 +186,174 @@ export function BookingProgress({
       return next;
     },
   );
+}
+
+/**
+ * Compact single-line progress: the upcoming step as a one-click chip led by
+ * its owner ("Your move: Sign agreement", "Waiting on venue: Confirm
+ * availability · 12d" — clicking ticks it), then the status control (whole
+ * ladder in its popover). A venue not engaged yet reads "Next: …". Read-only
+ * chip for viewers.
+ */
+export function CompactProgress({
+  target,
+  progress,
+  canEdit,
+  showAge = false,
+}: {
+  target: BookingTarget;
+  progress: BookingProgressView;
+  canEdit: boolean;
+  showAge?: boolean;
+}) {
+  const workflow = useWorkflowFor()(progress);
+  const [pending, start] = useTransition();
+  const [done, patchDone] = useDoneSteps([{ key: "b", progress }]);
+  const doneSet = done.get("b") ?? new Set<string>();
+  // todayUtc() isolates "now" in lib (react-hooks/purity), like daysSince.
+  const today = todayUtc();
+  const waiting = workflow
+    ? waitingFromView(workflow.steps, progress, today, doneSet)
+    : null;
+  const next = waiting?.step ?? null;
+  const days = waiting?.since ? daysWaiting(waiting.since, today) : 0;
+  // Owner-led once the booking exists; an untouched venue just shows "Next".
+  const owned = progress.exists && waiting != null;
+
+  const tick = (stepId: string) =>
+    start(async () => {
+      patchDone([{ key: "b", stepId, on: true }]);
+      const res = await setBookingStepAction(target, stepId, true, toDateInput(todayUtc()));
+      if (res.error) toast.error(res.error);
+    });
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {next ? (
+        <StepChip
+          step={next}
+          done={false}
+          isNext
+          canEdit={canEdit}
+          pending={pending}
+          onToggle={() => tick(next.id)}
+        >
+          {owned ? (
+            <>
+              <span className={cn(waiting.actor === "US" && "font-semibold")}>
+                {ACTOR_PREFIX[waiting.actor]}:
+              </span>{" "}
+              {next.label}
+              {days > 0 ? <span className="opacity-70"> · {days}d</span> : null}
+            </>
+          ) : (
+            <>
+              <span className="text-muted-foreground">Next:</span> {next.label}
+            </>
+          )}
+        </StepChip>
+      ) : null}
+      <WorkflowControl
+        target={target}
+        progress={progress}
+        canEdit={canEdit}
+        // The owner chip already says how long it's been waiting.
+        showAge={showAge && !owned}
+      />
+    </span>
+  );
+}
+
+/** One booking's full step strip (one click per step) + its status control. */
+export function BookingStepStrip({
+  name,
+  target,
+  progress,
+  canEdit,
+}: {
+  name: string;
+  target: BookingTarget;
+  progress: BookingProgressView;
+  canEdit: boolean;
+}) {
+  const workflow = useWorkflowFor()(progress);
+  const [pending, start] = useTransition();
+  const [done, patchDone] = useDoneSteps([{ key: "b", progress }]);
+  const doneSet = done.get("b") ?? new Set<string>();
+
+  const toggle = (stepId: string) => {
+    const on = !doneSet.has(stepId);
+    start(async () => {
+      patchDone([{ key: "b", stepId, on }]);
+      const res = await setBookingStepAction(target, stepId, on, toDateInput(todayUtc()));
+      if (res.error) toast.error(res.error);
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {workflow ? (
+        <StepStrip
+          name={name}
+          steps={workflow.steps}
+          done={doneSet}
+          doneOn={new Map(progress.completions.map((c) => [c.stepId, c.completedOn]))}
+          status={progress.status}
+          canEdit={canEdit}
+          pending={pending}
+          onToggle={toggle}
+        />
+      ) : null}
+      <WorkflowControl target={target} progress={progress} canEdit={canEdit} showAge={false} />
+    </div>
+  );
+}
+
+const normalize = (label: string) => label.trim().toLowerCase();
+
+/** Client-resolved `WaitingView` (optimistic done set) for `WaitingNote`. */
+function waitingNoteFor(
+  steps: WorkflowStepOption[],
+  progress: BookingProgressView,
+  doneIds?: Set<string>,
+): WaitingView | null {
+  const today = todayUtc();
+  return waitingView(waitingFromView(steps, progress, today, doneIds), today);
+}
+
+export type ProgressLine = {
+  key: string;
+  name: string;
+  href?: string;
+  detail: string;
+  target: BookingTarget;
+  progress: BookingProgressView;
+};
+
+/** Rows of bookings with their step strips, plus multi-select bulk marking by step label. */
+export function ProgressList({
+  lines,
+  canEdit,
+}: {
+  lines: ProgressLine[];
+  canEdit: boolean;
+}) {
+  const workflowFor = useWorkflowFor();
+  const workflowByKey = new Map(lines.map((l) => [l.key, workflowFor(l.progress)]));
+
+  const [pending, start] = useTransition();
+  const [done, patchDone] = useDoneSteps(lines);
   const doneOn = new Map(
     lines.map((l) => [
       l.key,
-      new Map(l.row.progress.completions.map((c) => [c.stepId, c.completedOn])),
+      new Map(l.progress.completions.map((c) => [c.stepId, c.completedOn])),
     ]),
   );
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLabel, setBulkLabel] = useState<string>("");
 
-  if (lines.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nothing to book.</p>;
-  }
-
-  const toggleStep = (line: Line, stepId: string) => {
+  const toggleStep = (line: ProgressLine, stepId: string) => {
     const on = !done.get(line.key)?.has(stepId);
     start(async () => {
       patchDone([{ key: line.key, stepId, on }]);
@@ -149,7 +372,7 @@ export function BookingProgress({
   const bulkLabels = [
     ...new Map(
       chosen
-        .flatMap((l) => l.workflow?.steps ?? [])
+        .flatMap((l) => workflowByKey.get(l.key)?.steps ?? [])
         .map((s) => [normalize(s.label), s.label]),
     ).values(),
   ];
@@ -157,13 +380,12 @@ export function BookingProgress({
     ? bulkLabel
     : "";
   const runBulk = (on: boolean) => {
-    const entries: { line: Line; stepId: string }[] = [];
+    const entries: { line: ProgressLine; stepId: string }[] = [];
     let lacking = 0;
     let blocked = 0;
     for (const l of chosen) {
-      const step = l.workflow?.steps.find(
-        (s) => normalize(s.label) === normalize(label),
-      );
+      const steps = workflowByKey.get(l.key)?.steps ?? [];
+      const step = steps.find((s) => normalize(s.label) === normalize(label));
       if (!step) {
         lacking++;
         continue;
@@ -172,7 +394,7 @@ export function BookingProgress({
       if (rowDone.has(step.id) === on) continue; // already there
       // Steps go in order: skip rows whose earlier steps are open (done) or
       // whose later steps are done (clear).
-      const g = stepGate(l.workflow!.steps, rowDone).get(step.id);
+      const g = stepGate(steps, rowDone).get(step.id);
       if (!(on ? g?.canComplete : g?.canUndo)) {
         blocked++;
         continue;
@@ -289,11 +511,8 @@ export function BookingProgress({
 
       <ul className="divide-y rounded-lg border">
         {lines.map((line) => {
-          const rowDone = done.get(line.key) ?? new Set<string>();
-          const notNeeded = line.row.status === "NOT_NEEDED";
-          const steps = line.workflow?.steps ?? [];
-          const next = steps.find((s) => !rowDone.has(s.id));
-          const gate = stepGate(steps, rowDone);
+          const workflow = workflowByKey.get(line.key) ?? null;
+          const notNeeded = line.progress.status === "NOT_NEEDED";
           return (
             <li
               key={line.key}
@@ -313,57 +532,49 @@ export function BookingProgress({
                   />
                 ) : null}
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{line.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {[line.detail, line.workflow?.name].filter(Boolean).join(" · ")}
+                  <p className="font-medium [overflow-wrap:anywhere]">
+                    {line.href ? (
+                      <Link href={line.href} className="hover:underline">
+                        {line.name}
+                      </Link>
+                    ) : (
+                      line.name
+                    )}
                   </p>
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    {[line.detail, workflow?.name].filter(Boolean).join(" · ")}
+                  </p>
+                  {line.progress.exists && workflow ? (
+                    <WaitingNote
+                      className="block"
+                      waiting={waitingNoteFor(
+                        workflow.steps,
+                        line.progress,
+                        done.get(line.key),
+                      )}
+                    />
+                  ) : null}
                 </div>
               </div>
 
-              <ol
-                className="flex min-w-0 flex-1 flex-wrap gap-1"
-                aria-label={`${line.name} steps`}
-              >
-                {steps.map((s) => {
-                  const isDone = rowDone.has(s.id);
-                  const on = doneOn.get(line.key)?.get(s.id);
-                  const g = gate.get(s.id);
-                  const open = isDone ? g?.canUndo : g?.canComplete;
-                  return (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        disabled={!canEdit || pending || !open}
-                        aria-pressed={isDone}
-                        title={
-                          isDone
-                            ? `${s.label}${on ? ` · ${formatDate(on)}` : ""}`
-                            : s.label
-                        }
-                        onClick={() => toggleStep(line, s.id)}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default",
-                          isDone
-                            ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[s.status])
-                            : s.id === next?.id && !notNeeded
-                              ? "border-foreground/40 text-foreground"
-                              : "border-dashed text-muted-foreground",
-                          canEdit && open && !isDone && "hover:border-foreground/60",
-                        )}
-                      >
-                        {isDone ? <Check className="size-3" aria-hidden /> : null}
-                        {s.label}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
+              <StepStrip
+                name={line.name}
+                steps={workflow?.steps ?? []}
+                done={done.get(line.key) ?? new Set<string>()}
+                doneOn={doneOn.get(line.key) ?? new Map()}
+                status={line.progress.status}
+                canEdit={canEdit}
+                pending={pending}
+                onToggle={(stepId) => toggleStep(line, stepId)}
+              />
 
               <div className="sm:shrink-0">
                 <WorkflowControl
                   target={line.target}
-                  progress={line.row.progress}
+                  progress={line.progress}
                   canEdit={canEdit}
+                  // The owner note beside the name already says how long.
+                  showAge={!(line.progress.exists && workflow)}
                 />
               </div>
             </li>
@@ -372,4 +583,49 @@ export function BookingProgress({
       </ul>
     </div>
   );
+}
+
+export function BookingProgress({
+  tripId,
+  canEdit,
+  venueRows,
+  itemRows,
+}: {
+  tripId: string;
+  canEdit: boolean;
+  venueRows: VenueBookingRow[];
+  itemRows: ItemBookingRow[];
+}) {
+  const lines: (ProgressLine & { firstDay: number | null })[] = [
+    ...venueRows
+      .filter((r) => r.bookable)
+      .map((r) => {
+        const days = r.sessions.map((s) => s.dayIndex);
+        return {
+          key: `v:${r.locationId}`,
+          name: r.locationName,
+          detail: coverageLine(r),
+          firstDay: days.length ? Math.min(...days) : null,
+          target: { tripId, locationId: r.locationId },
+          progress: r.progress,
+        };
+      }),
+    ...itemRows.map((r) => ({
+      key: `i:${r.bookingId}`,
+      name: r.label,
+      detail: `Day ${r.dayIndex}${r.date ? ` · ${formatDate(r.date)}` : ""}`,
+      firstDay: r.dayIndex,
+      target: { bookingId: r.bookingId },
+      progress: r.progress,
+    })),
+  ].sort(
+    (a, b) =>
+      (a.firstDay ?? Infinity) - (b.firstDay ?? Infinity) ||
+      a.name.localeCompare(b.name),
+  );
+
+  if (lines.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nothing to book.</p>;
+  }
+  return <ProgressList lines={lines} canEdit={canEdit} />;
 }
