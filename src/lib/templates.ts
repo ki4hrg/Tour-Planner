@@ -45,6 +45,7 @@ export type TemplateScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime?: boolean;
   presentationId: string | null;
   sites: TemplateItemLocation[];
   bookings: TemplateBooking[];
@@ -88,6 +89,7 @@ export type InstantiatedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime?: boolean;
   presentationId: string | null; // catalog link survives; presenters reset (omitted)
   sites: { create: InstantiatedItemLocation[] };
   bookings: { create: InstantiatedBooking[] };
@@ -231,6 +233,7 @@ export function instantiateDays(
               endTime: item.endTime,
               notes: item.notes,
               isBlock: item.isBlock,
+              fixedTime: item.fixedTime ?? false,
               // The shared catalog link survives; the per-occurrence speaker
               // override is reset (next trip assigns its own — like bookings).
               presentationId: item.presentationId,

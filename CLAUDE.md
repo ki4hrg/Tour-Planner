@@ -46,7 +46,7 @@ minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
 `plannedLocations` + `cityRegion`), `add-day` (P),
 `update-day` (P, title + logistical/participant notes + primary location/city), `delete-day` (P, renumbers +
-recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P), `update-schedule-item` (P),
+recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P, `fixedTime` pins times reorders/shifts never move), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
 (P, rough day→location assignment with no times — GH #9; idempotent per
 `(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
@@ -367,6 +367,13 @@ npm test                          # vitest
   may follow different workflows. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
+- **Fixed-time items**: `ScheduleItem.fixedTime` marks times the group doesn't
+  control (a public event, a timetabled train). The edit ripple (`cascadeFromEdit`)
+  and day slide (`shiftDayItems`) never move a fixed item and STOP at the first one
+  they reach; the reorder cascade (`cascadeReorderedTimes`) keeps fixed items' times
+  and re-lays only the movable ones. `fixedTimeOverlaps` flags a run that now
+  collides with an anchor (surfaced in the toast). On update an omitted `fixedTime`
+  leaves it untouched. See `docs/itinerary-time-editing.md`.
 - **Day reorder + lodging**: dates belong to day POSITIONS, so reordering days
   redates them; stays don't follow on their own. `staysFollowingDays`
   (`src/lib/stay-shift.ts`, unit-tested) finds stays whose nights' days moved

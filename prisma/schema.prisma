@@ -377,6 +377,7 @@ model ScheduleItem {
   endTime        String?
   notes          String?
   isBlock        Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
+  fixedTime      Boolean               @default(false) // times we don't control (a public event): shifts/reorders never move it
   presentation   Presentation?         @relation(fields: [presentationId], references: [id], onDelete: SetNull)
   presentationId String? // the catalogued talk this item delivers (optional)
   presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters

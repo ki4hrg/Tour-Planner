@@ -6,6 +6,7 @@ import {
   Bus,
   CarTaxiFront,
   Footprints,
+  Lock,
   MapPin,
   Moon,
   MoveRight,
@@ -251,6 +252,14 @@ function TimelineRow({
   href?: string | null;
 }) {
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
+  // Fixed-time marker — a staff planning cue, so only where bookings show.
+  const fixed =
+    showBookings && item.fixedTime && item.startTime ? (
+      <Lock
+        className="mr-1 inline size-3.5 align-[-2px] text-muted-foreground"
+        aria-label="Fixed time"
+      />
+    ) : null;
   const speakers = effectivePresenters(item);
   const { primary, presentationIsPrimary, labelFromCategory } =
     scheduleItemPrimaryLabel(item);
@@ -271,6 +280,7 @@ function TimelineRow({
           <TravelMethodIcon method={item.travel.method} className="size-4" />
         </span>
         <div className="min-w-0">
+          {fixed}
           <span className="mr-1.5 inline-block align-middle text-muted-foreground sm:hidden">
             <TravelMethodIcon method={item.travel.method} className="size-3.5" />
           </span>
@@ -324,6 +334,7 @@ function TimelineRow({
         {showChip ? <CategoryChip category={item.category!} /> : null}
       </span>
       <div className="min-w-0">
+          {fixed}
         {showChip ? (
           <span className="mr-1.5 align-middle sm:hidden">
             <CategoryChip category={item.category!} />

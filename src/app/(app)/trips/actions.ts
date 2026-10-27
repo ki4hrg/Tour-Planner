@@ -45,10 +45,15 @@ import {
   previewDayReorder,
   reorderDayItems,
   reorderTripDays,
+  reslotEditedItem,
   type StayFollowLine,
 } from "@/lib/itinerary-mutations";
 import { travelLegCreateData } from "@/lib/travel";
-import { cascadeFromEdit, shiftDayItems } from "@/lib/schedule-shift";
+import {
+  cascadeFromEdit,
+  fixedTimeOverlaps,
+  shiftDayItems,
+} from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
 import {
   seedWorkflowFor,
@@ -110,6 +115,7 @@ const TEMPLATE_DAYS_SELECT = {
       endTime: true,
       notes: true,
       isBlock: true,
+      fixedTime: true,
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
@@ -612,6 +618,7 @@ export type ScheduleItemInputData = {
   endTime?: string;
   notes?: string;
   isBlock?: boolean;
+  fixedTime?: boolean;
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
@@ -653,6 +660,9 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     endTime: d.endTime || null,
     notes: d.notes || null,
     isBlock: d.isBlock ?? false,
+    // Omitted ⇒ untouched on update (quick edits don't round-trip it); the
+    // column defaults to false on create.
+    fixedTime: d.fixedTime,
     presentationId: d.presentationId || null,
   };
 }
@@ -720,8 +730,8 @@ export async function updateScheduleItem(
   input: ScheduleItemInputData,
   // When `cascade` is set, ripple a start/end change through the rest of the day:
   // every later timed item shifts by the delta this item's trailing edge moved,
-  // preserving downstream gaps (see cascadeFromEdit). Opt-in so a planner can leave
-  // a fixed downstream anchor (a booked tour) in place.
+  // preserving downstream gaps, stopping at the next fixed-time item (see
+  // cascadeFromEdit). Opt-in so a planner can still decline it per edit.
   options?: { cascade?: boolean },
 ): Promise<FormState> {
   await assertRole("PLANNER");
@@ -744,6 +754,7 @@ export async function updateScheduleItem(
 
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
+  let overlapsFixed = false;
   const item = await prisma.$transaction(async (tx) => {
     // Snapshot the day (with the edited item's OLD times) before mutating, so the
     // ripple measures against pre-edit spacing.
@@ -751,7 +762,13 @@ export async function updateScheduleItem(
     const siblings = cascade
       ? await tx.scheduleItem.findMany({
           where: { dayId: existing.dayId },
-          select: { id: true, order: true, startTime: true, endTime: true },
+          select: {
+            id: true,
+            order: true,
+            startTime: true,
+            endTime: true,
+            fixedTime: true,
+          },
         })
       : [];
 
@@ -778,7 +795,20 @@ export async function updateScheduleItem(
           data: { startTime: s.startTime, endTime: s.endTime },
         });
       }
+      // The edited item's own new times count too — it can run into the anchor.
+      overlapsFixed =
+        fixedTimeOverlaps(siblings, [
+          ...shifts,
+          {
+            id: itemId,
+            startTime: parsed.data.startTime ?? null,
+            endTime: parsed.data.endTime ?? null,
+          },
+        ]).length > 0;
     }
+
+    // A changed start can leave the item out of sequence; slot it back in.
+    await reslotEditedItem(tx, existing.dayId, itemId);
 
     // Travel leg (GH #80): an object replaces the leg wholesale, null removes
     // it, undefined leaves an existing leg untouched.
@@ -823,7 +853,12 @@ export async function updateScheduleItem(
   });
 
   revalidateTrip(item.day.tripId);
-  return { ok: true, message: "Item saved." };
+  return {
+    ok: true,
+    message: overlapsFixed
+      ? "Item saved. It now overlaps a fixed-time item."
+      : "Item saved.",
+  };
 }
 
 export async function deleteScheduleItem(itemId: string): Promise<FormState> {
@@ -882,7 +917,8 @@ export async function moveScheduleItem(
 // Day reflow — "we're running behind": slide a run of timed items by a fixed
 // number of minutes (negative = earlier). `fromItemId` scopes it to that item and
 // everything ordered after it; omit it to shift the whole day. Untimed items and
-// items before the anchor are left alone.
+// items before the anchor are left alone, and the run stops at the next
+// fixed-time item (see shiftDayItems).
 export async function shiftDaySchedule(
   dayId: string,
   deltaMinutes: number,
@@ -895,7 +931,13 @@ export async function shiftDaySchedule(
 
   const items = await prisma.scheduleItem.findMany({
     where: { dayId },
-    select: { id: true, order: true, startTime: true, endTime: true },
+    select: {
+      id: true,
+      order: true,
+      startTime: true,
+      endTime: true,
+      fixedTime: true,
+    },
   });
   const fromOrder = fromItemId
     ? (items.find((it) => it.id === fromItemId)?.order ?? 1)
@@ -903,7 +945,7 @@ export async function shiftDaySchedule(
 
   const shifts = shiftDayItems(items, deltaMinutes, fromOrder);
   if (shifts.length === 0) {
-    return { error: "No timed items to shift." };
+    return { error: "No movable timed items to shift." };
   }
 
   await prisma.$transaction(
@@ -920,9 +962,19 @@ export async function shiftDaySchedule(
 
   const n = shifts.length;
   const dir = deltaMinutes > 0 ? "later" : "earlier";
+  const stopped = items.some(
+    (it) => it.fixedTime && it.order > fromOrder,
+  );
+  const overlaps = fixedTimeOverlaps(items, shifts).length > 0;
   return {
     ok: true,
-    message: `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.`,
+    message:
+      `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.` +
+      (overlaps
+        ? " It now overlaps a fixed-time item."
+        : stopped
+          ? " Stopped at a fixed-time item."
+          : ""),
   };
 }
 

@@ -238,7 +238,11 @@ export function buildDashboardRows(data: DashboardData): {
   for (const day of data.days) {
     for (const item of day.scheduleItems) {
       // The venue is already this row's heading, so keep the session label bare
-      // ("Visit", not "Visit: The Old Rectory") by folding in no sites.
+      // ("Visit", not "Visit: The Old Rectory").
+      const sessionLabel = scheduleItemPrimaryLabel(
+        { ...item, sites: [] },
+        { venueInHeading: false },
+      ).primary;
       const label = scheduleItemPrimaryLabel({ ...item, sites: [] }).primary;
       for (const site of item.sites) {
         const v = ensure(site.locationId);
@@ -248,7 +252,7 @@ export function buildDashboardRows(data: DashboardData): {
           date: day.date ? toDateInput(day.date) : null,
           startTime: item.startTime,
           endTime: item.endTime,
-          label,
+          label: sessionLabel,
         });
         if (day.date) v.dates.push(day.date);
       }

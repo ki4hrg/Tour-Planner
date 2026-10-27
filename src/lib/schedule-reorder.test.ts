@@ -130,3 +130,31 @@ describe("cascadeReorderedTimes", () => {
     ]);
   });
 });
+
+describe("cascadeReorderedTimes with fixed-time items", () => {
+  it("keeps a fixed item's times and re-lays only the movable ones", () => {
+    const items: ReorderableItem[] = [
+      item("museum", "09:00", "10:00"),
+      { ...item("service", "11:00", "12:00"), fixedTime: true },
+      item("cathedral", "13:00", "15:00"),
+    ];
+    // Move Cathedral to the top: it takes the movable skeleton's anchor (09:00),
+    // Museum follows after the movable gap (3h), the service never moves.
+    expect(times(items, ["cathedral", "service", "museum"])).toEqual([
+      { id: "cathedral", order: 1, start: "09:00", end: "11:00" },
+      { id: "service", order: 2, start: "11:00", end: "12:00" },
+      { id: "museum", order: 3, start: "14:00", end: "15:00" },
+    ]);
+  });
+
+  it("moving a fixed item only changes its order", () => {
+    const items: ReorderableItem[] = [
+      item("a", "09:00", "10:00"),
+      { ...item("p", "14:00", "15:00"), fixedTime: true },
+    ];
+    expect(times(items, ["p", "a"])).toEqual([
+      { id: "p", order: 1, start: "14:00", end: "15:00" },
+      { id: "a", order: 2, start: "09:00", end: "10:00" },
+    ]);
+  });
+});

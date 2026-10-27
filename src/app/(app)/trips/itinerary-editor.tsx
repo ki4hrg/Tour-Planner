@@ -3,7 +3,7 @@
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1084,8 +1084,14 @@ function ItemRow({
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 {/* Fixed-width time gutter so category chips and titles align
                     across rows whether or not an item carries an end time. */}
-                <time className="w-[5.25rem] shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                <time className="inline-flex w-[5.25rem] shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
                   {time}
+                  {item.fixedTime && item.startTime ? (
+                    <Lock
+                      className="size-3"
+                      aria-label="Fixed time"
+                    />
+                  ) : null}
                 </time>
                 {item.category && !labelFromCategory ? (
                   <CategoryChip category={item.category} />
@@ -1264,6 +1270,7 @@ function ItemFields({
   );
   const [title, setTitle] = useState(initial?.title ?? "");
   const [isBlock, setIsBlock] = useState(initial?.isBlock ?? false);
+  const [fixedTime, setFixedTime] = useState(initial?.fixedTime ?? false);
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
   // Ripple a time change through the rest of the day (edit only). Default on so
@@ -1405,6 +1412,7 @@ function ItemFields({
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
         isBlock: selfDescribing ? false : isBlock,
+        fixedTime: !!startTime && fixedTime,
         presentationId:
           selfDescribing || presentationId === NONE ? undefined : presentationId,
         presenterIds: selfDescribing ? [] : presenterIds,
@@ -1415,6 +1423,7 @@ function ItemFields({
           setCategoryId(NONE);
           setTitle("");
           setIsBlock(false);
+          setFixedTime(false);
           setStartTime("");
           setEndTime("");
           setNotes("");
@@ -1494,15 +1503,32 @@ function ItemFields({
         </p>
       ) : null}
 
-      {canCascade ? (
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            checked={cascade}
-            onCheckedChange={(v) => setCascade(v === true)}
-          />
-          <span>Shift later items</span>
-        </label>
+      {startTime ? (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* A fixed time is one we don't control (a public event): shifting
+              and reordering never move it, and a ripple stops there. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={fixedTime}
+              onCheckedChange={(v) => setFixedTime(v === true)}
+            />
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3.5" aria-hidden />
+              Fixed time
+            </span>
+          </label>
+          {canCascade ? (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={cascade}
+                onCheckedChange={(v) => setCascade(v === true)}
+              />
+              <span>Shift later items</span>
+            </label>
+          ) : null}
+        </div>
       ) : null}
 
       {selfDescribing ? null : (
@@ -1813,6 +1839,7 @@ function TravelFields({
   const [toLabel, setToLabel] = useState(leg?.toLabel ?? "");
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
+  const [fixedTime, setFixedTime] = useState(initial?.fixedTime ?? false);
   const [cascade, setCascade] = useState(true);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [stops, setStops] = useState<StopDraft[]>(
@@ -1880,6 +1907,7 @@ function TravelFields({
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
         isBlock: false,
+        fixedTime: !!startTime && fixedTime,
         presenterIds: [],
         locationIds: [],
         travel,
@@ -1893,6 +1921,7 @@ function TravelFields({
           setToLabel("");
           setStartTime("");
           setEndTime("");
+          setFixedTime(false);
           setNotes("");
           setStops([]);
         }
@@ -1986,15 +2015,32 @@ function TravelFields({
         </p>
       ) : null}
 
-      {canCascade ? (
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            checked={cascade}
-            onCheckedChange={(v) => setCascade(v === true)}
-          />
-          <span>Shift later items</span>
-        </label>
+      {startTime ? (
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* A fixed time is one we don't control (a public event): shifting
+              and reordering never move it, and a ripple stops there. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={fixedTime}
+              onCheckedChange={(v) => setFixedTime(v === true)}
+            />
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3.5" aria-hidden />
+              Fixed time
+            </span>
+          </label>
+          {canCascade ? (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={cascade}
+                onCheckedChange={(v) => setCascade(v === true)}
+              />
+              <span>Shift later items</span>
+            </label>
+          ) : null}
+        </div>
       ) : null}
 
       {/* En-route stops — comfort/photo stops that belong to the leg, not the day. */}

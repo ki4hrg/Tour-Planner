@@ -265,6 +265,7 @@ export type SerializedScheduleItem = {
   endTime: string | null;
   notes: string | null;
   isBlock: boolean;
+  fixedTime: boolean; // times we don't control; shifts/reorders never move it
   presentationId: string | null;
   presentation: SerializedItemPresentation | null;
   presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
@@ -284,7 +285,11 @@ export type SerializedScheduleItem = {
 //      is uninformative, so a located category-labelled item reads
 //      "Visit: The Old Rectory" (self-describing kinds like Free time / Break are
 //      location-less, so they stay bare),
-//   5. "Untitled item".
+//   5. with no category, the venue(s) themselves — or "Visit" when the caller
+//      already shows the venue as the heading (`venueInHeading: false`, e.g. a
+//      venue's session list),
+//   6. the first line of the notes, else "Item" (an item must have a title or
+//      a location, so this is only reachable for legacy rows).
 // `presentationIsPrimary` is true when the talk title IS the heading, so callers
 // avoid echoing it. `labelFromCategory` is true when the category name drives the
 // heading, so callers drop the (now redundant) category chip and instead tint
@@ -293,17 +298,19 @@ export function scheduleItemPrimaryLabel(item: {
   title: string | null;
   presentation: { title: string } | null;
   category: { name: string } | null;
+  notes?: string | null;
   sites?: { location: { name: string } }[];
   travel?: {
     method: TravelMethod;
     toLocation: { name: string } | null;
     toLabel: string | null;
   } | null;
-}): {
+}, opts: { venueInHeading?: boolean } = {}): {
   primary: string;
   presentationIsPrimary: boolean;
   labelFromCategory: boolean;
 } {
+  const venueInHeading = opts.venueInHeading ?? true;
   if (item.title) {
     return {
       primary: item.title,
@@ -327,8 +334,10 @@ export function scheduleItemPrimaryLabel(item: {
       labelFromCategory: false,
     };
   }
+  const venues = venueInHeading
+    ? (item.sites ?? []).map((s) => s.location.name)
+    : [];
   if (item.category) {
-    const venues = (item.sites ?? []).map((s) => s.location.name);
     return {
       primary: venues.length
         ? `${item.category.name}: ${venues.join(", ")}`
@@ -338,7 +347,11 @@ export function scheduleItemPrimaryLabel(item: {
     };
   }
   return {
-    primary: "Untitled item",
+    primary: venues.length
+      ? venues.join(", ")
+      : !venueInHeading
+        ? "Visit"
+        : item.notes?.split("\n")[0].trim() || "Item",
     presentationIsPrimary: false,
     labelFromCategory: false,
   };
@@ -542,6 +555,7 @@ export function serializeScheduleItem(
     endTime: item.endTime,
     notes: item.notes,
     isBlock: item.isBlock,
+    fixedTime: item.fixedTime,
     presentationId: item.presentationId,
     presentation: item.presentation
       ? {

@@ -3,10 +3,12 @@
 // auth + revalidation) and the MCP itinerary tools. No auth and no
 // revalidatePath here (MCP-safe; see trip-mutations.ts for the pattern).
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { computeDayDate, dayIndexForDate, formatDate } from "@/lib/dates";
 import { cascadeReorderedTimes } from "@/lib/schedule-reorder";
 import { planCrossDayMove } from "@/lib/schedule-move";
+import { reslotAfterTimeEdit } from "@/lib/schedule-order";
 import {
   shiftStayDates,
   staysFollowingDays,
@@ -166,7 +168,8 @@ export async function reorderTripDays(
 /**
  * Re-sequence a day's items. Times move with the sequence: a moved item keeps
  * its own duration while the day's anchor + free-time gaps are preserved (see
- * cascadeReorderedTimes). Ids not on the day are ignored.
+ * cascadeReorderedTimes); fixed-time items keep their times. Ids not on the day
+ * are ignored.
  */
 export async function reorderDayItems(
   dayId: string,
@@ -176,7 +179,9 @@ export async function reorderDayItems(
     where: { id: dayId },
     select: {
       tripId: true,
-      scheduleItems: { select: { id: true, startTime: true, endTime: true } },
+      scheduleItems: {
+        select: { id: true, startTime: true, endTime: true, fixedTime: true },
+      },
     },
   });
   if (!day) return { error: "Day not found." };
@@ -190,6 +195,30 @@ export async function reorderDayItems(
     ),
   );
   return { ok: true, tripId: day.tripId };
+}
+
+/**
+ * After an item's times were edited (inside the caller's txn), move it to its
+ * chronological slot when the edit broke the day's sequence (see
+ * reslotAfterTimeEdit) and renumber. A no-op when it still fits where it is.
+ */
+export async function reslotEditedItem(
+  tx: Prisma.TransactionClient,
+  dayId: string,
+  itemId: string,
+): Promise<void> {
+  const items = await tx.scheduleItem.findMany({
+    where: { dayId },
+    select: { id: true, order: true, startTime: true },
+  });
+  const ids = reslotAfterTimeEdit(items, itemId);
+  if (!ids) return;
+  for (let i = 0; i < ids.length; i++) {
+    await tx.scheduleItem.update({
+      where: { id: ids[i] },
+      data: { order: i + 1 },
+    });
+  }
 }
 
 /**
