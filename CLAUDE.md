@@ -122,7 +122,9 @@ this is how an agent files a generated participant itinerary), `update-document`
   context for no gain; the URL works in any authenticated browser session.
 - **`update-note` / `delete-note`.** Only create + list are exposed; editing/removing
   log entries is rare and currently a UI-only concern.
-- **Reordering (`reorderDays`, `reorderScheduleItems`).** Drag-reorder is a UI gesture;
+- **Reordering / moving (`reorderDays`, `reorderScheduleItems`, `moveScheduleItem`,
+  `movePlannedLocation`).** Drag-and-drop is a UI gesture (`trips/itinerary-dnd.tsx`;
+  cross-day item moves keep the item's times and land by them — `planCrossDayMove`);
   MCP callers set `order` implicitly by add/delete (which renumber). Add explicit
   reorder tools only if an agent needs to resequence without add/delete.
 
