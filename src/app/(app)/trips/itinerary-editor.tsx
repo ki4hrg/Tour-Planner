@@ -1,10 +1,24 @@
 "use client";
 
-import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { GripVertical, Lock } from "lucide-react";
 import { VenueEngagementStatus, VenueEngagementSteps } from "./venue-engagements";
+import {
+  PriceLinesEditor,
+  draftsFromLines,
+  draftsToInput,
+} from "./price-lines-editor";
+import { currencyOptions } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,6 +145,13 @@ function useAction() {
   return { pending, run };
 }
 
+// Trip headcount + currency set for the item-booking price editor, so they
+// needn't thread through every item component.
+const TripPricingContext = createContext<{
+  headcount: number | null;
+  currencies: string[];
+}>({ headcount: null, currencies: [] });
+
 export function ItineraryEditor({
   tripId,
   canEdit,
@@ -142,6 +163,8 @@ export function ItineraryEditor({
   contacts: initialContacts,
   presentations: initialPresentations,
   cities,
+  headcount = null,
+  currencies = [],
 }: {
   tripId: string;
   canEdit: boolean;
@@ -153,6 +176,9 @@ export function ItineraryEditor({
   contacts: Contact[];
   presentations: Presentation[];
   cities: City[];
+  // Trip headcount (participants ?? capacity) for per-person booking prices.
+  headcount?: number | null;
+  currencies?: string[];
 }) {
   // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
@@ -326,6 +352,7 @@ export function ItineraryEditor({
   }));
 
   return (
+    <TripPricingContext.Provider value={{ headcount, currencies }}>
     <ItineraryDndProvider onDrop={onDrop}>
     <div className="space-y-4">
       {!hasStartDate && !isTemplate ? (
@@ -417,6 +444,7 @@ export function ItineraryEditor({
       </Dialog>
     </div>
     </ItineraryDndProvider>
+    </TripPricingContext.Provider>
   );
 }
 
@@ -2331,6 +2359,15 @@ function BookingFields({
     initial?.confirmationRef ?? "",
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  // Same itemized agreed price as a venue engagement (no list prices here —
+  // a site-less booking has no venue catalog).
+  const pricing = useContext(TripPricingContext);
+  const [priceDrafts, setPriceDrafts] = useState(() =>
+    draftsFromLines(initial?.priceLines ?? []),
+  );
+  const [agreedCurrency, setAgreedCurrency] = useState(
+    initial?.agreedCurrency ?? pricing.currencies[0] ?? "USD",
+  );
 
   const submit = () => {
     onSubmit(
@@ -2340,6 +2377,8 @@ function BookingFields({
         bookedContactId: bookedContactId === NONE ? undefined : bookedContactId,
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
+        agreedCurrency,
+        priceLines: draftsToInput(priceDrafts),
       },
       () => {
         if (!initial) {
@@ -2348,6 +2387,7 @@ function BookingFields({
           setBookedContactId(NONE);
           setConfirmationRef("");
           setNotes("");
+          setPriceDrafts([]);
         }
       },
     );
@@ -2406,6 +2446,16 @@ function BookingFields({
         <div className="space-y-1.5">
           <Label className="text-xs">Booking notes</Label>
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <PriceLinesEditor
+            drafts={priceDrafts}
+            onDraftsChange={setPriceDrafts}
+            currency={agreedCurrency}
+            onCurrencyChange={setAgreedCurrency}
+            currencyChoices={currencyOptions(pricing.currencies, agreedCurrency)}
+            headcount={pricing.headcount}
+          />
         </div>
       </div>
       <div className="flex gap-2">

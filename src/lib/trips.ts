@@ -11,6 +11,7 @@ import type {
 } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
 import { lodgingForDays } from "@/lib/stays";
+import { serializePriceLines, type PriceLine } from "@/lib/costs";
 
 // The STORED status is a manual override only; the day-to-day lifecycle
 // (Planning → In progress → Complete) is derived from dates — see
@@ -176,6 +177,9 @@ export type SerializedBooking = {
   bookedContact: SerializedPerson | null;
   confirmationRef: string | null;
   notes: string | null;
+  // The itemized agreed price (empty when the query didn't load it).
+  agreedCurrency: string;
+  priceLines: PriceLine[];
 };
 
 export type SerializedItemPresentation = {
@@ -489,6 +493,8 @@ type ItemLocationRow = {
 
 type BookingRow = Booking & {
   bookedContact: { id: string; name: string } | null;
+  // Optional: present only when the caller's query loaded PRICE_LINES_SELECT.
+  priceLines?: Parameters<typeof serializePriceLines>[0];
 };
 
 type TravelLegRow = {
@@ -536,6 +542,8 @@ export function serializeBooking(b: BookingRow): SerializedBooking {
       : null,
     confirmationRef: b.confirmationRef,
     notes: b.notes,
+    agreedCurrency: b.agreedCurrency,
+    priceLines: serializePriceLines(b.priceLines ?? []),
   };
 }
 
@@ -652,11 +660,14 @@ export function serializeDay(
     plannedLocations?: PlannedLocationRow[];
   },
 ): SerializedDay {
+  // The raw relations stay out of the spread: they'd ride into the RSC payload
+  // un-serialized (e.g. booking price-line Decimals, which can't cross).
+  const { scheduleItems, plannedLocations, ...rest } = day;
   return {
-    ...day,
+    ...rest,
     date: day.date ? toDateInput(day.date) : null,
-    items: day.scheduleItems.map(serializeScheduleItem),
-    plannedLocations: (day.plannedLocations ?? []).map((p) => ({
+    items: scheduleItems.map(serializeScheduleItem),
+    plannedLocations: (plannedLocations ?? []).map((p) => ({
       id: p.id,
       locationId: p.locationId,
       name: p.location.name,

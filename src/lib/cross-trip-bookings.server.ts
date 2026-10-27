@@ -4,7 +4,7 @@ import { toDateInput, todayUtc } from "./dates";
 import { tripStillInPlayWhere } from "./trips";
 import { regionPath, type RegionNode } from "./regions";
 import { buildDashboardRows } from "./booking-dashboard";
-import { tripHeadcount } from "./costs";
+import { PRICE_LINES_SELECT, tripHeadcount } from "./costs";
 import {
   groupRowsByVenue,
   type TripItemBookings,
@@ -82,6 +82,8 @@ const TRIP_SELECT = {
               ...BOOKING_PROGRESS_SELECT,
               confirmationRef: true,
               bookedContact: { select: { name: true } },
+              agreedCurrency: true,
+              priceLines: PRICE_LINES_SELECT,
             },
           },
         },
@@ -102,9 +104,8 @@ const TRIP_SELECT = {
       },
       bookedOn: true,
       createdAt: true,
-      agreedAmount: true,
       agreedCurrency: true,
-      agreedUnit: true,
+      priceLines: PRICE_LINES_SELECT,
       payments: { orderBy: { paidOn: "asc" } },
       paymentSchedule: true,
     },

@@ -1,7 +1,6 @@
 import type {
   BookingStatus,
   Cost,
-  CostUnit,
   Payment,
   PaymentScheduleItem,
   TravelMethod,
@@ -21,7 +20,12 @@ import {
   type SerializedCost,
   type SerializedPayment,
 } from "./money";
-import { agreedTotal as resolveAgreedTotal } from "./costs";
+import {
+  agreedTotal as resolveAgreedTotal,
+  hasAgreedPrice,
+  serializePriceLines,
+  type PriceLine,
+} from "./costs";
 import { scheduleItemPrimaryLabel } from "./trips";
 import { stayNights } from "./stays";
 import { progressView, type BookingProgressView } from "./booking-workflow";
@@ -63,15 +67,14 @@ export type VenueBookingRow = {
   nightCount: number;
   costs: SerializedCost[];
   bookedOn: string | null; // planner-set booking date (anchors BOOKING installments)
-  // The engagement's negotiated price + payment log. `agreedAmount` is the
-  // stored figure — a per-person RATE when `agreedUnit` is PER_PERSON; the
-  // balance, settled state and schedule run off `agreedTotal` (rate × headcount
-  // for per person, else the amount itself; null when a per-person rate has no
-  // headcount to multiply). `unpaidBalance` is null until that total is known;
-  // `settled` means payments cover it.
-  agreedAmount: number | null;
+  // The engagement's negotiated price + payment log. `priceLines` are the
+  // itemized agreed price (per-person / per-group, like the venue's Cost
+  // lines); the balance, settled state and schedule run off `agreedTotal`
+  // (per-person sum × headcount + per-group sum; null with no lines, or
+  // per-person lines and no headcount). `unpaidBalance` is null until that
+  // total is known; `settled` means payments cover it.
+  priceLines: PriceLine[];
   agreedCurrency: string;
-  agreedUnit: CostUnit | null;
   agreedTotal: number | null;
   headcount: number | null; // trip participants ?? capacity
   payments: SerializedPayment[];
@@ -100,6 +103,11 @@ export type ItemBookingRow = {
   contactName: string | null;
   dayIndex: number;
   date: string | null;
+  // Agreed price, same itemized shape as a venue engagement's.
+  priceLines: PriceLine[];
+  agreedCurrency: string;
+  agreedTotal: number | null;
+  headcount: number | null;
 };
 
 // --- raw (Prisma) input shapes the builder consumes ---
@@ -125,8 +133,14 @@ type ItemInput = {
     label: string | null;
     confirmationRef: string | null;
     bookedContact: { name: string } | null;
+    // Optional so callers whose queries don't load the price stay valid.
+    agreedCurrency?: string;
+    priceLines?: PriceLineInput[];
   })[];
 };
+
+// A BookingPriceLine row (Decimal amount) — `PRICE_LINES_SELECT` in costs.ts.
+type PriceLineInput = Parameters<typeof serializePriceLines>[0][number];
 
 // Workflow fields (BOOKING_PROGRESS_SELECT); optional so callers that don't
 // load them still build rows (the control then shows the coarse status).
@@ -177,10 +191,9 @@ type EngagementInput = ProgressInput & {
   // bookedOn ?? createdAt.
   bookedOn?: Date | null;
   createdAt?: Date | null;
-  // Prisma Decimal (or already-numeric) — flattened to number in the row.
-  agreedAmount?: Payment["amount"] | number | null;
+  // The itemized agreed price (Decimal amounts) — flattened in the row.
   agreedCurrency?: string;
-  agreedUnit?: CostUnit | null;
+  priceLines?: PriceLineInput[];
   payments?: Payment[];
   paymentSchedule?: PaymentScheduleItem[];
 };
@@ -212,8 +225,8 @@ export type DashboardData = {
   // Anchors EVENT_START payment installments (offset counts back from this);
   // null (template / undated trip) leaves those installments "unscheduled".
   tripStartDate?: Date | null;
-  // Multiplies PER_PERSON agreed prices (`tripHeadcount(trip)`); null/absent
-  // leaves a per-person total unknown.
+  // Multiplies PER_PERSON agreed-price lines (`tripHeadcount(trip)`);
+  // null/absent leaves a per-person total unknown.
   headcount?: number | null;
 };
 
@@ -271,6 +284,7 @@ export function buildDashboardRows(data: DashboardData): {
       }
       // Site-less / one-off item bookings stay their own rows.
       for (const b of item.bookings) {
+        const priceLines = serializePriceLines(b.priceLines ?? []);
         itemRows.push({
           kind: "item",
           bookingId: b.id,
@@ -281,6 +295,10 @@ export function buildDashboardRows(data: DashboardData): {
           contactName: b.bookedContact?.name ?? null,
           dayIndex: day.dayIndex,
           date: day.date ? toDateInput(day.date) : null,
+          priceLines,
+          agreedCurrency: b.agreedCurrency ?? "USD",
+          agreedTotal: resolveAgreedTotal(priceLines, data.headcount ?? null),
+          headcount: data.headcount ?? null,
         });
       }
     }
@@ -324,13 +342,9 @@ export function buildDashboardRows(data: DashboardData): {
     const costs = (loc?.costs ?? []).map(serializeCost);
     // The agreed price settles the "what does this cost" question outright; only
     // without one does the (possibly stale) catalog price leave the row "missing".
-    const agreedAmount =
-      eng?.agreedAmount == null ? null : Number(eng.agreedAmount);
+    const priceLines = serializePriceLines(eng?.priceLines ?? []);
     const headcount = data.headcount ?? null;
-    const agreedTotal = resolveAgreedTotal(
-      { agreedAmount, agreedUnit: eng?.agreedUnit ?? null },
-      headcount,
-    );
+    const agreedTotal = resolveAgreedTotal(priceLines, headcount);
     const payments = (eng?.payments ?? []).map(serializePayment);
     const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
     const unpaidBalance =
@@ -338,7 +352,7 @@ export function buildDashboardRows(data: DashboardData): {
     const schedule = resolveSchedule(
       (eng?.paymentSchedule ?? []).map(serializeInstallment),
       {
-        agreedAmount: agreedTotal,
+        agreedTotal,
         paidTotal,
         tripStartDate: data.tripStartDate ?? null,
         bookingDate: eng?.bookedOn ?? eng?.createdAt ?? null,
@@ -347,7 +361,7 @@ export function buildDashboardRows(data: DashboardData): {
     );
     const { overdueAmount, nextDue } = scheduleAttention(schedule);
     const isMissingCost =
-      agreedAmount == null &&
+      !hasAgreedPrice(priceLines) &&
       ((loc?.costs.length ?? 0) === 0 ||
         (loc?.costs.every((c) => isCostStale(c.confirmedAt)) ?? true));
     // A planned (untimed) visit is a rough plan, not missing information.
@@ -386,9 +400,8 @@ export function buildDashboardRows(data: DashboardData): {
       sessions: v.sessions,
       nightCount: v.nights,
       costs,
-      agreedAmount,
+      priceLines,
       agreedCurrency: eng?.agreedCurrency ?? "USD",
-      agreedUnit: eng?.agreedUnit ?? null,
       agreedTotal,
       headcount,
       payments,

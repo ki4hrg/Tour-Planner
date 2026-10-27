@@ -13,12 +13,44 @@ import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { todayUtc, parseDateInput, toDateInput } from "@/lib/dates";
 import { resolveSchedule, serializeInstallment } from "@/lib/payment-schedule";
-import { agreedTotal, tripHeadcount } from "@/lib/costs";
-import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
+import {
+  agreedTotal,
+  PRICE_LINES_SELECT,
+  serializePriceLines,
+  tripHeadcount,
+} from "@/lib/costs";
+import {
+  paymentScheduleSchema,
+  installmentRows,
+  priceLineRows,
+} from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
 import { assertBookable, seedScheduleFromLocation } from "@/lib/trip-mutations";
 
 const BOOKING_STATUSES_TUPLE = BOOKING_STATUSES as [BookingStatus, ...BookingStatus[]];
+
+// The itemized agreed price, as add-booking / update-booking take it.
+const PRICE_LINES_INPUT = z
+  .array(
+    z.object({
+      label: z.string().optional(),
+      amount: z.number().nonnegative(),
+      unit: z.enum(["PER_PERSON", "PER_GROUP"]),
+    }),
+  )
+  .optional();
+
+const PRICE_LINES_DOC =
+  "priceLines is the negotiated price, itemized like the venue's cost catalog (get-location costs are the asking price): [{label, amount, unit}] where unit PER_PERSON is a per-person rate multiplied by the trip headcount (participantCount, else capacity) and PER_GROUP is charged once — e.g. [{label:'Admission', amount:12, unit:'PER_PERSON'}, {label:'Group charge', amount:90, unit:'PER_GROUP'}]. agreedTotal = per-person sum × headcount + per-group sum; it drives balances, settled state and payment-schedule percentages, so it follows the headcount as it changes. With per-person lines and no headcount the total is unknown (agreedTotal null). Passing priceLines REPLACES the whole set ([] clears the price); omitting it leaves the lines unchanged. agreedCurrency is the one currency for all lines.";
+
+// Replace-the-set nested writes for priceLines (create vs update branch).
+type PriceLinesArg = z.infer<typeof PRICE_LINES_INPUT>;
+const priceRows = (lines: NonNullable<PriceLinesArg>) =>
+  priceLineRows(lines.map((l) => ({ ...l, label: l.label?.trim() ?? "" })));
+const priceLinesCreate = (lines: PriceLinesArg) =>
+  lines?.length ? { priceLines: { create: priceRows(lines) } } : {};
+const priceLinesReplace = (lines: PriceLinesArg) =>
+  lines ? { priceLines: { deleteMany: {}, create: priceRows(lines) } } : {};
 
 // Workflow + step completions, for workflowProgress().
 const WORKFLOW_INCLUDE = {
@@ -90,7 +122,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference, and money: agreedAmount/agreedUnit as stored, agreedTotal (agreedAmount × headcount when agreedUnit is PER_PERSON, else agreedAmount; null when unknown), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there. A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with whether and when it was done — step IDs feed set-booking-step), location, contact, confirmation reference, and money: priceLines (the itemized agreed price — [{label, amount, unit}], unit PER_PERSON or PER_GROUP) + agreedCurrency, agreedTotal (per-person lines × headcount + per-group lines; null with no lines, or per-person lines and no headcount), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -120,6 +152,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
             payments: { select: { amount: true } },
+            priceLines: PRICE_LINES_SELECT,
             ...WORKFLOW_INCLUDE,
           },
         });
@@ -139,11 +172,12 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             location: { select: { id: true, name: true } },
             bookedContact: { select: { id: true, name: true } },
             payments: { select: { amount: true } },
+            priceLines: PRICE_LINES_SELECT,
             ...WORKFLOW_INCLUDE,
           },
         });
 
-        // Per-person agreed prices multiply by the trip headcount.
+        // Per-person price lines multiply by the trip headcount.
         const trip = await prisma.trip.findUnique({
           where: { id: tripId },
           select: { participantCount: true, capacity: true },
@@ -152,25 +186,19 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
 
         // Agreed price + running payment total (details via list-payments).
         const money = (b: {
-          agreedAmount: unknown;
           agreedCurrency: string;
-          agreedUnit: "PER_PERSON" | "PER_GROUP" | null;
+          priceLines: Parameters<typeof serializePriceLines>[0];
           payments: { amount: unknown }[];
         }) => {
-          const agreedAmount =
-            b.agreedAmount == null ? null : Number(b.agreedAmount);
-          const total = agreedTotal(
-            { agreedAmount, agreedUnit: b.agreedUnit },
-            headcount,
-          );
+          const priceLines = serializePriceLines(b.priceLines);
+          const total = agreedTotal(priceLines, headcount);
           const paidTotal = b.payments.reduce(
             (sum, p) => sum + Number(p.amount),
             0,
           );
           return {
-            agreedAmount,
+            priceLines,
             agreedCurrency: b.agreedCurrency,
-            agreedUnit: b.agreedUnit,
             agreedTotal: total,
             headcount,
             paidTotal,
@@ -239,7 +267,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. agreedAmount/agreedCurrency/agreedUnit record the negotiated price for the engagement (the location's cost catalog is the asking price); agreedUnit: null (or omitted) = agreedAmount is the TOTAL for the engagement; PER_PERSON = agreedAmount is a per-person rate, multiplied by the trip headcount (participantCount, else capacity) to get the total that balances, settled state and payment-schedule percentages use; with no headcount that total is unknown (agreedTotal null in list-bookings/list-payments). PER_GROUP is legacy and also means the total. Log actual payments with add-payment.",
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. " +
+        PRICE_LINES_DOC +
+        " Log actual payments with add-payment.",
       inputSchema: {
         tripId: z.string().optional(),
         scheduleItemId: z.string().optional(),
@@ -253,9 +283,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
-        agreedAmount: z.number().nonnegative().optional(),
         agreedCurrency: z.string().optional(),
-        agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).optional(),
+        priceLines: PRICE_LINES_INPUT,
       },
       annotations: {
         readOnlyHint: false,
@@ -274,9 +303,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       confirmationRef,
       notes,
       bookedOn,
-      agreedAmount,
       agreedCurrency,
-      agreedUnit,
+      priceLines,
     }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -323,9 +351,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           confirmationRef: confirmationRef || null,
           notes: notes || null,
           bookedOn: bookedOn ? parseDateInput(bookedOn) : null,
-          agreedAmount: agreedAmount ?? null,
-          agreedCurrency: agreedCurrency || "USD",
-          agreedUnit: agreedUnit ?? null,
+          // Omitted currency keeps the stored one (DB default USD on create).
+          ...(agreedCurrency ? { agreedCurrency } : {}),
         };
         let booking: { id: string };
         if (isVenue) {
@@ -351,10 +378,11 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             create: {
               tripId,
               ...scalars,
+              ...priceLinesCreate(priceLines),
               ...workflow,
               ...(schedule ? { paymentSchedule: schedule } : {}),
             },
-            update: scalars,
+            update: { ...scalars, ...priceLinesReplace(priceLines) },
           });
         } else {
           // Item bookings are for SITE-LESS items only (a coach, a label-only
@@ -382,7 +410,12 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             };
           }
           booking = await prisma.booking.create({
-            data: { scheduleItemId, ...scalars, ...(await seedWorkflowFor(null)) },
+            data: {
+              scheduleItemId,
+              ...scalars,
+              ...priceLinesCreate(priceLines),
+              ...(await seedWorkflowFor(null)),
+            },
           });
         }
         if (status) await setBookingStatusDirect(booking.id, status);
@@ -415,7 +448,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Booking",
       description:
-        "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (agreedAmount/agreedCurrency/agreedUnit — the negotiated engagement price; omit a field to leave it unchanged). agreedUnit: null (or omitted) = agreedAmount is the TOTAL for the engagement; PER_PERSON = agreedAmount is a per-person rate, multiplied by the trip headcount (participantCount, else capacity) to get the total that balances, settled state and payment-schedule percentages use; with no headcount that total is unknown (agreedTotal null in list-bookings/list-payments). PER_GROUP is legacy and also means the total. Pass agreedUnit: null to switch a per-person price back to a total. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: record a confirmation reference number. Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. To move a workflow booking along, use set-booking-step.",
+        "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (priceLines + agreedCurrency; omit a field to leave it unchanged). " +
+        PRICE_LINES_DOC +
+        " bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: record a confirmation reference number. Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. To move a workflow booking along, use set-booking-step.",
       inputSchema: {
         bookingId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -426,9 +461,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
-        agreedAmount: z.number().nonnegative().optional(),
         agreedCurrency: z.string().optional(),
-        agreedUnit: z.enum(["PER_PERSON", "PER_GROUP"]).nullable().optional(),
+        priceLines: PRICE_LINES_INPUT,
       },
       annotations: {
         readOnlyHint: false,
@@ -444,9 +478,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       confirmationRef,
       notes,
       bookedOn,
-      agreedAmount,
       agreedCurrency,
-      agreedUnit,
+      priceLines,
     }) => {
       try {
         if (!hasRole(user.role, "PLANNER")) {
@@ -468,9 +501,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           data.confirmationRef = confirmationRef;
         if (notes !== undefined) data.notes = notes;
         if (bookedOn !== undefined) data.bookedOn = parseDateInput(bookedOn);
-        if (agreedAmount !== undefined) data.agreedAmount = agreedAmount;
         if (agreedCurrency !== undefined) data.agreedCurrency = agreedCurrency;
-        if (agreedUnit !== undefined) data.agreedUnit = agreedUnit;
+        Object.assign(data, priceLinesReplace(priceLines));
 
         const booking = await prisma.booking.update({
           where: { id: bookingId },
@@ -633,7 +665,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Payments",
       description:
-        "List the payments logged against a booking (get bookingId from list-bookings), with the booking's agreed price (agreedAmount/agreedUnit as stored, plus agreedTotal: the rate × trip headcount for a PER_PERSON price, else the amount; null when a per-person rate has no headcount), the outstanding balance, and its payment schedule: installments (percentage of agreedTotal or a fixed amount) due a number of days before trip start, each resolved to an amount, due date, and paid/overdue/upcoming state. A booking is settled when payments cover agreedTotal. Set the schedule with set-payment-schedule.",
+        "List the payments logged against a booking (get bookingId from list-bookings), with the booking's agreed price (priceLines — [{label, amount, unit}] — + agreedCurrency, plus agreedTotal: per-person lines × trip headcount + per-group lines; null with no lines, or per-person lines and no headcount), the outstanding balance, and its payment schedule: installments (percentage of agreedTotal or a fixed amount) due a number of days before trip start, each resolved to an amount, due date, and paid/overdue/upcoming state. A booking is settled when payments cover agreedTotal. Set the schedule with set-payment-schedule.",
       inputSchema: {
         bookingId: z.string(),
       },
@@ -656,9 +688,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const booking = await prisma.booking.findUnique({
           where: { id: bookingId },
           select: {
-            agreedAmount: true,
             agreedCurrency: true,
-            agreedUnit: true,
+            priceLines: PRICE_LINES_SELECT,
             bookedOn: true,
             createdAt: true,
             payments: { orderBy: { paidOn: "asc" } },
@@ -692,8 +723,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           };
         }
 
-        const agreedAmount =
-          booking.agreedAmount == null ? null : Number(booking.agreedAmount);
+        const priceLines = serializePriceLines(booking.priceLines);
         const payments = booking.payments.map((p) => ({
           id: p.id,
           amount: Number(p.amount),
@@ -707,14 +737,11 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const trip = booking.trip ?? booking.scheduleItem?.day.trip ?? null;
         const tripStartDate = trip?.startDate ?? null;
         const headcount = trip ? tripHeadcount(trip) : null;
-        const total = agreedTotal(
-          { agreedAmount, agreedUnit: booking.agreedUnit },
-          headcount,
-        );
+        const total = agreedTotal(priceLines, headcount);
         const schedule = resolveSchedule(
           booking.paymentSchedule.map(serializeInstallment),
           {
-            agreedAmount: total,
+            agreedTotal: total,
             paidTotal,
             tripStartDate,
             bookingDate: booking.bookedOn ?? booking.createdAt,
@@ -728,9 +755,8 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
               type: "text" as const,
               text: JSON.stringify(
                 {
-                  agreedAmount,
+                  priceLines,
                   agreedCurrency: booking.agreedCurrency,
-                  agreedUnit: booking.agreedUnit,
                   agreedTotal: total,
                   headcount,
                   paidTotal,

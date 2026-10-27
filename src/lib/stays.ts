@@ -94,7 +94,7 @@ export type LodgingEstimate = {
 
 /**
  * Lodging's contribution to the trip cost estimate. Per venue: when its venue
- * engagement has a known agreed total (resolve it with `agreedTotal`; omit the
+ * engagement has a known agreed total (resolve its price lines with `agreedTotal`; omit the
  * venue when that is null), the total counts once for the venue however many
  * stays sit there. Otherwise each stay counts at its nightly rate (`stayTotal`,
  * with the trip headcount fallback).

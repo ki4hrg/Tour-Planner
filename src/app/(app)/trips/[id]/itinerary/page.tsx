@@ -7,6 +7,7 @@ import {
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
 import { regionOptions } from "@/lib/regions";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import { ItineraryEditor } from "../../itinerary-editor";
 import { VenueEngagementsProvider } from "../../venue-engagements";
 import { loadVenueEngagements } from "@/lib/venue-engagements";
@@ -50,7 +51,10 @@ export default async function ItineraryPage({
               },
               bookings: {
                 orderBy: { createdAt: "asc" },
-                include: { bookedContact: { select: { id: true, name: true } } },
+                include: {
+                  bookedContact: { select: { id: true, name: true } },
+                  priceLines: PRICE_LINES_SELECT,
+                },
               },
             },
           },
@@ -133,6 +137,8 @@ export default async function ItineraryPage({
           }))}
           contacts={contacts}
           presentations={presentations}
+          headcount={tripHeadcount(trip)}
+          currencies={trip.currencies}
           cities={cities}
         />
       </VenueEngagementsProvider>

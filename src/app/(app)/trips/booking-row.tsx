@@ -22,7 +22,7 @@ import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
-import { agreedTotal, listPriceSuggestion } from "@/lib/costs";
+import { hasAgreedPrice } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
@@ -39,6 +39,12 @@ import {
   setPaymentSchedule,
 } from "./actions";
 import { WorkflowControl } from "./workflow-control";
+import {
+  AgreedPrice,
+  PriceLinesEditor,
+  draftsFromLines,
+  draftsToInput,
+} from "./price-lines-editor";
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
@@ -83,14 +89,13 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable)
     return <span className="text-muted-foreground">—</span>;
   // The negotiated engagement price beats the catalog's asking price.
-  if (row.agreedAmount != null) {
+  if (hasAgreedPrice(row.priceLines)) {
     return (
       <div className="space-y-0.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <AgreedPrice
-            amount={row.agreedAmount}
+            lines={row.priceLines}
             currency={row.agreedCurrency}
-            perPerson={row.agreedUnit === "PER_PERSON"}
             headcount={row.headcount}
           />
           <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
@@ -143,98 +148,6 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
       ))}
       <PaymentState row={row} />
     </div>
-  );
-}
-
-// "Use list price": fills the agreed-price fields from the venue's cost lines,
-// with the working shown — "Admission £12 + Lunch £20 per person × 40 + Group
-// charge £90 = £1,370". Mixed per-person + per-group lines can only be totalled
-// against a headcount, so without one there is nothing to fill.
-function ListPriceFill({
-  suggestion,
-  onApply,
-}: {
-  suggestion: ReturnType<typeof listPriceSuggestion>;
-  onApply: () => void;
-}) {
-  if (!suggestion) {
-    return (
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        List price
-        <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          no headcount
-        </span>
-      </p>
-    );
-  }
-  const { currency, perPersonLines, groupLines, headcount, amount } = suggestion;
-  const join = (ls: { label: string; amount: number }[]) =>
-    ls.map((l) => `${l.label} ${formatMoney(l.amount, currency)}`).join(" + ");
-  const parts: string[] = [];
-  if (perPersonLines.length) {
-    parts.push(
-      `${join(perPersonLines)} per person` +
-        (groupLines.length ? ` × ${headcount}` : ""),
-    );
-  }
-  if (groupLines.length) parts.push(join(groupLines));
-  const multi = perPersonLines.length + groupLines.length > 1;
-  return (
-    <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
-      <button type="button" className="link-quiet text-foreground" onClick={onApply}>
-        Use list price
-      </button>
-      <span>
-        {parts.join(" + ")}
-        {multi
-          ? ` = ${formatMoney(amount, currency)}${suggestion.perPerson ? " per person" : ""}`
-          : ""}
-      </span>
-      {suggestion.skipped ? (
-        <span>· {suggestion.skipped} in other currencies left out</span>
-      ) : null}
-    </p>
-  );
-}
-
-// The agreed price as entered, with the total it implies: a total reads as
-// itself; a per-person rate as "£15 × 40 = £600" against the trip headcount, or
-// "£15/person" + a "no headcount" chip when there's none to multiply (the total
-// — and so the balance — is then unknown).
-function AgreedPrice({
-  amount,
-  currency,
-  perPerson,
-  headcount,
-}: {
-  amount: number;
-  currency: string;
-  perPerson: boolean;
-  headcount: number | null;
-}) {
-  if (!perPerson) return <span>{formatMoney(amount, currency)}</span>;
-  const total = agreedTotal(
-    { agreedAmount: amount, agreedUnit: "PER_PERSON" },
-    headcount,
-  );
-  if (total == null)
-    return (
-      <>
-        <span>
-          {formatMoney(amount, currency)}
-          <span className="text-muted-foreground">/person</span>
-        </span>
-        <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          no headcount
-        </span>
-      </>
-    );
-  return (
-    <span>
-      {formatMoney(amount, currency)}
-      <span className="text-muted-foreground"> × {headcount} = </span>
-      {formatMoney(total, currency)}
-    </span>
   );
 }
 
@@ -309,31 +222,15 @@ export function VenueDetails({
   const [contactId, setContactId] = useState(row.bookedContactId ?? NONE);
   const [confirmationRef, setConfirmationRef] = useState(row.confirmationRef ?? "");
   const [notes, setNotes] = useState(row.notes ?? "");
-  const [agreedAmount, setAgreedAmount] = useState(
-    row.agreedAmount != null ? String(row.agreedAmount) : "",
+  // The itemized agreed price — per-person / per-group lines like the venue's
+  // Cost catalog ("Use list price" copies those in), one currency per booking.
+  const [priceDrafts, setPriceDrafts] = useState(() =>
+    draftsFromLines(row.priceLines),
   );
   const [agreedCurrency, setAgreedCurrency] = useState(row.agreedCurrency);
-  // Total (stored null) or per person (× trip headcount). Legacy PER_GROUP
-  // already means the total, so it opens as — and saves back as — total.
-  const [agreedUnit, setAgreedUnit] = useState<string>(
-    row.agreedUnit === "PER_PERSON" ? "PER_PERSON" : NONE,
-  );
-  const agreedRate = Number(agreedAmount);
-  const showAgreedTotal =
-    agreedUnit === "PER_PERSON" &&
-    agreedAmount.trim() !== "" &&
-    Number.isFinite(agreedRate);
   const [bookedOn, setBookedOn] = useState(row.bookedOn ?? "");
   // The trip's currency vocabulary (GH #11), plus the stored value on legacy rows.
-  const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
-  // Pre-fill from the venue's list prices (admission + meal + group charge…).
-  const suggestion = listPriceSuggestion(row.costs, row.headcount);
-  const applySuggestion = () => {
-    if (!suggestion) return;
-    setAgreedAmount(String(suggestion.amount));
-    setAgreedCurrency(suggestion.currency);
-    setAgreedUnit(suggestion.perPerson ? "PER_PERSON" : NONE);
-  };
+  const currencyChoices = currencyOptions(currencies, agreedCurrency);
 
   // Keep the row expanded after saving so you can keep editing / see it stuck.
   const save = () =>
@@ -348,9 +245,8 @@ export function VenueDetails({
         confirmationRef: confirmationRef.trim() || undefined,
         notes: notes.trim() || undefined,
         bookedOn: bookedOn || undefined,
-        agreedAmount: agreedAmount.trim() || undefined,
         agreedCurrency,
-        agreedUnit: agreedUnit === NONE ? undefined : agreedUnit,
+        priceLines: draftsToInput(priceDrafts),
       }),
     );
 
@@ -427,58 +323,16 @@ export function VenueDetails({
               className="w-40"
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Agreed price</Label>
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={agreedAmount}
-                onChange={(e) => setAgreedAmount(e.target.value)}
-                placeholder="e.g. 450"
-                className="w-28"
-              />
-              <Select value={agreedCurrency} onValueChange={setAgreedCurrency}>
-                <SelectTrigger size="sm" className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {currencyChoices.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={agreedUnit} onValueChange={setAgreedUnit}>
-                <SelectTrigger size="sm" className="flex-1" aria-label="Price basis">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>total</SelectItem>
-                  <SelectItem value="PER_PERSON">per person</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {showAgreedTotal ? (
-              <p className="flex flex-wrap items-center gap-1.5 text-xs">
-                <AgreedPrice
-                  amount={agreedRate}
-                  currency={agreedCurrency}
-                  perPerson
-                  headcount={row.headcount}
-                />
-              </p>
-            ) : null}
-            {row.costs.length > 0 ? (
-              <ListPriceFill
-                suggestion={suggestion}
-                onApply={applySuggestion}
-              />
-            ) : null}
-          </div>
+          <PriceLinesEditor
+            drafts={priceDrafts}
+            onDraftsChange={setPriceDrafts}
+            currency={agreedCurrency}
+            onCurrencyChange={setAgreedCurrency}
+            currencyChoices={currencyChoices}
+            headcount={row.headcount}
+            listCosts={row.costs}
+            disabled={pending}
+          />
           <div className="space-y-1">
             <Label className="text-xs">Point of contact</Label>
             <Select value={contactId} onValueChange={setContactId}>
@@ -1215,7 +1069,9 @@ export function ItemRow({
         </span>
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">—</TableCell>
-      <TableCell className="text-sm text-muted-foreground">—</TableCell>
+      <TableCell className="text-sm">
+        <ItemPrice row={row} />
+      </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         {row.contactName ?? "—"}
         {row.confirmationRef ? (
@@ -1245,6 +1101,21 @@ export function ItemRow({
       </TableRow>
     ) : null}
     </>
+  );
+}
+
+// A one-off booking's agreed price (set on the itinerary item), or a dash.
+function ItemPrice({ row }: { row: ItemBookingRow }) {
+  if (!hasAgreedPrice(row.priceLines))
+    return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      <AgreedPrice
+        lines={row.priceLines}
+        currency={row.agreedCurrency}
+        headcount={row.headcount}
+      />
+    </span>
   );
 }
 
@@ -1281,6 +1152,11 @@ export function ItemCard({
               ? ` · ${documents.length} file${documents.length === 1 ? "" : "s"}`
               : ""}
           </span>
+          {hasAgreedPrice(row.priceLines) ? (
+            <span className="mt-0.5 block text-sm">
+              <ItemPrice row={row} />
+            </span>
+          ) : null}
         </span>
         <span className="shrink-0">
           <WorkflowControl

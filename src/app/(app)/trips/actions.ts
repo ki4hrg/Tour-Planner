@@ -19,6 +19,7 @@ import {
   paymentSchema,
   paymentScheduleSchema,
   installmentRows,
+  priceLineRows,
 } from "@/lib/validators/booking";
 import { staySchema } from "@/lib/validators/stay";
 import { parseDateInput, computeDayDate, todayUtc } from "@/lib/dates";
@@ -989,9 +990,9 @@ export type BookingInputData = {
   confirmationRef?: string;
   notes?: string;
   bookedOn?: string; // "yyyy-mm-dd"
-  agreedAmount?: number | string;
   agreedCurrency?: string;
-  agreedUnit?: string;
+  // The itemized agreed price; REPLACES the set when given, omitted = untouched.
+  priceLines?: { label?: string; amount: number | string; unit: string }[];
 };
 
 function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
@@ -1002,10 +1003,24 @@ function toBookingScalars(d: ReturnType<typeof bookingSchema.parse>) {
     confirmationRef: d.confirmationRef || null,
     notes: d.notes || null,
     bookedOn: d.bookedOn ? parseDateInput(d.bookedOn) : null,
-    agreedAmount: d.agreedAmount ?? null,
-    agreedCurrency: d.agreedCurrency || "USD",
-    agreedUnit: d.agreedUnit ?? null,
+    // Omitted currency keeps the stored one (DB default USD on create).
+    ...(d.agreedCurrency ? { agreedCurrency: d.agreedCurrency } : {}),
   };
+}
+
+// Nested price-line writes. Create: the lines as given. Update: replace the
+// whole set (deleteMany + create run in the update's own transaction), or leave
+// it untouched when the input carries no `priceLines` (e.g. the itinerary's
+// booking form, which doesn't edit the price).
+function priceLinesCreate(d: ReturnType<typeof bookingSchema.parse>) {
+  return d.priceLines?.length
+    ? { priceLines: { create: priceLineRows(d.priceLines) } }
+    : {};
+}
+function priceLinesReplace(d: ReturnType<typeof bookingSchema.parse>) {
+  return d.priceLines
+    ? { priceLines: { deleteMany: {}, create: priceLineRows(d.priceLines) } }
+    : {};
 }
 
 export async function addBooking(
@@ -1035,6 +1050,7 @@ export async function addBooking(
     data: {
       scheduleItemId: itemId,
       ...toBookingScalars(parsed.data),
+      ...priceLinesCreate(parsed.data),
       ...(await seedWorkflowFor(null)),
     },
   });
@@ -1112,10 +1128,11 @@ export async function upsertVenueBooking(
     create: {
       tripId,
       ...detailScalars,
+      ...priceLinesCreate(parsed.data),
       ...workflow,
       ...(schedule ? { paymentSchedule: schedule } : {}),
     },
-    update: detailScalars,
+    update: { ...detailScalars, ...priceLinesReplace(parsed.data) },
   });
 
   revalidateTrip(tripId);
@@ -1471,7 +1488,7 @@ export async function updateBooking(
 
   await prisma.booking.update({
     where: { id: bookingId },
-    data: toBookingScalars(parsed.data),
+    data: { ...toBookingScalars(parsed.data), ...priceLinesReplace(parsed.data) },
   });
 
   const tripId = await tripIdForBooking(bookingId);

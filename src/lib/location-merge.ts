@@ -16,7 +16,7 @@
 //
 // No revalidatePath here — MCP-safe; web callers revalidate themselves.
 
-import type { BookingStatus, CostUnit, Prisma } from "@prisma/client";
+import type { BookingStatus, Prisma } from "@prisma/client";
 import { BOOKING_STATUS_RANK } from "./booking-workflow";
 import { recomputeBooking } from "./booking-workflow-sync";
 import { prisma } from "@/lib/db";
@@ -110,22 +110,28 @@ export type MergeableBookingFields = {
   confirmationRef: string | null;
   notes: string | null;
   bookedOn: Date | null;
-  // Decimal as a string/number — only null-ness matters here; the value is
-  // carried through untouched.
-  agreedAmount: Prisma.Decimal | string | number | null;
   agreedCurrency: string;
-  agreedUnit: CostUnit | null;
+  // How many BookingPriceLine rows the booking carries (the lines themselves
+  // move in the txn — see `takesSourcePrice`).
+  priceLineCount: number;
 };
 
-export function mergeBookingFields<T extends MergeableBookingFields>(
-  target: T,
-  source: T,
-): MergeableBookingFields {
-  // The agreed price travels as a unit (amount + currency + unit).
-  const price =
-    target.agreedAmount == null && source.agreedAmount != null
-      ? source
-      : target;
+/**
+ * The agreed price travels as a unit (lines + currency): the target's wins;
+ * the source's is adopted only when the target has no lines of its own.
+ */
+export function takesSourcePrice(
+  target: Pick<MergeableBookingFields, "priceLineCount">,
+  source: Pick<MergeableBookingFields, "priceLineCount">,
+): boolean {
+  return target.priceLineCount === 0 && source.priceLineCount > 0;
+}
+
+export function mergeBookingFields(
+  target: MergeableBookingFields,
+  source: MergeableBookingFields,
+): Omit<MergeableBookingFields, "priceLineCount"> {
+  const price = takesSourcePrice(target, source) ? source : target;
   return {
     status:
       STATUS_RANK[source.status] > STATUS_RANK[target.status]
@@ -136,9 +142,7 @@ export function mergeBookingFields<T extends MergeableBookingFields>(
     confirmationRef: joinText(target.confirmationRef, source.confirmationRef),
     notes: joinText(target.notes, source.notes),
     bookedOn: target.bookedOn ?? source.bookedOn,
-    agreedAmount: price.agreedAmount,
     agreedCurrency: price.agreedCurrency,
-    agreedUnit: price.agreedUnit,
   };
 }
 
@@ -339,12 +343,12 @@ export async function mergeLocations(
     // Venue engagements: fold same-trip pairs, repoint the rest.
     const sourceBookings = await tx.booking.findMany({
       where: { locationId: sourceId, tripId: { not: null } },
-      include: { _count: { select: { paymentSchedule: true } } },
+      include: { _count: { select: { paymentSchedule: true, priceLines: true } } },
     });
     for (const sb of sourceBookings) {
       const tb = await tx.booking.findUnique({
         where: { tripId_locationId: { tripId: sb.tripId!, locationId: targetId } },
-        include: { _count: { select: { paymentSchedule: true } } },
+        include: { _count: { select: { paymentSchedule: true, priceLines: true } } },
       });
       if (!tb) continue; // no collision — repointed by the updateMany below
       const move = { where: { bookingId: sb.id }, data: { bookingId: tb.id } };
@@ -353,6 +357,11 @@ export async function mergeLocations(
       await tx.document.updateMany(move);
       if (tb._count.paymentSchedule === 0) {
         await tx.paymentScheduleItem.updateMany(move);
+      }
+      const tFields = { ...tb, priceLineCount: tb._count.priceLines };
+      const sFields = { ...sb, priceLineCount: sb._count.priceLines };
+      if (takesSourcePrice(tFields, sFields)) {
+        await tx.bookingPriceLine.updateMany(move);
       }
       // Workflow progress: the target's workflow wins (adopting the source's
       // when it has none); source completions on that workflow's steps move
@@ -373,7 +382,7 @@ export async function mergeLocations(
       }
       await tx.booking.update({
         where: { id: tb.id },
-        data: { ...mergeBookingFields(tb, sb), workflowId },
+        data: { ...mergeBookingFields(tFields, sFields), workflowId },
       });
       await tx.booking.delete({ where: { id: sb.id } });
       await recomputeBooking(tb.id, tx);
