@@ -58,11 +58,12 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. agreed price + `agreedTotal` (per-person rate × headcount) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
+incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
 engagement — a booked-via child resolves to its parent's (returns `engagementLocationId`) —
 refuses not-bookable venues, seeds standing terms + default workflow on create; item target
-only for site-less items; idempotent; takes `bookedOn` + `agreedAmount`/`agreedCurrency`/`agreedUnit`),
-`update-booking` (P, incl. `bookedOn`; status goes through the workflow rules),
+only for site-less items; idempotent; takes `bookedOn` + `agreedCurrency` + `priceLines`
+`[{label, amount, unit}]`, which REPLACES the set — omitted = untouched),
+`update-booking` (P, incl. `bookedOn` + `priceLines`; status goes through the workflow rules),
 `list-booking-workflows` (V, resolves `workflowId`/`stepId`; each step's `actor`), `set-booking-step` (P, tick/untick
 one step, back-datable), `set-booking-workflow` (P, switch workflow; clears ticked steps),
 `list-payments` (V, the payment log +
@@ -332,15 +333,20 @@ npm test                          # vitest
   (`buildDashboardRows`, reused by the single-trip dashboard and `/trips/compare`);
   the inline status control upserts via `upsertVenueBooking`/`setVenueBookingStatus`
   in `src/app/(app)/trips/actions.ts`.
-- **Agreed price**: `Booking.agreedAmount` is the engagement TOTAL unless
-  `agreedUnit = PER_PERSON`, where it's a rate × the trip headcount
-  (`participantCount ?? capacity`, `tripHeadcount`). Legacy `PER_GROUP` and null both
-  mean total (the form offers only total / per person and saves total as null). Every
-  balance / settled / schedule-percent / Money-panel / MCP calculation goes through
-  `agreedTotal()` in `src/lib/costs.ts` (unit-tested) — null for a per-person rate
-  with no headcount, treated like no agreed price and flagged "no headcount" in the
-  UI. Never use `agreedAmount` as a total directly. Dashboard rows carry both
-  `agreedAmount` (as entered) and `agreedTotal`.
+- **Agreed price**: itemized like the venue's `Cost` catalog — a booking (venue
+  engagement or site-less item booking) carries `BookingPriceLine`s (`label`, `amount`,
+  `unit` PER_PERSON | PER_GROUP, `order`) in ONE `Booking.agreedCurrency`. The total is
+  per-person sum × the trip headcount (`participantCount ?? capacity`, `tripHeadcount`)
+  + per-group sum, so it follows the headcount as it changes. Every balance / settled /
+  schedule-percent / Money-panel / estimate / MCP calculation goes through
+  `agreedTotal(lines, headcount)` in `src/lib/costs.ts` (unit-tested, with
+  `hasAgreedPrice`, `formatPriceBreakdown`, `listPriceLines`) — null with no lines, or
+  per-person lines and no headcount (treated like no agreed price, flagged "no
+  headcount" in the UI). Queries spread `PRICE_LINES_SELECT`; `serializePriceLines`
+  flattens the Decimals. Writes REPLACE the set (nested `deleteMany` + `create` in the
+  booking update; `priceLines` omitted = untouched). The editor is
+  `trips/price-lines-editor.tsx` (booking dashboard + itinerary item bookings); "Use
+  list price" copies the venue's Cost lines 1:1. "Missing price" = no lines.
 - **Payment schedules (GH #51, anchors #86)**: a booking may carry `PaymentScheduleItem`
   installments — EITHER a `percent` of the agreed price (`agreedTotal`) OR a `fixedAmount` (DB CHECK
   `payment_schedule_amount`). The due date is `offsetValue` `offsetUnit`s
@@ -354,7 +360,8 @@ npm test                          # vitest
   (amounts, due dates via `describeCadence` for the human "rule", earliest-due-first
   ordering + allocation, paid/overdue/upcoming/unscheduled state) is pure in
   `src/lib/payment-schedule.ts` (`resolveSchedule`/`scheduleAttention`, unit-tested);
-  every caller passes both `tripStartDate` and `bookingDate` (`bookedOn ?? createdAt`).
+  every caller passes the `agreedTotal` (from the price lines) plus both `tripStartDate`
+  and `bookingDate` (`bookedOn ?? createdAt`).
   Editing is replace-the-whole-set (`setPaymentSchedule` action, `set-payment-schedule`
   MCP tool; `installmentRows` in `validators/booking.ts` is the shared parsed→row map).
   Surfaces: booking-row schedule editor (anchor/unit selectors + `bookedOn` field) +
@@ -435,7 +442,8 @@ npm test                          # vitest
   fields, long text concatenates (pure `merge*Fields`, unit-tested). Unique
   collisions are resolved, not failed: item/day already at the target drops the
   source row; same-trip engagements fold into the target's booking (payments/
-  notes/docs move, further-along status kept, source schedule only if target has
+  notes/docs move, further-along status kept, source price lines only if target has
+  none, source schedule only if target has
   none, source step completions move when both follow the same workflow, then
   status recomputes); host sites OR together; standing terms adopted only if target has none;
   sites booked via the source repoint to the target, and the source's own parent fills

@@ -28,7 +28,7 @@ const second = inst({ id: "b", percent: 30, offsetValue: 90 });
 const balance = inst({ id: "c", label: "Balance", percent: 50, offsetValue: 30 });
 
 const opts = {
-  agreedAmount: 1000,
+  agreedTotal: 1000,
   paidTotal: 0,
   tripStartDate: utc("2026-12-01"),
   bookingDate: utc("2026-05-01"),
@@ -59,7 +59,7 @@ describe("resolveSchedule — EVENT_START anchor", () => {
   it("uses a fixed amount as-is, even without an agreed price", () => {
     const [fixed] = resolveSchedule(
       [inst({ id: "f", fixedAmount: 250, offsetValue: 60 })],
-      { ...opts, agreedAmount: null },
+      { ...opts, agreedTotal: null },
     );
     expect(fixed).toMatchObject({ amountDue: 250, state: "upcoming" });
   });
@@ -94,7 +94,7 @@ describe("resolveSchedule — EVENT_START anchor", () => {
 
   it("marks unresolvable installments unscheduled", () => {
     // Percentage with no agreed price…
-    const [noPrice] = resolveSchedule([deposit], { ...opts, agreedAmount: null });
+    const [noPrice] = resolveSchedule([deposit], { ...opts, agreedTotal: null });
     expect(noPrice).toMatchObject({ amountDue: null, outstanding: null, state: "unscheduled" });
     // …and a dated anchor on a date-less trip (template).
     const [noDates] = resolveSchedule([deposit], { ...opts, tripStartDate: null });

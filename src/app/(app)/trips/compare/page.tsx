@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toDateInput } from "@/lib/dates";
 import { buildDashboardRows, type VenueBookingRow } from "@/lib/booking-dashboard";
 import { withBookedViaParentsWhere } from "@/lib/booked-via";
-import { tripHeadcount } from "@/lib/costs";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import {
   MultiYearGrid,
   type YearColumn,
@@ -66,9 +66,8 @@ const TRIP_SELECT = {
       bookedContact: { select: { id: true, name: true } },
       bookedOn: true,
       createdAt: true,
-      agreedAmount: true,
-      agreedUnit: true,
       agreedCurrency: true,
+      priceLines: PRICE_LINES_SELECT,
       payments: true,
       paymentSchedule: true,
     },

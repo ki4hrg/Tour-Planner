@@ -25,7 +25,14 @@ import {
 } from "@/lib/trips";
 import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
 import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
-import { agreedTotal, rollUpCosts, tripHeadcount } from "@/lib/costs";
+import {
+  agreedTotal,
+  hasAgreedPrice,
+  PRICE_LINES_SELECT,
+  rollUpCosts,
+  serializePriceLines,
+  tripHeadcount,
+} from "@/lib/costs";
 import {
   DOCUMENT_SELECT,
   serializeDocument,
@@ -197,6 +204,7 @@ export default async function TripOverviewPage({
       location: { select: { name: true } },
       payments: { select: { amount: true } },
       paymentSchedule: true,
+      priceLines: PRICE_LINES_SELECT,
       stepCompletions: { select: { stepId: true, completedOn: true } },
       workflow: { select: { _count: { select: { steps: true } } } },
     },
@@ -222,10 +230,7 @@ export default async function TripOverviewPage({
   for (const b of engagementBookings) {
     if (!b.locationId || b.status === "NOT_NEEDED") continue;
     const total = agreedTotal(
-      {
-        agreedAmount: b.agreedAmount == null ? null : Number(b.agreedAmount),
-        agreedUnit: b.agreedUnit,
-      },
+      serializePriceLines(b.priceLines),
       estimateHeadcount,
     );
     if (total != null)
@@ -330,7 +335,7 @@ export default async function TripOverviewPage({
   // or next-due installment, so a payment problem is visible from the trip page
   // without opening the booking dashboard. Templates have no dates, so their
   // installments never resolve — the panel is dated-trip only.
-  // `unknown` counts per-person prices with no headcount to multiply: their
+  // `unknown` counts per-person price lines with no headcount to multiply: their
   // total (and so their balance) is unknown, which the panel says outright.
   const moneyByCurrency = new Map<
     string,
@@ -347,20 +352,18 @@ export default async function TripOverviewPage({
   }[] = [];
   const moneyToday = todayUtc();
   for (const b of engagementBookings) {
-    const rate = b.agreedAmount == null ? null : Number(b.agreedAmount);
-    const agreed = agreedTotal(
-      { agreedAmount: rate, agreedUnit: b.agreedUnit },
-      estimateHeadcount,
-    );
+    const lines = serializePriceLines(b.priceLines);
+    const priced = hasAgreedPrice(lines);
+    const agreed = agreedTotal(lines, estimateHeadcount);
     const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (rate != null || paid > 0) {
+    if (priced || paid > 0) {
       const row = moneyByCurrency.get(b.agreedCurrency) ?? {
         agreed: 0,
         paid: 0,
         outstanding: 0,
         unknown: 0,
       };
-      if (rate != null && agreed == null) row.unknown++;
+      if (priced && agreed == null) row.unknown++;
       row.agreed += agreed ?? 0;
       row.paid += paid;
       row.outstanding += agreed != null ? Math.max(0, agreed - paid) : 0;
@@ -369,7 +372,7 @@ export default async function TripOverviewPage({
     const resolved = resolveSchedule(
       b.paymentSchedule.map(serializeInstallment),
       {
-        agreedAmount: agreed,
+        agreedTotal: agreed,
         paidTotal: paid,
         tripStartDate: trip.startDate,
         bookingDate: b.bookedOn ?? b.createdAt,
@@ -488,11 +491,7 @@ export default async function TripOverviewPage({
         openEngagements: engagementBookings
           .map((b) => {
             const agreed = agreedTotal(
-              {
-                agreedAmount:
-                  b.agreedAmount == null ? null : Number(b.agreedAmount),
-                agreedUnit: b.agreedUnit,
-              },
+              serializePriceLines(b.priceLines),
               estimateHeadcount,
             );
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);

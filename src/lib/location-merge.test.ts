@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   joinText,
   mergeBookingFields,
+  takesSourcePrice,
   mergeHostSiteFields,
   mergeLocationFields,
   type MergeableBookingFields,
@@ -36,9 +37,8 @@ const booking = (o: Partial<MergeableBookingFields> = {}): MergeableBookingField
   confirmationRef: null,
   notes: null,
   bookedOn: null,
-  agreedAmount: null,
   agreedCurrency: "USD",
-  agreedUnit: null,
+  priceLineCount: 0,
   ...o,
 });
 
@@ -121,17 +121,18 @@ describe("mergeBookingFields", () => {
     expect(mergeBookingFields(booking({ status: "NOT_NEEDED" }), booking()).status).toBe("PLANNED");
     expect(mergeBookingFields(booking({ status: "CONFIRMED" }), booking({ status: "IN_PROGRESS" })).status).toBe("CONFIRMED");
   });
-  it("carries the agreed price as a unit", () => {
-    const m = mergeBookingFields(
-      booking({ agreedCurrency: "USD" }),
-      booking({ agreedAmount: "500.00", agreedCurrency: "GBP", agreedUnit: "PER_GROUP" }),
-    );
-    expect(m).toMatchObject({ agreedAmount: "500.00", agreedCurrency: "GBP", agreedUnit: "PER_GROUP" });
-    const kept = mergeBookingFields(
-      booking({ agreedAmount: 100, agreedCurrency: "USD", agreedUnit: "PER_PERSON" }),
-      booking({ agreedAmount: 500, agreedCurrency: "GBP" }),
-    );
-    expect(kept).toMatchObject({ agreedAmount: 100, agreedCurrency: "USD", agreedUnit: "PER_PERSON" });
+  it("carries the agreed price (lines + currency) as a unit; the target's wins", () => {
+    const unpriced = booking({ agreedCurrency: "USD" });
+    const priced = booking({ priceLineCount: 2, agreedCurrency: "GBP" });
+    expect(takesSourcePrice(unpriced, priced)).toBe(true);
+    const m = mergeBookingFields(unpriced, priced);
+    expect(m).toMatchObject({ agreedCurrency: "GBP" });
+    expect(m).not.toHaveProperty("priceLineCount");
+
+    const target = booking({ priceLineCount: 1, agreedCurrency: "USD" });
+    expect(takesSourcePrice(target, priced)).toBe(false);
+    expect(mergeBookingFields(target, priced)).toMatchObject({ agreedCurrency: "USD" });
+    expect(takesSourcePrice(unpriced, booking())).toBe(false);
   });
   it("fills gaps and joins refs", () => {
     const d = new Date("2026-03-01");

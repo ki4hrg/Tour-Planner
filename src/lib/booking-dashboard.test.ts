@@ -165,9 +165,11 @@ describe("buildDashboardRows — planned visits + workflow progress", () => {
   });
 });
 
-describe("buildDashboardRows — per-person agreed price", () => {
+describe("buildDashboardRows — itemized agreed price", () => {
+  type Line = { label: string; amount: number; unit: "PER_PERSON" | "PER_GROUP"; order?: number };
+  const pp15: Line[] = [{ label: "Admission", amount: 15, unit: "PER_PERSON" }];
   const build = (
-    agreedUnit: "PER_PERSON" | "PER_GROUP" | null,
+    priceLines: Line[],
     headcount: number | null,
     paid: number,
   ) =>
@@ -183,9 +185,8 @@ describe("buildDashboardRows — per-person agreed price", () => {
           notes: null,
           bookedContactId: null,
           bookedContact: null,
-          agreedAmount: 15,
           agreedCurrency: "GBP",
-          agreedUnit,
+          priceLines,
           payments: paid
             ? [
                 {
@@ -207,25 +208,39 @@ describe("buildDashboardRows — per-person agreed price", () => {
       headcount,
     }).venueRows[0];
 
-  it("multiplies a per-person rate by headcount for balance + settled", () => {
-    const row = build("PER_PERSON", 40, 15);
-    expect(row.agreedAmount).toBe(15);
+  it("multiplies per-person lines by headcount for balance + settled", () => {
+    const row = build(pp15, 40, 15);
+    expect(row.priceLines).toEqual(pp15);
     expect(row.agreedTotal).toBe(600);
     expect(row.unpaidBalance).toBe(585);
     expect(row.settled).toBe(false);
-    expect(build("PER_PERSON", 40, 600).settled).toBe(true);
+    expect(build(pp15, 40, 600).settled).toBe(true);
+  });
+
+  it("mixes per-person × headcount with per-group lines", () => {
+    const mixed: Line[] = [
+      { label: "Group charge", amount: 90, unit: "PER_GROUP", order: 2 },
+      { label: "Admission", amount: 12, unit: "PER_PERSON", order: 0 },
+      { label: "Lunch", amount: 20, unit: "PER_PERSON", order: 1 },
+    ];
+    const row = build(mixed, 40, 0);
+    expect(row.agreedTotal).toBe(1370);
+    expect(row.priceLines.map((l) => l.label)).toEqual(["Admission", "Lunch", "Group charge"]);
+    expect(build(mixed, 30, 0).agreedTotal).toBe(1050);
   });
 
   it("leaves the total unknown without a headcount", () => {
-    const row = build("PER_PERSON", null, 15);
+    const row = build(pp15, null, 15);
     expect(row.agreedTotal).toBeNull();
     expect(row.unpaidBalance).toBeNull();
     expect(row.settled).toBe(false);
     expect(row.isMissingCost).toBe(false);
   });
 
-  it("treats PER_GROUP and null as the total", () => {
-    expect(build("PER_GROUP", 40, 15).settled).toBe(true);
-    expect(build(null, 40, 0).agreedTotal).toBe(15);
+  it("per-group lines are the total; no lines is a missing price", () => {
+    expect(build([{ label: "Hall", amount: 15, unit: "PER_GROUP" }], 40, 15).settled).toBe(true);
+    const none = build([], 40, 0);
+    expect(none.agreedTotal).toBeNull();
+    expect(none.isMissingCost).toBe(true);
   });
 });

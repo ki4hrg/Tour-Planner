@@ -5,7 +5,7 @@ import { hasRole } from "@/lib/authz";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildDashboardRows } from "@/lib/booking-dashboard";
 import { withBookedViaParentsWhere } from "@/lib/booked-via";
-import { tripHeadcount } from "@/lib/costs";
+import { PRICE_LINES_SELECT, tripHeadcount } from "@/lib/costs";
 import { DOCUMENT_SELECT, serializeDocument } from "@/lib/documents";
 import { BookingDashboard } from "../../booking-dashboard";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
@@ -67,6 +67,8 @@ export default async function BookingDashboardPage({
                   ...BOOKING_PROGRESS_SELECT,
                   confirmationRef: true,
                   bookedContact: { select: { name: true } },
+                  agreedCurrency: true,
+                  priceLines: PRICE_LINES_SELECT,
                 },
               },
             },
@@ -88,9 +90,8 @@ export default async function BookingDashboardPage({
           },
           bookedOn: true,
           createdAt: true,
-          agreedAmount: true,
           agreedCurrency: true,
-          agreedUnit: true,
+          priceLines: PRICE_LINES_SELECT,
           payments: { orderBy: { paidOn: "asc" } },
           paymentSchedule: true,
         },

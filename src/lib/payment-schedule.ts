@@ -110,7 +110,9 @@ function installmentDueDate(
 export function resolveSchedule(
   installments: ScheduleInstallmentInput[],
   opts: {
-    agreedAmount: number | null;
+    // The agreed TOTAL (`agreedTotal` in costs.ts) percent installments take
+    // their share of; null leaves them without an amount.
+    agreedTotal: number | null;
     paidTotal: number;
     tripStartDate: Date | null;
     // The booking's bookedOn ?? createdAt; null for a not-yet-booked engagement
@@ -119,14 +121,14 @@ export function resolveSchedule(
     today: Date;
   },
 ): ResolvedInstallment[] {
-  const { agreedAmount, paidTotal, tripStartDate, bookingDate, today } = opts;
+  const { agreedTotal, paidTotal, tripStartDate, bookingDate, today } = opts;
 
   const computed = installments.map((inst) => {
     const amountDue =
       inst.fixedAmount != null
         ? inst.fixedAmount
-        : agreedAmount != null && inst.percent != null
-          ? Math.round(agreedAmount * inst.percent) / 100
+        : agreedTotal != null && inst.percent != null
+          ? Math.round(agreedTotal * inst.percent) / 100
           : null;
     const due = installmentDueDate(inst, tripStartDate, bookingDate);
     return { inst, amountDue, due };

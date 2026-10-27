@@ -497,10 +497,11 @@ model Booking {
   // installments (GH #86). Planner-set; resolution falls back to createdAt when null.
   bookedOn        DateTime?               @db.Date
   // The negotiated price for THIS engagement (the location cost catalog is the
-  // asking price; this is what was actually agreed). Settled when payments cover it.
-  agreedAmount    Decimal?                @db.Decimal(10, 2)
+  // asking price; this is what was actually agreed), itemized like the venue's
+  // Cost lines so the total follows the headcount (`agreedTotal` in costs.ts).
+  // One currency per booking. Settled when payments cover the total.
   agreedCurrency  String                  @default("USD")
-  agreedUnit      CostUnit?
+  priceLines      BookingPriceLine[]
   payments        Payment[]
   paymentSchedule PaymentScheduleItem[]
   createdAt       DateTime                @default(now())
@@ -608,13 +609,30 @@ model PaymentScheduleItem {
   booking     Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   bookingId   String
   label       String? // e.g. "Deposit", "Balance"
-  percent     Decimal?           @db.Decimal(5, 2) // of the booking's agreedAmount
+  percent     Decimal?           @db.Decimal(5, 2) // of the booking's agreed total
   fixedAmount Decimal?           @db.Decimal(10, 2) // in the booking's agreedCurrency
   anchor      PaymentAnchor      @default(EVENT_START)
   offsetValue Int? // in offsetUnit; anchor-natural direction (EVENT_START=before start, BOOKING=after booking). null iff anchor=NONE
   offsetUnit  PaymentOffsetUnit? // null iff anchor=NONE
   sortOrder   Int                @default(0) // stable display order for equal due dates
   createdAt   DateTime           @default(now())
+
+  @@index([bookingId])
+}
+
+// One line of a booking's agreed price, mirroring the venue's `Cost` lines
+// ("Admission £12 /person", "Group charge £90"). The agreed total is the
+// per-person sum × trip headcount + the per-group sum (`agreedTotal` in
+// costs.ts). Amounts are in the booking's agreedCurrency. Edited
+// replace-the-whole-set.
+model BookingPriceLine {
+  id        String   @id @default(cuid())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String
+  label     String
+  amount    Decimal  @db.Decimal(10, 2)
+  unit      CostUnit
+  order     Int      @default(0)
 
   @@index([bookingId])
 }
@@ -633,7 +651,7 @@ model LocationPaymentScheduleItem {
   location    Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
   locationId  String
   label       String? // e.g. "Deposit", "Balance"
-  percent     Decimal?           @db.Decimal(5, 2) // of the engagement's agreedAmount
+  percent     Decimal?           @db.Decimal(5, 2) // of the engagement's agreed total
   fixedAmount Decimal?           @db.Decimal(10, 2) // in the engagement's agreedCurrency
   anchor      PaymentAnchor      @default(EVENT_START)
   offsetValue Int? // in offsetUnit; anchor-natural direction. null iff anchor=NONE

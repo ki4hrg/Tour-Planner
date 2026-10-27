@@ -11,7 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
-import { agreedTotal, tripHeadcount } from "@/lib/costs";
+import {
+  agreedTotal,
+  formatPriceBreakdown,
+  hasAgreedPrice,
+  PRICE_LINES_SELECT,
+  serializePriceLines,
+  tripHeadcount,
+} from "@/lib/costs";
 import { bookingStageText } from "@/lib/trips";
 import {
   BOOKING_PROGRESS_SELECT,
@@ -375,9 +382,8 @@ export default async function LocationDetailPage({
           stepCompletions: { select: { stepId: true, completedOn: true } },
           bookedOn: true,
           createdAt: true,
-          agreedAmount: true,
           agreedCurrency: true,
-          agreedUnit: true,
+          priceLines: PRICE_LINES_SELECT,
           payments: { select: { amount: true } },
           paymentSchedule: true,
           trip: {
@@ -395,17 +401,14 @@ export default async function LocationDetailPage({
   const engagements = engagementRows
     .filter((b) => b.trip != null)
     .map((b) => {
-      const rate = b.agreedAmount == null ? null : Number(b.agreedAmount);
-      // Per-person rates × the trip's headcount; null when that's unknown.
-      const agreed = agreedTotal(
-        { agreedAmount: rate, agreedUnit: b.agreedUnit },
-        tripHeadcount(b.trip!),
-      );
+      const lines = serializePriceLines(b.priceLines);
+      // Per-person lines × the trip's headcount; null when that's unknown.
+      const agreed = agreedTotal(lines, tripHeadcount(b.trip!));
       const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
       const resolved = resolveSchedule(
         b.paymentSchedule.map(serializeInstallment),
         {
-          agreedAmount: agreed,
+          agreedTotal: agreed,
           paidTotal: paid,
           tripStartDate: b.trip!.startDate,
           bookingDate: b.bookedOn ?? b.createdAt,
@@ -433,8 +436,11 @@ export default async function LocationDetailPage({
             )
           : null,
         currency: b.agreedCurrency,
-        // Set only for a per-person rate whose trip has no headcount.
-        unresolvedRate: rate != null && agreed == null ? rate : null,
+        // Set only for per-person lines whose trip has no headcount.
+        unresolvedPrice:
+          hasAgreedPrice(lines) && agreed == null
+            ? formatPriceBreakdown(lines, b.agreedCurrency, null)
+            : null,
         agreed,
         paid,
         outstanding: agreed == null ? null : Math.max(0, agreed - paid),
@@ -670,10 +676,9 @@ export default async function LocationDetailPage({
                     </span>
                   </span>
                   <span className="shrink-0 text-xs">
-                    {e.unresolvedRate != null ? (
+                    {e.unresolvedPrice != null ? (
                       <span className="text-amber-700 dark:text-amber-300">
-                        {formatMoney(e.unresolvedRate, e.currency)}/person · no
-                        headcount
+                        {e.unresolvedPrice} · no headcount
                       </span>
                     ) : e.agreed == null ? (
                       <span className="text-muted-foreground">no agreed price</span>
