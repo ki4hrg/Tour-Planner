@@ -15,8 +15,11 @@ import {
   Plane,
   Ship,
   TrainFront,
+  DoorOpen,
+  Utensils,
 } from "lucide-react";
-import type { TravelMethod } from "@prisma/client";
+import type { MealKind, MealProvision, TravelMethod } from "@prisma/client";
+import { MEAL_PROVISION_LABELS } from "@/lib/meals";
 import { ContactChannels } from "@/components/contact-channels";
 import { mapHref } from "@/lib/maps";
 import {
@@ -380,8 +383,9 @@ function TimelineRow({
       />
     ) : null;
   const speakers = effectivePresenters(item);
-  const { primary, presentationIsPrimary, labelFromCategory } =
-    scheduleItemPrimaryLabel(item);
+  const { primary, presentationIsPrimary } = scheduleItemPrimaryLabel(item, {
+    categoryChip: true,
+  });
 
   // A travel span renders as the seam between venue runs: method icon in the
   // chip column, "Coach to Bristol" heading, route + stops underneath.
@@ -434,10 +438,21 @@ function TimelineRow({
     );
   }
 
-  const showChip = !!item.category && !labelFromCategory;
+  // Every categorised item shows its chip; an untitled one reads as the chip
+  // alone (the venue run header above already names the place), and the chip
+  // then carries the item link.
+  const chip = item.category ? <CategoryChip category={item.category} /> : null;
+  const linkedChip =
+    chip && !primary && href ? (
+      <Link href={href} aria-label={item.category?.name}>
+        {chip}
+      </Link>
+    ) : (
+      chip
+    );
   const showPresentation = item.presentation && !presentationIsPrimary;
   const hasSecondary =
-    showPresentation || speakers.length > 0 || Boolean(item.notes);
+    showPresentation || speakers.length > 0 || Boolean(item.notes) || Boolean(item.room);
 
   return (
     // <sm: a narrow two-column grid (the time range wraps onto two lines); the
@@ -449,42 +464,25 @@ function TimelineRow({
       <time className="font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
         {time}
       </time>
-      <span className="hidden sm:block">
-        {showChip ? <CategoryChip category={item.category!} /> : null}
-      </span>
+      <span className="hidden sm:block">{linkedChip}</span>
       <div className="min-w-0">
-          {fixed}
-        {showChip ? (
-          <span className="mr-1.5 align-middle sm:hidden">
-            <CategoryChip category={item.category!} />
-          </span>
+        {fixed}
+        {linkedChip ? (
+          <span className="mr-1.5 align-middle sm:hidden">{linkedChip}</span>
         ) : null}
-        {href ? (
-          <Link
-            href={href}
-            className="font-medium link-quiet"
-            style={
-              labelFromCategory && item.category?.color
-                ? { color: item.category.color }
-                : undefined
-            }
-          >
-            {breakAfterSlashes(primary)}
-          </Link>
-        ) : (
-          <span
-            className="font-medium"
-            style={
-              labelFromCategory && item.category?.color
-                ? { color: item.category.color }
-                : undefined
-            }
-          >
-            {breakAfterSlashes(primary)}
-          </span>
-        )}
+        {primary ? (
+          href ? (
+            <Link href={href} className="font-medium link-quiet">
+              {breakAfterSlashes(primary)}
+            </Link>
+          ) : (
+            <span className="font-medium">{breakAfterSlashes(primary)}</span>
+          )
+        ) : null}
+        <MealProvisionBadge item={item} className="ml-1.5 align-middle" />
         {hasSecondary ? (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            {item.room ? <RoomLabel room={item.room} /> : null}
             {showPresentation ? (
               <span className="italic">{item.presentation?.title}</span>
             ) : null}
@@ -507,6 +505,37 @@ function TimelineRow({
         {extra}
       </div>
     </li>
+  );
+}
+
+// Where within the venue ("Refectory") — a door icon + the room name.
+export function RoomLabel({ room }: { room: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <DoorOpen className="size-3.5 shrink-0" aria-label="Room" />
+      {room}
+    </span>
+  );
+}
+
+// How a meal is provided ("On own", "Takeaway") — shown on meal items whose
+// provision is set. A venue-served meal is the norm, so it reads quietest.
+export function MealProvisionBadge({
+  item,
+  className,
+}: {
+  item: { mealKind: MealKind | null; mealProvision: MealProvision | null };
+  className?: string;
+}) {
+  if (!item.mealKind || !item.mealProvision) return null;
+  return (
+    <Badge
+      variant={item.mealProvision === "VENUE" ? "muted" : "outline"}
+      className={className}
+    >
+      <Utensils aria-hidden />
+      {MEAL_PROVISION_LABELS[item.mealProvision]}
+    </Badge>
   );
 }
 

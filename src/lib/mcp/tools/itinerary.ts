@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { foldSessionBookings } from "@/lib/session-booking-fold";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, computeDayDate } from "@/lib/dates";
@@ -91,7 +92,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Itinerary",
       description:
-        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, categories, presentations, presenters, and booking statuses. Also returns each day's plannedLocations — the rough-plan venues assigned to the day without timed items (see add-planned-location). Each day also carries its primary city (cityRegion, a region from list-regions). This is the most detailed view of a trip's plan.",
+        "Get the full day-by-day schedule for a trip. Returns all days with their schedule items, including times, locations, room (where within the venue), meal (mealKind + mealProvision), categories, presentations, presenters, and booking statuses. Also returns each day's plannedLocations — the rough-plan venues assigned to the day without timed items (see add-planned-location). Each day also carries its primary city (cityRegion, a region from list-regions). This is the most detailed view of a trip's plan.",
       inputSchema: { tripId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -253,7 +254,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Schedule Item",
       description:
-        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it.",
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it. `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own).",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
@@ -266,6 +267,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         presenterIds: z.array(z.string()).optional(),
         isBlock: z.boolean().optional(),
         fixedTime: z.boolean().optional(),
+        room: z.string().optional(),
+        mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullable().optional(),
+        mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullable().optional(),
         travel: travelInputSchema.optional(),
       },
       annotations: {
@@ -287,6 +291,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       presenterIds,
       isBlock,
       fixedTime,
+      room,
+      mealKind,
+      mealProvision,
       travel,
     }) => {
       try {
@@ -321,6 +328,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               notes: notes || null,
               isBlock: isBlock ?? false,
               fixedTime: fixedTime ?? false,
+              room: room || null,
+              mealKind: mealKind ?? null,
+              mealProvision: mealKind ? (mealProvision ?? null) : null,
               presentationId: presentationId || null,
               presenters: presenterIds?.length
                 ? { connect: presenterIds.map((id) => ({ id })) }
@@ -370,7 +380,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Schedule Item",
       description:
-        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples).",
+        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples). `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). Pass mealKind: null to un-mark a meal; room: empty string clears the room.",
       inputSchema: {
         itemId: z.string(),
         title: z.string().optional(),
@@ -382,6 +392,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         presentationId: z.string().optional(),
         presenterIds: z.array(z.string()).optional(),
         fixedTime: z.boolean().optional(),
+        room: z.string().optional(),
+        mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullable().optional(),
+        mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullable().optional(),
         travel: travelInputSchema.nullable().optional(),
       },
       annotations: {
@@ -402,6 +415,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       presentationId,
       presenterIds,
       fixedTime,
+      room,
+      mealKind,
+      mealProvision,
       travel,
     }) => {
       try {
@@ -460,6 +476,11 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         if (endTime !== undefined) updateData.endTime = endTime || null;
         if (notes !== undefined) updateData.notes = notes || null;
         if (fixedTime !== undefined) updateData.fixedTime = fixedTime;
+        if (room !== undefined) updateData.room = room || null;
+        if (mealKind !== undefined) updateData.mealKind = mealKind;
+        if (mealProvision !== undefined) updateData.mealProvision = mealProvision;
+        // A provision only means something on a meal.
+        if (mealKind === null) updateData.mealProvision = null;
         if (presentationId !== undefined)
           updateData.presentationId = presentationId || null;
         if (presenterIds !== undefined) {
@@ -494,14 +515,9 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                   order: i,
                 })),
               });
-              // Null any item-targeted booking whose locationId is not in the new set
-              await tx.booking.updateMany({
-                where: {
-                  scheduleItemId: itemId,
-                  locationId: { notIn: locationIds },
-                },
-                data: { locationId: null },
-              });
+              // A venue item is covered by its venue engagement: an item booking
+              // on it (a site-less booking whose item just gained a venue) folds in.
+              await foldSessionBookings(tx, { scheduleItemId: itemId });
             } else {
               // No locations: null all item-targeted bookings' locationId
               await tx.booking.updateMany({

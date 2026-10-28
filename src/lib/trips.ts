@@ -2,6 +2,8 @@ import type {
   BookingStatus,
   Booking,
   ItineraryDay,
+  MealKind,
+  MealProvision,
   Prisma,
   ScheduleItem,
   Stay,
@@ -376,6 +378,9 @@ export type SerializedScheduleItem = {
   notes: string | null;
   isBlock: boolean;
   fixedTime: boolean; // times we don't control; shifts/reorders never move it
+  room: string | null; // where within the venue ("Refectory")
+  mealKind: MealKind | null; // set ⇒ a meal
+  mealProvision: MealProvision | null;
   presentationId: string | null;
   presentation: SerializedItemPresentation | null;
   presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
@@ -403,7 +408,9 @@ export type SerializedScheduleItem = {
 // `presentationIsPrimary` is true when the talk title IS the heading, so callers
 // avoid echoing it. `labelFromCategory` is true when the category name drives the
 // heading, so callers drop the (now redundant) category chip and instead tint
-// the label in the category colour.
+// the label in the category colour. Surfaces that show the chip on every
+// categorised item (the itinerary timeline + editor) pass `categoryChip`: the
+// heading then never falls back to the category, so the chip is consistent.
 export function scheduleItemPrimaryLabel(item: {
   title: string | null;
   presentation: { title: string } | null;
@@ -415,7 +422,7 @@ export function scheduleItemPrimaryLabel(item: {
     toLocation: { name: string } | null;
     toLabel: string | null;
   } | null;
-}, opts: { venueInHeading?: boolean } = {}): {
+}, opts: { venueInHeading?: boolean; categoryChip?: boolean } = {}): {
   primary: string;
   presentationIsPrimary: boolean;
   labelFromCategory: boolean;
@@ -447,6 +454,11 @@ export function scheduleItemPrimaryLabel(item: {
   const venues = venueInHeading
     ? (item.sites ?? []).map((s) => s.location.name)
     : [];
+  // A surface that always renders the category chip doesn't repeat it as
+  // the heading: an untitled item reads as its chip alone.
+  if (item.category && opts.categoryChip) {
+    return { primary: "", presentationIsPrimary: false, labelFromCategory: false };
+  }
   if (item.category) {
     return {
       primary: venues.length
@@ -673,6 +685,9 @@ export function serializeScheduleItem(
     notes: item.notes,
     isBlock: item.isBlock,
     fixedTime: item.fixedTime,
+    room: item.room ?? null,
+    mealKind: item.mealKind ?? null,
+    mealProvision: item.mealProvision ?? null,
     presentationId: item.presentationId,
     presentation: item.presentation
       ? {

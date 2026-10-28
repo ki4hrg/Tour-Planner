@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useId,
   useMemo,
   useOptimistic,
   useRef,
@@ -68,9 +69,22 @@ import {
   TimelineGroups,
   BookingPill,
   CategoryChip,
+  MealProvisionBadge,
+  OvernightLine,
+  RoomLabel,
   TravelMethodIcon,
+  type OvernightLodging,
 } from "./itinerary-timeline";
-import type { TravelMethod } from "@prisma/client";
+import { bookingDashboardHref } from "@/lib/documents";
+import type { MealKind, MealProvision, TravelMethod } from "@prisma/client";
+import {
+  MEAL_KINDS,
+  MEAL_KIND_LABELS,
+  MEAL_PROVISIONS,
+  MEAL_PROVISION_LABELS,
+  guessMealKind,
+  isMealCategoryName,
+} from "@/lib/meals";
 import type { FormState } from "@/lib/forms";
 import {
   addDay,
@@ -148,6 +162,8 @@ type Location = {
   tagged: boolean;
   // Standing events here; optional so inline-created venues stay valid.
   events?: VenueEvent[];
+  // Rooms used here before ("Refectory", "Chapel") — the room field's suggestions.
+  rooms?: string[];
   // Staff-only planning facts shown beside a chosen venue.
   scheduleLimitations: string | null;
   logisticsNotes: string | null;
@@ -233,6 +249,7 @@ export function ItineraryEditor({
   currencies = [],
   defaultCurrency = "USD",
   paymentCounts = {},
+  lodgingByDay = {},
 }: {
   tripId: string;
   canEdit: boolean;
@@ -250,6 +267,8 @@ export function ItineraryEditor({
   defaultCurrency?: string;
   // Payments per item booking — what an item delete would cascade.
   paymentCounts?: Record<string, number>;
+  // Where the group sleeps each night, by day id.
+  lodgingByDay?: Record<string, OvernightLodging | null>;
 }) {
   // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
@@ -458,6 +477,7 @@ export function ItineraryEditor({
           presentations={presentations}
           cities={cities}
           paymentCounts={paymentCounts}
+          lodging={lodgingByDay[day.id] ?? null}
           onMove={moveDay}
           onCreateLocation={addNewLocation}
           onCreateContact={addNewContact}
@@ -554,6 +574,7 @@ function DayCard({
   presentations,
   cities,
   paymentCounts,
+  lodging,
   onMove,
   onCreateLocation,
   onCreateContact,
@@ -571,6 +592,7 @@ function DayCard({
   presentations: Presentation[];
   cities: City[];
   paymentCounts: Record<string, number>;
+  lodging: OvernightLodging | null;
   onMove: (index: number, dir: -1 | 1) => void;
   onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
@@ -942,6 +964,19 @@ function DayCard({
             renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
           />
         )}
+        {/* Where the group sleeps tonight; links to the venue's booking row. */}
+        {lodging ? (
+          <div className="mt-3">
+            <OvernightLine
+              lodging={lodging}
+              href={
+                lodging.locationId
+                  ? bookingDashboardHref(day.tripId, lodging.locationId)
+                  : null
+              }
+            />
+          </div>
+        ) : null}
       </div>
 
       {canEdit ? (
@@ -1223,10 +1258,12 @@ function ItemRow({
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
-  // Heading is the "what" (title → talk → category); the venue is listed as
-  // member-location tags below. Drop the chip when the label IS the category.
-  const { primary, presentationIsPrimary, labelFromCategory } =
-    scheduleItemPrimaryLabel(item);
+  // Heading is the "what" (title → talk); the venue is listed as
+  // member-location tags below. The category chip always shows, so an
+  // untitled item reads as its chip alone.
+  const { primary, presentationIsPrimary } = scheduleItemPrimaryLabel(item, {
+    categoryChip: true,
+  });
   const limitationsFor = (locationId: string) =>
     locations.find((l) => l.id === locationId)?.scheduleLimitations ?? null;
 
@@ -1245,6 +1282,9 @@ function ItemRow({
     notes: item.notes ?? undefined,
     isBlock: item.isBlock,
     fixedTime: item.fixedTime,
+    room: item.room ?? undefined,
+    mealKind: item.mealKind,
+    mealProvision: item.mealProvision,
     presentationId: item.presentationId ?? undefined,
     presenterIds: item.presenters.map((p) => p.id),
     locationIds: item.sites.map((s) => s.locationId),
@@ -1380,30 +1420,20 @@ function ItemRow({
                     />
                   ) : null}
                 </time>
-                {item.category && !labelFromCategory ? (
-                  <CategoryChip category={item.category} />
-                ) : null}
+                {item.category ? <CategoryChip category={item.category} /> : null}
                 {item.isBlock ? (
                   <span className="text-xs uppercase tracking-wide text-muted-foreground">
                     block
                   </span>
                 ) : null}
-                <span
-                  className="font-medium"
-                  style={
-                    labelFromCategory && item.category?.color
-                      ? { color: item.category.color }
-                      : undefined
-                  }
-                >
-                  {primary}
-                </span>
+                {primary ? <span className="font-medium">{primary}</span> : null}
+                <MealProvisionBadge item={item} />
               </div>
 
               {/* Member locations — the item's "where" (venue is never the heading). */}
               {item.sites.length > 0 ? (
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                  {item.sites.map((s) => {
+                  {item.sites.map((s, si) => {
                     const limits = limitationsFor(s.locationId);
                     return (
                       <span key={s.id} className="inline-flex max-w-full flex-col gap-0.5">
@@ -1414,6 +1444,7 @@ function ItemRow({
                           >
                             {s.location.name}
                           </Link>
+                          {si === 0 && item.room ? <RoomLabel room={item.room} /> : null}
                           {/* The venue engagement's next step + status. */}
                           <VenueEngagementStatus locationId={s.locationId} />
                         </span>
@@ -1652,6 +1683,13 @@ function ItemFields({
   // on-the-fly nudges keep the day's spacing; turn off to leave later items alone.
   const [cascade, setCascade] = useState(true);
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [room, setRoom] = useState(initial?.room ?? "");
+  const [mealKind, setMealKind] = useState<MealKind | typeof NONE>(
+    initial?.mealKind ?? NONE,
+  );
+  const [mealProvision, setMealProvision] = useState<MealProvision | typeof NONE>(
+    initial?.mealProvision ?? NONE,
+  );
   const [presentationId, setPresentationId] = useState<string>(
     initial?.presentationId ?? NONE,
   );
@@ -1690,6 +1728,17 @@ function ItemFields({
       ? null
       : (categories.find((c) => c.id === categoryId) ?? null);
   const selfDescribing = !!selectedCategory?.system;
+  // Meal fields show for a meal-like category (or an item already marked a meal).
+  const isMeal =
+    !selfDescribing &&
+    (isMealCategoryName(selectedCategory?.name) || mealKind !== NONE);
+  // Rooms used before at the chosen venues, for the room field's suggestions.
+  const roomSuggestions = [
+    ...new Set(
+      locationIds.flatMap((id) => locations.find((l) => l.id === id)?.rooms ?? []),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  const roomListId = useId();
 
   const selectedTalk =
     presentationId === NONE
@@ -1822,6 +1871,15 @@ function ItemFields({
           selfDescribing || presentationId === NONE ? undefined : presentationId,
         presenterIds: selfDescribing ? [] : presenterIds,
         locationIds: selfDescribing ? [] : locationIds,
+        // A room belongs to a venue: no venue, no room.
+        room: selfDescribing || locationIds.length === 0 ? "" : room.trim(),
+        // A meal-like item with no kind picked takes the one its title names.
+        mealKind: isMeal
+          ? mealKind !== NONE
+            ? mealKind
+            : guessMealKind(title)
+          : null,
+        mealProvision: isMeal && mealProvision !== NONE ? mealProvision : null,
       },
       () => {
         if (!initial) {
@@ -1834,6 +1892,9 @@ function ItemFields({
           setNotes("");
           setPresentationId(NONE);
           setPresenterIds([]);
+          setRoom("");
+          setMealKind(NONE);
+          setMealProvision(NONE);
           // Re-seed the day's primary so a run of items at one venue stays pre-filled.
           setLocationIds(defaultLocationId ? [defaultLocationId] : []);
         }
@@ -1994,6 +2055,30 @@ function ItemFields({
           </p>
         )}
 
+        {/* Where within the venue — suggested from rooms used there before. */}
+        {locationIds.length > 0 ? (
+          <div className="flex items-center gap-2">
+            <Label htmlFor={`${roomListId}-room`} className="shrink-0 text-xs">
+              Room
+            </Label>
+            <Input
+              id={`${roomListId}-room`}
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+              list={roomSuggestions.length ? roomListId : undefined}
+              placeholder="e.g. Refectory"
+              className="h-7 max-w-xs"
+            />
+            {roomSuggestions.length ? (
+              <datalist id={roomListId}>
+                {roomSuggestions.map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* The chosen venues' standing events (Evensong 17:00): one click
             fills title, times and category and pins the time — the group
             doesn't control when the cathedral sings. */}
@@ -2081,6 +2166,55 @@ function ItemFields({
         <Label className="text-xs">Notes</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
+
+      {isMeal ? (
+        <div className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Meal</Label>
+            <Select
+              value={mealKind}
+              onValueChange={(v) => setMealKind(v as MealKind | typeof NONE)}
+            >
+              <SelectTrigger size="sm" aria-label="Meal">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>
+                  {guessMealKind(title)
+                    ? `${MEAL_KIND_LABELS[guessMealKind(title)!]} (from title)`
+                    : "Not a meal"}
+                </SelectItem>
+                {MEAL_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {MEAL_KIND_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Provided</Label>
+            <Select
+              value={mealProvision}
+              onValueChange={(v) =>
+                setMealProvision(v as MealProvision | typeof NONE)
+              }
+            >
+              <SelectTrigger size="sm" aria-label="Meal provided">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Not set</SelectItem>
+                {MEAL_PROVISIONS.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {MEAL_PROVISION_LABELS[p]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : null}
 
       {selfDescribing ? null : (
       /* Talk & presenters — content/speaker detail, sectioned off (like the

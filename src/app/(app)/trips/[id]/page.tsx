@@ -41,6 +41,8 @@ import { formatMoney, isCostStale } from "@/lib/money";
 import { isBookingOff } from "@/lib/booking";
 import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
+import { MealPlanCard } from "../meal-plan";
+import { buildMealPlan } from "@/lib/meals";
 import { LodgingManager, type SuggestedStaySpan } from "../lodging-manager";
 import { LodgingNights, nightLabel, type NightCell } from "../lodging-nights";
 import { ItineraryOverview } from "../itinerary-overview";
@@ -354,12 +356,14 @@ export default async function TripOverviewPage({
             );
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
             const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
-            // Open until finalized — or every workflow step is ticked;
-            // cancelled / not needed is closed.
+            // On a workflow, open until every step is ticked (a "Balance
+            // paid" step can follow Finalized); without one, open until
+            // finalized. Cancelled / not needed is closed.
             const openStatus =
               !isBookingOff(b.status) &&
-              b.status !== "FINALIZED" &&
-              (!b.workflow || b.stepCompletions.length < b.workflow._count.steps);
+              (b.workflow
+                ? b.stepCompletions.length < b.workflow._count.steps
+                : b.status !== "FINALIZED");
             if (!unpaid && !openStatus) return null;
             return {
               id: b.id,
@@ -439,6 +443,9 @@ export default async function TripOverviewPage({
     ...trip.days.flatMap((d) => d.scheduleItems.flatMap((i) => i.bookings)),
   ]);
 
+  const serializedDays = trip.days.map(serializeDay);
+  const lodgingByDay = summarizeDayLodging(trip.days, stays);
+
   return (
     <div className="space-y-6">
 
@@ -454,8 +461,8 @@ export default async function TripOverviewPage({
             <ItineraryOverview
               tripId={trip.id}
               canEdit={canEdit}
-              days={trip.days.map(serializeDay)}
-              lodgingByDay={summarizeDayLodging(trip.days, stays)}
+              days={serializedDays}
+              lodgingByDay={lodgingByDay}
               cityByDay={Object.fromEntries(
                 trip.days.map((d) => [d.id, d.cityRegion?.name ?? null]),
               )}
@@ -495,6 +502,7 @@ export default async function TripOverviewPage({
             </CardContent>
           </Card>
 
+          <MealPlanCard tripId={trip.id} plan={buildMealPlan(serializedDays, lodgingByDay)} />
         </div>
 
         {/* Trip meta — left 1/3 on desktop, after the working surface on mobile. */}

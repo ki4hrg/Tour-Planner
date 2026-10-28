@@ -107,6 +107,31 @@ describe("buildTripEvents", () => {
     ]);
   });
 
+  it("puts the room before the venue in the event location", () => {
+    const events = buildTripEvents(
+      trip({
+        startDate: null,
+        endDate: null,
+        days: [
+          day({
+            items: [
+              item({
+                title: "Evening Prayer",
+                startTime: "16:00",
+                room: "Chapel",
+                sites: [
+                  { id: "s1", locationId: "l1", order: 1, location: { id: "l1", name: "New Room" } },
+                ] as SerializedScheduleItem["sites"],
+              }),
+            ],
+          }),
+        ],
+      }),
+      STAFF,
+    );
+    expect(events[0].location).toBe("Chapel, New Room");
+  });
+
   it("maps a travel span to a timed event with its route as the location (GH #80)", () => {
     const events = buildTripEvents(
       trip({

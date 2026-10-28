@@ -132,6 +132,27 @@ describe("instantiateDays", () => {
     ]);
   });
 
+  it("carries the room and meal fields", () => {
+    const out = instantiateDays(
+      [
+        {
+          dayIndex: 1,
+          title: null,
+          logisticalNotes: null,
+          plannedLocations: [],
+          scheduleItems: [
+            item(1, { room: "Refectory", mealKind: "LUNCH", mealProvision: "VENUE" }),
+          ],
+        },
+      ],
+      null,
+    );
+    const first = out[0].scheduleItems.create[0];
+    expect(first.room).toBe("Refectory");
+    expect(first.mealKind).toBe("LUNCH");
+    expect(first.mealProvision).toBe("VENUE");
+  });
+
   it("carries the catalogued talk link but resets per-occurrence presenters", () => {
     const days = [
       {
@@ -149,14 +170,35 @@ describe("instantiateDays", () => {
     expect("presenters" in firstItem).toBe(false);
   });
 
-  it("resets bookings to PENDING and keeps reusable text", () => {
+  it("drops item bookings on venue items (the venue engagement covers them)", () => {
     const out = instantiateDays(sample, null);
     const firstItem = out[0].scheduleItems.create[0];
-    const booking = firstItem.bookings!.create[0];
+    expect(firstItem.sites.create).toHaveLength(1);
+    expect(firstItem.bookings).toBeUndefined();
+  });
+
+  it("resets site-less item bookings to PENDING and keeps reusable text", () => {
+    const out = instantiateDays(
+      [
+        {
+          dayIndex: 1,
+          title: null,
+          logisticalNotes: null,
+          plannedLocations: [],
+          scheduleItems: [
+            item(1, {
+              title: "Coach",
+              bookings: [{ locationId: null, label: "Hall hire", notes: "call ahead" }],
+            }),
+          ],
+        },
+      ],
+      null,
+    );
+    const booking = out[0].scheduleItems.create[0].bookings!.create[0];
     expect(booking.status).toBe("PENDING");
     expect(booking.label).toBe("Hall hire");
     expect(booking.notes).toBe("call ahead");
-    expect(booking.locationId).toBe("locX");
     // Instance-specific actuals are dropped by omission.
     expect("bookedContactId" in booking).toBe(false);
     expect("confirmationRef" in booking).toBe(false);
