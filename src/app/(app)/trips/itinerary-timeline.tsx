@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { BookingStatusPill } from "@/components/booking-status-pill";
 import { Fragment } from "react";
 import Link from "next/link";
 import {
@@ -19,8 +20,6 @@ import type { TravelMethod } from "@prisma/client";
 import { ContactChannels } from "@/components/contact-channels";
 import { mapHref } from "@/lib/maps";
 import {
-  bookingStageText,
-  bookingStatusVariant,
   effectivePresenters,
   groupItemsByVenue,
   scheduleItemPrimaryLabel,
@@ -550,9 +549,7 @@ export function BookingPill({
   const what = booking.label ?? forLocation ?? null;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs">
-      <Badge variant={bookingStatusVariant(booking.status)}>
-        {bookingStageText(booking)}
-      </Badge>
+      <BookingStatusPill status={booking.status} stageLabel={booking.stageLabel} />
       {what ? <span className="text-muted-foreground">{what}</span> : null}
       {booking.bookedContact ? (
         <span className="text-muted-foreground">

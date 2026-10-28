@@ -329,7 +329,7 @@ export async function updateTrip(
 }
 
 // Snapshot an existing trip as a reusable template: deep-copy its itinerary
-// (bookings reset to PLANNED, calendar dates dropped — a template has none) and
+// (bookings reset to PENDING, calendar dates dropped — a template has none) and
 // drop the planner into the new template's editor.
 // One-click close-out from the wrap-up card. Status only — everything else on
 // the trip is left alone. (Complete is derived from dates; Archived is the

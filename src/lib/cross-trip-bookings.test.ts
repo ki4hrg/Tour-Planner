@@ -6,6 +6,9 @@ import {
   actionItems,
   buildVenueEmail,
   filterVenueGroups,
+  filterGroupsByStatus,
+  filterItemBookingsByStatus,
+  crossTripStatusRows,
   formatSession,
   formatTripDates,
   groupRowsByVenue,
@@ -27,10 +30,10 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     firstDayIndex: null,
     bookable: true,
     bookingId: null,
-    status: "PLANNED",
+    status: "PENDING",
     progress: {
       exists: false,
-      status: "PLANNED",
+      status: "PENDING",
       stageLabel: null,
       stageOn: null,
       workflowId: null,
@@ -465,7 +468,7 @@ describe("actionItems", () => {
     ]);
     expect(items[0].text).toBe("£40.00 overdue");
     expect(items[1].text).toBe(
-      "Booking window open since Thu, 15 Jan 2026 · planned",
+      "Booking window open since Thu, 15 Jan 2026 · pending",
     );
     expect(items[3].text).toBe("No price agreed");
     expect(items[0].href).toBe("/trips/t2/booking?venue=loc-a");
@@ -489,5 +492,46 @@ describe("isYourMove with step due dates", () => {
   it("waitingText says when a not-yet-due step comes up", () => {
     expect(waitingText(wait(false))).toBe("Next for you: Finalized · from Wed, 10 May 2028");
     expect(waitingText(wait(true))).toBe("Next for you: Finalized · 26d");
+  });
+});
+
+describe("filterGroupsByStatus", () => {
+  const groups = groupRowsByVenue(
+    [
+      {
+        trip: trip("2027", "2027-07-01"),
+        venueRows: [
+          row({ status: "IN_PROGRESS", bookingId: "b1" }),
+          row({ locationId: "loc-b", locationName: "New Room", status: "CONFIRMED", bookingId: "b2" }),
+          row({ locationId: "walk", bookable: false }),
+        ],
+      },
+      {
+        trip: trip("2028", "2028-07-01"),
+        venueRows: [row({ status: "PENDING" })],
+      },
+    ],
+    venues,
+  );
+
+  it("keeps only rows at the picked statuses, dropping emptied venues", () => {
+    const shown = filterGroupsByStatus(groups, ["IN_PROGRESS"]);
+    expect(shown.map((g) => g.locationId)).toEqual(["loc-a"]);
+    expect(shown[0].rows.map((r) => r.trip.id)).toEqual(["2027"]);
+    expect(filterGroupsByStatus(groups, [])).toBe(groups);
+  });
+
+  it("counts bookable rows and item bookings by status", () => {
+    const items = [
+      {
+        trip: trip("2027", "2027-07-01"),
+        itemRows: [{ status: "CANCELLED" }, { status: "IN_PROGRESS" }],
+      },
+    ] as unknown as Parameters<typeof filterItemBookingsByStatus>[0];
+    const statuses = crossTripStatusRows(groups, items).map((r) => r.status).sort();
+    // Walk-bys have no status.
+    expect(statuses).toEqual(["CANCELLED", "CONFIRMED", "IN_PROGRESS", "IN_PROGRESS", "PENDING"]);
+    expect(filterItemBookingsByStatus(items, ["CANCELLED"])[0].itemRows).toHaveLength(1);
+    expect(filterItemBookingsByStatus(items, ["FINALIZED"])).toEqual([]);
   });
 });

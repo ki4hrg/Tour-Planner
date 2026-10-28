@@ -19,7 +19,7 @@ import {
 import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { isBookingSecured } from "@/lib/booking";
+import { isBookingOff, isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
 import {
   ALL_ATTENTION_FILTERS,
@@ -51,14 +51,18 @@ const FILTER_LABELS: { key: keyof AttentionFilters; label: string }[] = [
 export function CrossTripBookings({
   groups,
   itemBookings,
+  statusFiltered = false,
   canEdit,
 }: {
   groups: VenueGroup[];
   itemBookings: TripItemBookings[];
+  // Already narrowed to picked master statuses: show every row of them
+  // rather than only the ones needing attention.
+  statusFiltered?: boolean;
   canEdit: boolean;
 }) {
   const [filters, setFilters] = useState<AttentionFilters>(
-    ALL_ATTENTION_FILTERS,
+    statusFiltered ? NO_ATTENTION_FILTERS : ALL_ATTENTION_FILTERS,
   );
   const [search, setSearch] = useState("");
   const anyFilter = anyFilterOn(filters);
@@ -77,7 +81,7 @@ export function CrossTripBookings({
           (!anyFilter ||
             (filters.unconfirmed &&
               !isBookingSecured(r.status) &&
-              r.status !== "NOT_NEEDED") ||
+              !isBookingOff(r.status)) ||
             (filters.yourMove && isYourMove(r))) &&
           (!q || r.label.toLowerCase().includes(q)),
       ),
@@ -88,7 +92,7 @@ export function CrossTripBookings({
     return (
       <Card>
         <CardContent className="text-sm text-muted-foreground">
-          No venues to book.
+          {statusFiltered ? "No bookings at this status." : "No venues to book."}
         </CardContent>
       </Card>
     );
@@ -284,7 +288,7 @@ function VenueCardGroup({
                   key={r.trip.id}
                   className={cn(
                     flagged(r.row) && "bg-amber-50 dark:bg-amber-950/40",
-                    r.row.status === "NOT_NEEDED" && "text-muted-foreground",
+                    isBookingOff(r.row.status) && "text-muted-foreground",
                   )}
                 >
                   <TableCell>

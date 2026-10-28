@@ -14,6 +14,7 @@ import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
   TRIP_LIFECYCLE_LABELS,
   bookingStageText,
+  countByStatus,
   deriveTripLifecycle,
   serializeStay,
   serializeDay,
@@ -37,6 +38,7 @@ import {
 } from "@/lib/documents";
 import { lodgingCoverage } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
+import { isBookingOff } from "@/lib/booking";
 import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
 import { LodgingManager, type SuggestedStaySpan } from "../lodging-manager";
@@ -46,6 +48,8 @@ import { ShareManager } from "../share-manager";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 import { TripTodoistPanel } from "../trip-todoist-panel";
 import { FinanceCard } from "../finance-card";
+import { BookingStatusChips } from "@/components/booking-status-chips";
+import type { BookingStatus } from "@prisma/client";
 import { loadTripFinance } from "@/lib/trip-finance.server";
 import { VenueEngagementsProvider } from "../venue-engagements";
 import { loadVenueEngagements } from "@/lib/venue-engagements";
@@ -350,13 +354,12 @@ export default async function TripOverviewPage({
             );
             const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
             const unpaid = agreed != null && paid < agreed ? agreed - paid : 0;
-            // Open until every workflow step is ticked (or, without a
-            // workflow, until confirmed); "not needed" is closed.
+            // Open until finalized — or every workflow step is ticked;
+            // cancelled / not needed is closed.
             const openStatus =
-              b.status !== "NOT_NEEDED" &&
-              (b.workflow
-                ? b.stepCompletions.length < b.workflow._count.steps
-                : b.status !== "CONFIRMED");
+              !isBookingOff(b.status) &&
+              b.status !== "FINALIZED" &&
+              (!b.workflow || b.stepCompletions.length < b.workflow._count.steps);
             if (!unpaid && !openStatus) return null;
             return {
               id: b.id,
@@ -415,6 +418,25 @@ export default async function TripOverviewPage({
   const engagements = await loadVenueEngagements(trip.id, [
     ...locationIds,
     ...trip.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
+  ]);
+
+  // Master-status roll-up for the Bookings card, matching the Bookings tab's
+  // rows: every venue the trip engages (an untouched bookable venue is
+  // Pending), lodging venues included, plus site-less item bookings.
+  const venueStatus = new Map<string, BookingStatus>();
+  for (const [locationId, e] of Object.entries(engagements)) {
+    venueStatus.set(e.via?.id ?? locationId, e.progress.status);
+  }
+  for (const s of stays) {
+    const venueId = engagementVenue(s.locationId);
+    if (!venueStatus.has(venueId)) venueStatus.set(venueId, "PENDING");
+  }
+  for (const b of engagementBookings) {
+    if (b.locationId) venueStatus.set(b.locationId, b.status);
+  }
+  const statusCounts = countByStatus([
+    ...[...venueStatus.values()].map((status) => ({ status })),
+    ...trip.days.flatMap((d) => d.scheduleItems.flatMap((i) => i.bookings)),
   ]);
 
   return (
@@ -670,6 +692,27 @@ export default async function TripOverviewPage({
                   }}
                 />
               </EditableSection>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle>Bookings</CardTitle>
+              <Link
+                href={`/trips/${trip.id}/booking?view=board`}
+                className="text-xs text-muted-foreground link-quiet"
+              >
+                Board
+              </Link>
+            </CardHeader>
+            <CardContent>
+              <BookingStatusChips
+                counts={statusCounts}
+                selected={[]}
+                showAll={false}
+                multi={false}
+                hrefFor={(next) => `/trips/${trip.id}/booking?status=${next.join(",")}`}
+              />
             </CardContent>
           </Card>
 

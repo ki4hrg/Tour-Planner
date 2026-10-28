@@ -24,15 +24,20 @@ enum TripStatus {
   CANCELLED
 }
 
-// A booking's coarse state. With a workflow assigned it is DERIVED from the
+// A booking's MASTER status — the normalized ladder every workflow's steps
+// (its substatuses) map onto, so views can filter "everything in progress"
+// whatever workflow a booking follows. The flow is PENDING → IN_PROGRESS →
+// CONFIRMED → FINALIZED. With a workflow assigned it is DERIVED from the
 // completed steps (each step names the status it reaches — see
 // src/lib/booking-workflow.ts) and stored so filters stay plain column reads;
-// without one the planner sets it directly. NOT_NEEDED is always a manual
-// override that step changes leave alone.
+// without one the planner sets it directly. CANCELLED and NOT_NEEDED sit off
+// the ladder: manual overrides that step changes leave alone.
 enum BookingStatus {
-  PLANNED // nothing done yet
+  PENDING // nothing done yet
   IN_PROGRESS // underway: contacted, availability held, form submitted...
   CONFIRMED // secured — the planner no longer needs to chase it
+  FINALIZED // nothing left to do: final numbers in, paid, paperwork filed
+  CANCELLED // was in play, then called off (payments made stay on record)
   NOT_NEEDED // booking deliberately not required for this trip (bookable venues only)
 }
 
@@ -520,7 +525,7 @@ model Booking {
   location        Location?               @relation(fields: [locationId], references: [id], onDelete: Cascade)
   locationId      String? // the engaged venue (required when tripId is set)
   label           String? // what's being booked (esp. for site-less bookings: coach, restaurant)
-  status          BookingStatus           @default(PLANNED)
+  status          BookingStatus           @default(PENDING)
   bookedContact   Contact?                @relation("BookedBy", fields: [bookedContactId], references: [id], onDelete: SetNull)
   bookedContactId String?
   confirmationRef String?
@@ -574,7 +579,7 @@ model BookingWorkflow {
 }
 
 // A milestone in a workflow. `status` is the coarse BookingStatus a booking
-// reaches once this step is done (IN_PROGRESS or CONFIRMED — DB CHECK
+// reaches once this step is done (IN_PROGRESS, CONFIRMED or FINALIZED — DB CHECK
 // booking_workflow_step_status); a booking's status is the furthest any of its
 // completed steps reaches.
 model BookingWorkflowStep {

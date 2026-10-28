@@ -31,7 +31,7 @@ const loc = (o: Partial<MergeableLocationFields> = {}): MergeableLocationFields 
 });
 
 const booking = (o: Partial<MergeableBookingFields> = {}): MergeableBookingFields => ({
-  status: "PLANNED",
+  status: "PENDING",
   label: null,
   bookedContactId: null,
   confirmationRef: null,
@@ -118,7 +118,7 @@ describe("mergeLocationFields", () => {
 describe("mergeBookingFields", () => {
   it("keeps the further-along status; NOT_NEEDED never beats a real booking", () => {
     expect(mergeBookingFields(booking({ status: "IN_PROGRESS" }), booking({ status: "CONFIRMED" })).status).toBe("CONFIRMED");
-    expect(mergeBookingFields(booking({ status: "NOT_NEEDED" }), booking()).status).toBe("PLANNED");
+    expect(mergeBookingFields(booking({ status: "NOT_NEEDED" }), booking()).status).toBe("PENDING");
     expect(mergeBookingFields(booking({ status: "CONFIRMED" }), booking({ status: "IN_PROGRESS" })).status).toBe("CONFIRMED");
   });
   it("carries the agreed price (lines + currency) as a unit; the target's wins", () => {

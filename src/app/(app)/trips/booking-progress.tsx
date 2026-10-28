@@ -32,7 +32,8 @@ import {
   type BookingProgressView,
   type WaitingView,
 } from "@/lib/booking-workflow";
-import { bookingStatusVariant } from "@/lib/trips";
+import { BOOKING_STATUS_LABELS, bookingStatusVariant } from "@/lib/trips";
+import { isBookingOff } from "@/lib/booking";
 import { badgeVariants } from "@/components/ui/badge";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
@@ -449,13 +450,13 @@ export function ProgressList({
     });
   };
 
-  const markNotNeeded = () =>
+  const markOff = (status: "CANCELLED" | "NOT_NEEDED") =>
     start(async () => {
       const results = await Promise.all(
         chosen.map((l) =>
           "bookingId" in l.target
-            ? setBookingStatus(l.target.bookingId, "NOT_NEEDED")
-            : setVenueBookingStatus(l.target.tripId, l.target.locationId, "NOT_NEEDED"),
+            ? setBookingStatus(l.target.bookingId, status)
+            : setVenueBookingStatus(l.target.tripId, l.target.locationId, status),
         ),
       );
       const err = results.find((r) => r.error);
@@ -520,16 +521,19 @@ export function ProgressList({
                 {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
                 Clear
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="ml-auto"
-                disabled={pending}
-                onClick={markNotNeeded}
-              >
-                {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
-                Not needed
-              </Button>
+              {(["CANCELLED", "NOT_NEEDED"] as const).map((s, i) => (
+                <Button
+                  key={s}
+                  size="sm"
+                  variant="ghost"
+                  className={cn(i === 0 && "ml-auto")}
+                  disabled={pending}
+                  onClick={() => markOff(s)}
+                >
+                  {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
+                  {BOOKING_STATUS_LABELS[s]}
+                </Button>
+              ))}
             </>
           ) : null}
         </div>
@@ -538,13 +542,13 @@ export function ProgressList({
       <ul className="divide-y rounded-lg border">
         {lines.map((line) => {
           const workflow = workflowByKey.get(line.key) ?? null;
-          const notNeeded = line.progress.status === "NOT_NEEDED";
+          const off = isBookingOff(line.progress.status);
           return (
             <li
               key={line.key}
               className={cn(
                 "flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center",
-                notNeeded && "opacity-60",
+                off && "opacity-60",
                 selected.has(line.key) && "bg-primary/5",
               )}
             >

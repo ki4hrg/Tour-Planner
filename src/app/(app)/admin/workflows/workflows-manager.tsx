@@ -61,6 +61,7 @@ const DUE_UNIT_LABELS: Record<PaymentOffsetUnit, string> = {
 const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   IN_PROGRESS: "In progress",
   CONFIRMED: "Confirmed",
+  FINALIZED: "Finalized",
 };
 
 // Whose move the step is once a booking reaches it.

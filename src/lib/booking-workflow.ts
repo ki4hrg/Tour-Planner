@@ -1,6 +1,7 @@
 import type { BookingStatus, PaymentOffsetUnit, StepActor } from "@prisma/client";
 import { parseDateInput, toDateInput } from "./dates";
 import { addUnits } from "./payment-schedule";
+import { isBookingOff } from "./booking";
 
 // Booking workflows (admin-defined milestone ladders) → a booking's coarse
 // status + stage. Pure, so the server sync layer (booking-workflow-sync.ts) and
@@ -12,15 +13,19 @@ import { addUnits } from "./payment-schedule";
 // (stepGate), and undone only while no later step is — a venue that skips a
 // step belongs on a workflow without it. The stage is the latest step done.
 
+// How far up the master-status ladder a booking is. The off-ladder overrides
+// rank lowest, so a merge keeps a booking that is actually in play.
 export const BOOKING_STATUS_RANK: Record<BookingStatus, number> = {
   NOT_NEEDED: 0,
-  PLANNED: 1,
+  CANCELLED: 0,
+  PENDING: 1,
   IN_PROGRESS: 2,
   CONFIRMED: 3,
+  FINALIZED: 4,
 };
 
-/** The coarse statuses a workflow step may reach (DB CHECK booking_workflow_step_status). */
-export const STEP_STATUSES = ["IN_PROGRESS", "CONFIRMED"] as const;
+/** The master statuses a workflow step may reach (DB CHECK booking_workflow_step_status). */
+export const STEP_STATUSES = ["IN_PROGRESS", "CONFIRMED", "FINALIZED"] as const;
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
 /** Whose move a step is (BookingWorkflowStep.actor). */
@@ -78,8 +83,9 @@ export type BookingProgress = {
 
 /**
  * Resolve a workflow booking's stored status + stage from its completions.
- * `current` is the stored status: NOT_NEEDED is a manual override that step
- * changes never clear (the stage still tracks, so un-skipping restores it).
+ * `current` is the stored status: CANCELLED and NOT_NEEDED are manual
+ * overrides that step changes never clear (the stage still tracks, so
+ * reinstating the booking restores it).
  * Completions whose step isn't in `steps` (a stale row from another workflow)
  * are ignored.
  */
@@ -89,7 +95,7 @@ export function resolveBookingProgress(
   current: BookingStatus,
 ): BookingProgress {
   const doneOn = new Map(completions.map((c) => [c.stepId, c.completedOn]));
-  let status: BookingStatus = "PLANNED";
+  let status: BookingStatus = "PENDING";
   let stage: { step: WorkflowStepLike; on: Date } | null = null;
   for (const step of steps) {
     const on = doneOn.get(step.id);
@@ -100,7 +106,7 @@ export function resolveBookingProgress(
     if (!stage || step.sortOrder >= stage.step.sortOrder) stage = { step, on };
   }
   return {
-    status: current === "NOT_NEEDED" ? "NOT_NEEDED" : status,
+    status: isBookingOff(current) ? current : status,
     stageLabel: stage?.step.label ?? null,
     stageOn: stage?.on ?? null,
   };
@@ -119,14 +125,14 @@ export function nextStep<S extends WorkflowStepLike>(
  * The step a booking is waiting on — what "Next: …" shows. The first step not
  * done AFTER the latest done one (workflow order), so a step skipped on the way
  * stays skipped, matching how the stage is the latest step done. Null when the
- * booking is not needed or its last step is done.
+ * booking is cancelled / not needed or its last step is done.
  */
 export function upcomingStep<S extends WorkflowStepLike>(
   steps: S[],
   completions: { stepId: string }[],
   status: BookingStatus,
 ): S | null {
-  if (status === "NOT_NEEDED") return null;
+  if (isBookingOff(status)) return null;
   const done = new Set(completions.map((c) => c.stepId));
   const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
   let last = -1;
@@ -321,7 +327,7 @@ export function progressView(
 ): BookingProgressView {
   return {
     exists: b != null,
-    status: b?.status ?? "PLANNED",
+    status: b?.status ?? "PENDING",
     stageLabel: b?.stageLabel ?? null,
     stageOn: b?.stageOn ? toDateInput(b.stageOn) : null,
     workflowId: b?.workflowId ?? null,

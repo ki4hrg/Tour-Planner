@@ -25,7 +25,7 @@ import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import { formatMoney, isCostStale, currencyOptions } from "@/lib/money";
 import { hasAgreedPrice } from "@/lib/costs";
-import { isBookingSecured } from "@/lib/booking";
+import { isBookingOff, isBookingSecured } from "@/lib/booking";
 import type {
   CoveredStay,
   VenueBookingRow,
@@ -61,7 +61,7 @@ const Spinner = () => <Loader2 className="animate-spin" aria-hidden />;
 
 // The window cell: when can this be booked (or is it already done).
 export function WindowCell({ row }: { row: VenueBookingRow }) {
-  if (!row.bookable || row.status === "NOT_NEEDED")
+  if (!row.bookable || isBookingOff(row.status))
     return <span className="text-muted-foreground">—</span>;
   if (isBookingSecured(row.status))
     return <span className="text-muted-foreground">Booked</span>;

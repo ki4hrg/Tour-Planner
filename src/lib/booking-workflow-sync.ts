@@ -14,6 +14,7 @@ import {
   stepGateError,
   WORKFLOW_STEP_SELECT,
 } from "@/lib/booking-workflow";
+import { isBookingOff } from "@/lib/booking";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -144,8 +145,8 @@ export async function setBookingStep(
 
 /**
  * Switch a booking to another workflow (or to none). Completions belong to the
- * old workflow's steps, so they are cleared; status restarts at PLANNED unless
- * the booking is marked not needed. Switching to the workflow it already has
+ * old workflow's steps, so they are cleared; status restarts at PENDING unless
+ * the booking is cancelled or not needed. Switching to the workflow it already has
  * is a no-op.
  */
 export async function setBookingWorkflow(
@@ -172,7 +173,7 @@ export async function setBookingWorkflow(
     data: {
       workflowId,
       // Without a workflow the planner sets status by hand — keep what it was.
-      ...(workflowId && booking.status !== "NOT_NEEDED" ? { status: "PLANNED" } : {}),
+      ...(workflowId && !isBookingOff(booking.status) ? { status: "PENDING" } : {}),
     },
   });
   await recomputeBooking(bookingId, db);
@@ -180,9 +181,10 @@ export async function setBookingWorkflow(
 }
 
 /**
- * Set a booking's status directly. On a workflow booking only NOT_NEEDED (and
- * leaving it) is manual — any other value re-derives from the steps; without a
- * workflow the given status is stored as-is.
+ * Set a booking's status directly. On a workflow booking only the off-ladder
+ * overrides (CANCELLED / NOT_NEEDED, and leaving them) are manual — any other
+ * value re-derives from the steps; without a workflow the given status is
+ * stored as-is.
  */
 export async function setBookingStatusDirect(
   bookingId: string,
@@ -194,11 +196,11 @@ export async function setBookingStatusDirect(
     select: { workflowId: true },
   });
   if (!booking) return { error: "Booking not found." };
-  if (status === "NOT_NEEDED" || !booking.workflowId) {
+  if (isBookingOff(status) || !booking.workflowId) {
     await db.booking.update({ where: { id: bookingId }, data: { status } });
   } else {
     // Clear the override, then let the steps decide.
-    await db.booking.update({ where: { id: bookingId }, data: { status: "PLANNED" } });
+    await db.booking.update({ where: { id: bookingId }, data: { status: "PENDING" } });
     await recomputeBooking(bookingId, db);
   }
   return { ok: true };
@@ -208,8 +210,8 @@ export async function setBookingStatusDirect(
  * Move a booking to a stage in one go (the board's drag between step
  * columns): `stepId` and every step before it are done — steps already done
  * keep their dates, the rest are dated `completedOn` — and every LATER step is
- * cleared. `stepId: null` clears them all ("not started"). Moving a not-needed
- * booking onto a stage puts it back in play.
+ * cleared. `stepId: null` clears them all ("not started"). Moving a cancelled
+ * or not-needed booking onto a stage puts it back in play.
  */
 export async function setBookingStage(
   args: { bookingId: string; stepId: string | null; completedOn: Date; userId?: string | null },
@@ -241,8 +243,8 @@ export async function setBookingStage(
       skipDuplicates: true, // @@unique([bookingId, stepId]) keeps existing dates
     });
   }
-  if (booking.status === "NOT_NEEDED") {
-    await db.booking.update({ where: { id: bookingId }, data: { status: "PLANNED" } });
+  if (isBookingOff(booking.status)) {
+    await db.booking.update({ where: { id: bookingId }, data: { status: "PENDING" } });
   }
   await recomputeBooking(bookingId, db);
   return { ok: true };

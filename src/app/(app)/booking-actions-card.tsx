@@ -9,7 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { addDays, formatDate, toDateInput } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { actionItems, type TripRef } from "@/lib/cross-trip-bookings";
+import {
+  actionItems,
+  crossTripStatusRows,
+  type TripRef,
+} from "@/lib/cross-trip-bookings";
+import { countByStatus } from "@/lib/trips";
+import { BookingStatusChips } from "@/components/booking-status-chips";
 import { loadCrossTripBookings } from "@/lib/cross-trip-bookings.server";
 
 // How far ahead a scheduled installment counts as "due soon".
@@ -35,9 +41,17 @@ type Line = {
 export async function BookingActionsCard({ today }: { today: Date }) {
   // Include past ACTIVE trips: an unpaid installment stays owed after the trip
   // runs. Booking windows and prices only matter for trips still ahead.
-  const { groups } = await loadCrossTripBookings({ includePast: true });
+  const { groups, itemBookings } = await loadCrossTripBookings({ includePast: true });
   const todayKey = toDateInput(today);
   const ahead = (t: TripRef) => t.endDate == null || t.endDate >= todayKey;
+  // Where every booking on the trips still ahead stands, by master status —
+  // each count opens the Bookings page narrowed to it.
+  const statusCounts = countByStatus(
+    crossTripStatusRows(
+      groups.map((g) => ({ ...g, rows: g.rows.filter((r) => ahead(r.trip)) })),
+      itemBookings.filter((t) => ahead(t.trip)),
+    ),
+  );
 
   const items = actionItems(groups);
   const overdue: Line[] = [];
@@ -130,6 +144,13 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         </Link>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
+        <BookingStatusChips
+          counts={statusCounts}
+          selected={[]}
+          showAll={false}
+          multi={false}
+          hrefFor={(next) => `/bookings?status=${next.join(",")}`}
+        />
         {total === 0 ? (
           <p className="text-muted-foreground">Nothing due.</p>
         ) : (

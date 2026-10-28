@@ -5,6 +5,10 @@ import {
   effectivePresenters,
   summarizeDayLodging,
   deriveTripLifecycle,
+  parseBookingStatuses,
+  countByStatus,
+  bookingStageText,
+  bookingSubstatus,
   travelRoute,
   travelDetailLine,
   type SerializedScheduleItem,
@@ -393,5 +397,46 @@ describe("deriveTripLifecycle", () => {
     expect(
       deriveTripLifecycle({ status: "CANCELLED", startDate: null, endDate: null }, today),
     ).toBe("CANCELLED");
+  });
+});
+
+describe("booking master statuses", () => {
+  it("parses a ?status= list in ladder order, dropping unknowns, PLANNED read as PENDING", () => {
+    expect(parseBookingStatuses("confirmed,IN_PROGRESS,bogus")).toEqual([
+      "IN_PROGRESS",
+      "CONFIRMED",
+    ]);
+    expect(parseBookingStatuses("PLANNED")).toEqual(["PENDING"]);
+    expect(parseBookingStatuses(null)).toEqual([]);
+  });
+
+  it("counts every status, zeros included", () => {
+    const c = countByStatus([
+      { status: "IN_PROGRESS" },
+      { status: "IN_PROGRESS" },
+      { status: "CANCELLED" },
+    ]);
+    expect(c.IN_PROGRESS).toBe(2);
+    expect(c.CANCELLED).toBe(1);
+    expect(c.FINALIZED).toBe(0);
+    expect(Object.keys(c)).toHaveLength(6);
+  });
+
+  it("reads the master status first, then the workflow stage", () => {
+    expect(bookingStageText({ status: "IN_PROGRESS", stageLabel: "Requested" })).toBe(
+      "In progress · Requested",
+    );
+    expect(bookingStageText({ status: "PENDING", stageLabel: null })).toBe("Pending");
+    // A stage that only repeats the master label isn't shown twice.
+    expect(bookingStageText({ status: "CONFIRMED", stageLabel: "Confirmed" })).toBe(
+      "Confirmed",
+    );
+    // Off the ladder the stage is history, not a substatus.
+    expect(bookingStageText({ status: "CANCELLED", stageLabel: "Requested" })).toBe(
+      "Cancelled",
+    );
+    expect(bookingSubstatus({ status: "FINALIZED", stageLabel: "Paid in full" })).toBe(
+      "Paid in full",
+    );
   });
 });

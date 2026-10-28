@@ -4,8 +4,8 @@ import type {
   ItemBookingRow,
   VenueBookingRow,
 } from "./booking-dashboard";
-import { isBookingSecured } from "./booking";
-import { bookingStageText } from "./trips";
+import { isBookingOff, isBookingSecured } from "./booking";
+import { BOOKING_STATUS_LABELS, bookingStageText, bookingSubstatus } from "./trips";
 import { formatDate } from "./dates";
 import { formatMoney } from "./money";
 
@@ -92,9 +92,9 @@ export const NO_ATTENTION_FILTERS: AttentionFilters = {
   yourMove: false,
 };
 
-/** Bookable and not deliberately skipped — the only rows that can need work. */
+/** Bookable and not cancelled / skipped — the only rows that can need work. */
 export function rowInPlay(row: VenueBookingRow): boolean {
-  return row.bookable && row.status !== "NOT_NEEDED";
+  return row.bookable && !isBookingOff(row.status);
 }
 
 /**
@@ -109,7 +109,7 @@ export function isYourMove(row: {
 }): boolean {
   return (
     row.bookingId != null &&
-    row.status !== "NOT_NEEDED" &&
+    !isBookingOff(row.status) &&
     row.waiting?.actor === "US" &&
     // A step with a due date isn't our move until that date.
     row.waiting.due !== false
@@ -165,6 +165,46 @@ export function rowFlags(row: VenueBookingRow): RowFlags {
     unconfirmed: only("unconfirmed"),
     yourMove: only("yourMove"),
   };
+}
+
+/**
+ * Narrow venue groups (and site-less item bookings) to the given master
+ * statuses — every trip's row at those statuses, whatever workflow stage it
+ * is at. Walk-by rows have no status and drop out; so does a venue left with
+ * no rows. No statuses = no narrowing.
+ */
+export function filterGroupsByStatus(
+  groups: VenueGroup[],
+  statuses: BookingStatus[],
+): VenueGroup[] {
+  if (statuses.length === 0) return groups;
+  return groups
+    .map((g) => ({
+      ...g,
+      rows: g.rows.filter((r) => r.row.bookable && statuses.includes(r.row.status)),
+    }))
+    .filter((g) => g.rows.length > 0);
+}
+
+export function filterItemBookingsByStatus(
+  trips: TripItemBookings[],
+  statuses: BookingStatus[],
+): TripItemBookings[] {
+  if (statuses.length === 0) return trips;
+  return trips
+    .map((t) => ({ ...t, itemRows: t.itemRows.filter((r) => statuses.includes(r.status)) }))
+    .filter((t) => t.itemRows.length > 0);
+}
+
+/** Master-status counts across venue rows (bookable ones) and item bookings. */
+export function crossTripStatusRows(
+  groups: VenueGroup[],
+  trips: TripItemBookings[],
+): { status: BookingStatus }[] {
+  return [
+    ...groups.flatMap((g) => g.rows.filter((r) => r.row.bookable).map((r) => r.row)),
+    ...trips.flatMap((t) => t.itemRows),
+  ];
 }
 
 /** True when any filter is on; all-off means "show everything". */
@@ -313,16 +353,18 @@ export function formatSession(s: CoveredSession): string {
   return `${when}${time ? `, ${time}` : ""}: ${s.label}`;
 }
 
-/** Rows worth writing to the venue about — everything but "not needed". */
+/** Rows worth writing to the venue about — everything still in play. */
 export function emailableRows(group: VenueGroup): VenueTripRow[] {
   return group.rows.filter((r) => rowInPlay(r.row));
 }
 
+// What the venue reads: the stage it knows ("Requested"), not our master
+// status vocabulary; the master label only when there is no stage.
 function statusLine(row: VenueBookingRow): string {
-  return bookingStageText({
-    status: row.status,
-    stageLabel: row.progress.stageLabel,
-  });
+  return (
+    bookingSubstatus({ status: row.status, stageLabel: row.progress.stageLabel }) ??
+    BOOKING_STATUS_LABELS[row.status]
+  );
 }
 
 /**

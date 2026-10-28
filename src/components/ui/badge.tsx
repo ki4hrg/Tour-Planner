@@ -26,6 +26,8 @@ const badgeVariants = cva(
         progress: "bg-primary/10 text-primary dark:bg-primary/20",
         confirmed:
           "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+        finalized: "bg-emerald-700 text-white dark:bg-emerald-600",
+        cancelled: "border-border text-muted-foreground",
         attention:
           "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
         overdue: "bg-destructive/10 text-destructive dark:bg-destructive/20",
