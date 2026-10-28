@@ -103,7 +103,7 @@ export function LocationContactsManager({
         })}
         {linked.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
-            No contacts linked.
+            No contacts.
           </p>
         ) : null}
       </div>
@@ -133,7 +133,7 @@ export function LocationContactsManager({
               <input type="hidden" name="locationId" value={locationId} />
               <Select name="contactId">
                 <SelectTrigger className="w-64" size="sm">
-                  <SelectValue placeholder="Choose a contact…" />
+                  <SelectValue placeholder="Choose contact…" />
                 </SelectTrigger>
                 <SelectContent>
                   {available.map((c) => (

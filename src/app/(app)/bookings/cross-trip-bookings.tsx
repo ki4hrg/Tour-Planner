@@ -133,7 +133,7 @@ export function CrossTripBookings({
               setSearch("");
             }}
           >
-            Show all {groups.length} venue{groups.length === 1 ? "" : "s"}
+            Show all
           </Button>
           {anyFilter ? null : (
             <Button

@@ -121,7 +121,7 @@ export function HostSitePanel({
             rows={3}
             value={logisticsNotes}
             onChange={(e) => setLogisticsNotes(e.target.value)}
-            placeholder="Gate code 1234; coach parks on Mill Lane"
+            placeholder="e.g. Gate codes, coach parking"
           />
         </div>
 

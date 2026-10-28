@@ -34,7 +34,7 @@ export default async function NewPresentationPage() {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Presentation details</CardTitle>
+          <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
         <CardContent>
           <PresentationForm

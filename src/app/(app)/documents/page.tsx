@@ -192,7 +192,7 @@ export default async function DocumentsPage({
 
       {documents.length === 200 ? (
         <p className="text-xs text-muted-foreground">
-          Showing the 200 most recent.
+          Showing 200 most recent.
         </p>
       ) : null}
     </div>

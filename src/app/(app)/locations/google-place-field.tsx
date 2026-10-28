@@ -160,8 +160,7 @@ export function GooglePlaceField({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Google place search isn&apos;t configured (GOOGLE_MAPS_API_KEY); you can
-          still enter coordinates.
+          Google place search is not configured (GOOGLE_MAPS_API_KEY).
         </p>
       )}
 
@@ -181,7 +180,7 @@ export function GooglePlaceField({
             Fill address
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setOfferAddress(null)}>
-            No thanks
+            Dismiss
           </Button>
         </div>
       ) : null}

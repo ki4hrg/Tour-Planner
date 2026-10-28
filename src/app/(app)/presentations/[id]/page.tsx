@@ -92,7 +92,7 @@ export default async function PresentationDetailPage({
           >
             <PresentationForm
               action={updatePresentation}
-              submitLabel="Save changes"
+              submitLabel="Save"
               initial={{
                 id: presentation.id,
                 title: presentation.title,

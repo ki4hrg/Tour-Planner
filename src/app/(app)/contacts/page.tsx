@@ -50,7 +50,7 @@ export default async function ContactsPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add a contact</CardTitle>
+            <CardTitle className="text-base">New contact</CardTitle>
           </CardHeader>
           <CardContent>
             <ContactForm

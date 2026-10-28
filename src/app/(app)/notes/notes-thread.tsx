@@ -300,7 +300,7 @@ function NoteForm({
           rows={3}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="e.g. Called Jane re. room block — holding 24 until Friday."
+          placeholder="e.g. Called to confirm the room block."
         />
       </div>
 

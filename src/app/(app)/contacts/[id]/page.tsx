@@ -77,7 +77,7 @@ export default async function ContactDetailPage({
           >
             <ContactForm
               action={updateContact}
-              submitLabel="Save changes"
+              submitLabel="Save"
               initial={contact}
             />
           </EditableSection>

@@ -231,7 +231,7 @@ export function CostsManager({
       {canEdit ? (
         adding ? (
           <div className="rounded-md border border-dashed p-3">
-            <p className="mb-2 text-sm font-medium">Add a cost</p>
+            <p className="mb-2 text-sm font-medium">New cost</p>
             <CostFields
               action={addCost}
               locationId={locationId}

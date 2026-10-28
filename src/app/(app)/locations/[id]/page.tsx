@@ -825,7 +825,7 @@ export default async function LocationDetailPage({
           >
             <LocationForm
               action={updateLocation}
-              submitLabel="Save changes"
+              submitLabel="Save"
               tripTypes={allTripTypes}
               regions={allRegions}
               placesEnabled={placesEnabled()}
