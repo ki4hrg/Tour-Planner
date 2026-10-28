@@ -10,7 +10,7 @@ import {
   type SerializedDay,
 } from "@/lib/trips";
 import { lodgingForDays } from "@/lib/stays";
-import { TimelineGroups } from "../../itinerary-timeline";
+import { OvernightLine, TimelineGroups } from "../../itinerary-timeline";
 import { PrintActions } from "./print-actions";
 
 export const dynamic = "force-dynamic";
@@ -187,7 +187,14 @@ export default async function TripPrintPage({
                 </p>
               ) : null}
               {day.items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
+                <>
+                  <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
+                  {lodgingByDay[day.id] ? (
+                    <div className="mt-2">
+                      <OvernightLine lodging={lodgingByDay[day.id]!} />
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <TimelineGroups
                   items={day.items}

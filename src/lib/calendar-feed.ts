@@ -120,7 +120,12 @@ export function buildTripEvents(
         item.notes,
         speakers.length ? `Speaker: ${speakers.join(", ")}` : null,
       ]);
-      const location = route ?? (venues.length ? venues.join(", ") : undefined);
+      // A room reads before its venue: "Chapel, John Wesley's New Room".
+      const location =
+        route ??
+        (venues.length
+          ? [item.room, venues.join(", ")].filter(Boolean).join(", ")
+          : undefined);
 
       if (item.startTime) {
         // Floating timed event. End only when it's strictly after the start

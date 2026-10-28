@@ -1,8 +1,12 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
   serializeDay,
+  summarizeDayLodging,
   TRAVEL_LEG_INCLUDE,
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
@@ -101,6 +105,17 @@ export default async function ItineraryPage({
       },
     },
   });
+  // Rooms used at each venue on any trip — the item form's room suggestions.
+  const roomRows = await prisma.scheduleItemSite.findMany({
+    where: { scheduleItem: { room: { not: null } } },
+    select: { locationId: true, scheduleItem: { select: { room: true } } },
+  });
+  const roomsByLocation = new Map<string, Set<string>>();
+  for (const r of roomRows) {
+    const set = roomsByLocation.get(r.locationId) ?? new Set<string>();
+    set.add(r.scheduleItem.room!);
+    roomsByLocation.set(r.locationId, set);
+  }
   // Payments per item booking (site-less items only carry bookings).
   const paymentCounts: Record<string, number> = {};
   for (const d of trip.days)
@@ -131,6 +146,14 @@ export default async function ItineraryPage({
     name: regionName.get(o.id) ?? o.label,
   }));
 
+  // Where the group sleeps each night — the day cards' Overnight line.
+  const stays = await prisma.stay.findMany({
+    where: { tripId: id },
+    orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
+    include: { location: { select: { id: true, name: true } } },
+  });
+  const lodgingByDay = summarizeDayLodging(trip.days, stays);
+
   // Each venue's (trip, location) engagement, shown beside the venue.
   const engagements = await loadVenueEngagements(
     trip.id,
@@ -140,7 +163,15 @@ export default async function ItineraryPage({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/trips/${trip.id}/print`}>
+            <Printer />
+            Print
+          </Link>
+        </Button>
+      </div>
       <VenueEngagementsProvider
         tripId={trip.id}
         canEdit={canEdit}
@@ -159,6 +190,7 @@ export default async function ItineraryPage({
             region: l.region?.name ?? null,
             tagged: l.tripTypes.length > 0,
             events: l.events,
+            rooms: [...(roomsByLocation.get(l.id) ?? [])],
             scheduleLimitations: l.scheduleLimitations,
             logisticsNotes: l.hostSite?.logisticsNotes ?? null,
             primaryContact: l.primaryContact,
@@ -170,6 +202,7 @@ export default async function ItineraryPage({
           currencies={trip.currencies}
           defaultCurrency={trip.defaultCurrency}
           cities={cities}
+          lodgingByDay={lodgingByDay}
         />
       </VenueEngagementsProvider>
     </div>

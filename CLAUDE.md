@@ -308,6 +308,9 @@ npm test                          # vitest
   it reaches a Client Component — anything passed as props rides along in the RSC
   payload (view-source visible) even if not rendered. See `redactDaysForShare`
   (`src/lib/share.ts`).
+- **Itinerary tab**: each day card ends with the Overnight line (stays →
+  `summarizeDayLodging`, linking to the venue's booking row) and the page has a
+  Print button to `/trips/<id>/print`.
 - **Trip tabs** (`trips/[id]/trip-header.tsx`): Overview · Itinerary · Bookings ·
   Finance (`/finance`) · Documents (`/documents`, the `TripDocumentsHub`). The
   overview keeps the itinerary panel (every venue mention links to its booking
@@ -343,8 +346,9 @@ npm test                          # vitest
   so a known future price change is a second dated line beside the current one.
   Edited on the Location page's cost form + the MCP cost tools.
 - **Workflow step due offsets**: `BookingWorkflowStep.dueOffsetValue`/`dueOffsetUnit`
-  (DAY/WEEK/MONTH BEFORE trip start; both or neither — DB CHECK
-  `booking_workflow_step_due`; set per step at `/admin/workflows`). `stepDueDate` /
+  (DAY/WEEK/MONTH before trip start; negative = AFTER start, e.g. "Balance paid"
+  once invoiced post-trip; both or neither — DB CHECK `booking_workflow_step_due`;
+  set per step at `/admin/workflows` with a before/after select). `stepDueDate` /
   `waitingOn(..., tripStartDate)` carry `dueOn`; `waitingView` adds `dueOn` + `due`.
   A step that is not due yet is nobody's move: `isYourMove` requires `due`, the
   owner line / `CompactProgress` chip / step strip read muted "Next for you: Finalized
@@ -433,6 +437,13 @@ npm test                          # vitest
   host site visited across many sessions is one booking, not one per session. Lodging
   has **no** booking of its own; the `Stay`'s booking state is its venue engagement.
   The item target is only for **site-less** bookings (a coach, a label-only reservation).
+  An item booking on an item that HAS a site is a stray (legacy per-session rows, or a
+  site-less item that later gained a venue): `foldSessionBookings`
+  (`src/lib/session-booking-fold.ts`) folds it into the venue engagement (or turns it
+  into the engagement when there is none) via `foldBookingInto` (`location-merge.ts`,
+  shared with the location merge). It runs on every item update that sets sites (web
+  + MCP) and once per boot (`foldAllSessionBookings` from `src/instrumentation.ts`,
+  idempotent); `instantiateDays` copies item bookings only for site-less items.
   **Booked via (location-level parent)**: `Location.bookedViaId` points a child site at
   a parent venue whose ONE engagement covers it (a museum booking covering several
   sites nearby). The child still shows as itself on itineraries, share pages, ICS
@@ -564,6 +575,21 @@ npm test                          # vitest
   returns it. Rough-plan planned locations also
   feed engagement rows (an untimed "planned" session) so a visit can be booked
   before it has a slot.
+- **Rooms + meals on items**: `ScheduleItem.room` (free text, "Refectory"; the item
+  form suggests rooms used at the chosen venue on any trip; shown as `RoomLabel`, in
+  the ICS LOCATION as "Room, Venue"; not in the WP export, whose stops are deduped
+  per venue). `mealKind` (BREAKFAST/LUNCH/DINNER/REFRESHMENTS) marks an item a meal and
+  `mealProvision` (VENUE / TAKEAWAY = packed by the venue / RESTAURANT / ON_OWN) how
+  it's provided — the form shows both for a meal-like category (`isMealCategoryName`)
+  and guesses the kind from the title (`guessMealKind`). `src/lib/meals.ts`
+  (`buildMealPlan`, unit-tested) feeds the overview **Meals** card: B/L/D per day
+  plus venue-provided counts per venue (a site-less venue meal falls back to the
+  previous night's lodging); an unset provision reads amber. All three copy through
+  templates and are on the MCP item tools.
+- **Category chip**: the itinerary editor + timeline always show an item's category
+  chip (`scheduleItemPrimaryLabel(item, { categoryChip: true })`): an untitled item
+  reads as its chip alone instead of a "Visit: Venue" heading. Text-only surfaces
+  (ICS, day view, dashboards) keep the category-derived heading.
 - **Fixed-time items**: `ScheduleItem.fixedTime` marks times the group doesn't
   control (a public event, a timetabled train). The edit ripple (`cascadeFromEdit`)
   and day slide (`shiftDayItems`) never move a fixed item and STOP at the first one

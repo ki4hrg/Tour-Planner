@@ -1,5 +1,7 @@
 import type {
   BookingStatus,
+  MealKind,
+  MealProvision,
   PaymentAnchor,
   PaymentOffsetUnit,
   Prisma,
@@ -46,6 +48,9 @@ export type TemplateScheduleItem = {
   notes: string | null;
   isBlock: boolean;
   fixedTime?: boolean;
+  room?: string | null;
+  mealKind?: MealKind | null;
+  mealProvision?: MealProvision | null;
   presentationId: string | null;
   // This occurrence's speakers — carried over only when duplicating a trip
   // (see InstantiateOptions.presenters); a template resets them.
@@ -93,6 +98,9 @@ export type InstantiatedScheduleItem = {
   notes: string | null;
   isBlock: boolean;
   fixedTime?: boolean;
+  room?: string | null;
+  mealKind?: MealKind | null;
+  mealProvision?: MealProvision | null;
   presentationId: string | null; // catalog link survives; presenters reset unless asked for
   presenters?: { connect: { id: string }[] };
   sites: { create: InstantiatedItemLocation[] };
@@ -266,6 +274,9 @@ export function instantiateDays(
               notes: item.notes,
               isBlock: item.isBlock,
               fixedTime: item.fixedTime ?? false,
+              room: item.room ?? null,
+              mealKind: item.mealKind ?? null,
+              mealProvision: item.mealProvision ?? null,
               // The shared catalog link survives; the per-occurrence speaker
               // override is reset (next trip assigns its own — like bookings).
               presentationId: item.presentationId,
@@ -277,7 +288,7 @@ export function instantiateDays(
                   .sort((a, b) => a.order - b.order)
                   .map((s, sj) => ({ locationId: s.locationId, order: sj })),
               },
-              ...(copyBookings
+              ...(copyBookings && item.sites.length === 0
                 ? {
                     bookings: {
                       create: item.bookings.map((b) => ({

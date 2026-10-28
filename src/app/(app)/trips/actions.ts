@@ -6,9 +6,12 @@ import type {
   Prisma,
   TripStatus,
   BookingStatus,
+  MealKind,
+  MealProvision,
   ShareAudience,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { foldSessionBookings } from "@/lib/session-booking-fold";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { sourceTripIdSchema, tripSchema, type TripInput } from "@/lib/validators/trip";
@@ -125,6 +128,9 @@ const TEMPLATE_DAYS_SELECT = {
       notes: true,
       isBlock: true,
       fixedTime: true,
+      room: true,
+      mealKind: true,
+      mealProvision: true,
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
@@ -670,6 +676,11 @@ export type ScheduleItemInputData = {
   notes?: string;
   isBlock?: boolean;
   fixedTime?: boolean;
+  // Where within the venue; omitted ⇒ untouched on update, "" clears.
+  room?: string;
+  // Set ⇒ a meal; null clears. Omitted ⇒ untouched on update.
+  mealKind?: MealKind | null;
+  mealProvision?: MealProvision | null;
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
@@ -716,6 +727,10 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     // Omitted ⇒ untouched on update (quick edits don't round-trip it); the
     // column defaults to false on create.
     fixedTime: d.fixedTime,
+    room: d.room === undefined ? undefined : d.room || null,
+    // A meal's provision only means something on a meal.
+    mealKind: d.mealKind,
+    mealProvision: d.mealKind === null ? null : d.mealProvision,
     presentationId: d.presentationId || null,
   };
 }
@@ -912,14 +927,9 @@ export async function updateScheduleItem(
           order: i,
         })),
       });
-      // Null any item-targeted booking whose locationId is not in the new set
-      await tx.booking.updateMany({
-        where: {
-          scheduleItemId: itemId,
-          locationId: { notIn: locationIds },
-        },
-        data: { locationId: null },
-      });
+      // A venue item is covered by its venue engagement: an item booking
+      // on it (a site-less booking whose item just gained a venue) folds in.
+      await foldSessionBookings(tx, { scheduleItemId: itemId });
     } else {
       // No locations: null all item-targeted bookings' locationId
       await tx.booking.updateMany({

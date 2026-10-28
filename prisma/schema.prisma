@@ -430,6 +430,9 @@ model ScheduleItem {
   notes          String?
   isBlock        Boolean               @default(false) // true = free-choice block of sites (subgroups pick)
   fixedTime      Boolean               @default(false) // times we don't control (a public event): shifts/reorders never move it
+  room           String? // where within the venue ("Refectory", "Chapel"); free text, suggested from the venue's past rooms
+  mealKind       MealKind? // set ⇒ this item is a meal (breakfast / lunch / dinner / refreshments)
+  mealProvision  MealProvision? // how that meal is provided (venue, takeaway, restaurant, on own)
   presentation   Presentation?         @relation(fields: [presentationId], references: [id], onDelete: SetNull)
   presentationId String? // the catalogued talk this item delivers (optional)
   presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters
@@ -440,6 +443,23 @@ model ScheduleItem {
   @@index([dayId])
   @@index([categoryId])
   @@index([presentationId])
+}
+
+// Which meal a schedule item is.
+enum MealKind {
+  BREAKFAST
+  LUNCH
+  DINNER
+  REFRESHMENTS
+}
+
+// How a meal is provided: served by the venue, a venue-made takeaway (packed
+// lunch), a booked restaurant, or the group's own (meal on own).
+enum MealProvision {
+  VENUE
+  TAKEAWAY
+  RESTAURANT
+  ON_OWN
 }
 
 enum TravelMethod {

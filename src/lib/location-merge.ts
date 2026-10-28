@@ -247,12 +247,63 @@ async function loadPair(db: Db, sourceId: string, targetId: string) {
 }
 
 /**
- * Move every venue engagement on `sourceId` to `targetId`. Where both venues
- * are engaged on the same trip the two fold into the target's booking —
+ * Fold booking `sourceId` into booking `targetId` and delete the source:
  * payments, notes and documents move over, scalar gaps fill from the source,
- * the status keeps the further-along of the two, the source's schedule is
- * adopted only when the target has none, and same-workflow step completions
- * move — then the status recomputes. Returns how many engagements moved.
+ * the status keeps the further-along of the two, the source's schedule and
+ * price are adopted only when the target has none, and same-workflow step
+ * completions move — then the target's status recomputes.
+ */
+export async function foldBookingInto(
+  tx: Prisma.TransactionClient,
+  sourceId: string,
+  targetId: string,
+): Promise<void> {
+  const withCounts = {
+    include: { _count: { select: { paymentSchedule: true, priceLines: true } } },
+  } as const;
+  const sb = await tx.booking.findUniqueOrThrow({ where: { id: sourceId }, ...withCounts });
+  const tb = await tx.booking.findUniqueOrThrow({ where: { id: targetId }, ...withCounts });
+  const move = { where: { bookingId: sb.id }, data: { bookingId: tb.id } };
+  await tx.payment.updateMany(move);
+  await tx.note.updateMany(move);
+  await tx.document.updateMany(move);
+  if (tb._count.paymentSchedule === 0) {
+    await tx.paymentScheduleItem.updateMany(move);
+  }
+  const tFields = { ...tb, priceLineCount: tb._count.priceLines };
+  const sFields = { ...sb, priceLineCount: sb._count.priceLines };
+  if (takesSourcePrice(tFields, sFields)) {
+    await tx.bookingPriceLine.updateMany(move);
+  }
+  // Workflow progress: the target's workflow wins (adopting the source's
+  // when it has none); source completions on that workflow's steps move
+  // over unless the target already ticked the same step.
+  const workflowId = tb.workflowId ?? sb.workflowId;
+  if (workflowId && sb.workflowId === workflowId) {
+    const done = await tx.bookingStepCompletion.findMany({
+      where: { bookingId: tb.id },
+      select: { stepId: true },
+    });
+    await tx.bookingStepCompletion.updateMany({
+      where: {
+        bookingId: sb.id,
+        stepId: { notIn: done.map((d) => d.stepId) },
+      },
+      data: { bookingId: tb.id },
+    });
+  }
+  await tx.booking.update({
+    where: { id: tb.id },
+    data: { ...mergeBookingFields(tFields, sFields), workflowId },
+  });
+  await tx.booking.delete({ where: { id: sb.id } });
+  await recomputeBooking(tb.id, tx);
+}
+
+/**
+ * Move every venue engagement on `sourceId` to `targetId`. Where both venues
+ * are engaged on the same trip the two fold into the target's booking
+ * (`foldBookingInto`). Returns how many engagements moved.
  * Shared by the location merge and "booked via" (a site gaining a parent hands
  * its engagements to the parent).
  */
@@ -263,49 +314,15 @@ export async function foldVenueEngagements(
 ): Promise<number> {
   const sourceBookings = await tx.booking.findMany({
     where: { locationId: sourceId, tripId: { not: null } },
-    include: { _count: { select: { paymentSchedule: true, priceLines: true } } },
+    select: { id: true, tripId: true },
   });
   for (const sb of sourceBookings) {
     const tb = await tx.booking.findUnique({
       where: { tripId_locationId: { tripId: sb.tripId!, locationId: targetId } },
-      include: { _count: { select: { paymentSchedule: true, priceLines: true } } },
+      select: { id: true },
     });
     if (!tb) continue; // no collision — repointed by the updateMany below
-    const move = { where: { bookingId: sb.id }, data: { bookingId: tb.id } };
-    await tx.payment.updateMany(move);
-    await tx.note.updateMany(move);
-    await tx.document.updateMany(move);
-    if (tb._count.paymentSchedule === 0) {
-      await tx.paymentScheduleItem.updateMany(move);
-    }
-    const tFields = { ...tb, priceLineCount: tb._count.priceLines };
-    const sFields = { ...sb, priceLineCount: sb._count.priceLines };
-    if (takesSourcePrice(tFields, sFields)) {
-      await tx.bookingPriceLine.updateMany(move);
-    }
-    // Workflow progress: the target's workflow wins (adopting the source's
-    // when it has none); source completions on that workflow's steps move
-    // over unless the target already ticked the same step.
-    const workflowId = tb.workflowId ?? sb.workflowId;
-    if (workflowId && sb.workflowId === workflowId) {
-      const done = await tx.bookingStepCompletion.findMany({
-        where: { bookingId: tb.id },
-        select: { stepId: true },
-      });
-      await tx.bookingStepCompletion.updateMany({
-        where: {
-          bookingId: sb.id,
-          stepId: { notIn: done.map((d) => d.stepId) },
-        },
-        data: { bookingId: tb.id },
-      });
-    }
-    await tx.booking.update({
-      where: { id: tb.id },
-      data: { ...mergeBookingFields(tFields, sFields), workflowId },
-    });
-    await tx.booking.delete({ where: { id: sb.id } });
-    await recomputeBooking(tb.id, tx);
+    await foldBookingInto(tx, sb.id, tb.id);
   }
   // The rest (no collision) simply repoint.
   await tx.booking.updateMany({

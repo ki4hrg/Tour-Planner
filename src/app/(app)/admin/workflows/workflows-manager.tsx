@@ -31,9 +31,18 @@ type Step = {
   label: string;
   status: StepStatus;
   actor: StepActor;
-  // Due this many units before the trip's start; "" = due whenever it's next.
+  // Due this many units before/after the trip's start; "" = due whenever
+  // it's next. Stored as one signed offset (negative = after start).
   dueValue: string;
   dueUnit: PaymentOffsetUnit;
+  dueDir: DueDir;
+};
+
+type DueDir = "BEFORE" | "AFTER";
+
+const DUE_DIR_LABELS: Record<DueDir, string> = {
+  BEFORE: "before start",
+  AFTER: "after start",
 };
 
 export type WorkflowRow = {
@@ -128,8 +137,9 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
       label: s.label,
       status: s.status,
       actor: s.actor,
-      dueValue: s.dueOffsetValue == null ? "" : String(s.dueOffsetValue),
+      dueValue: s.dueOffsetValue == null ? "" : String(Math.abs(s.dueOffsetValue)),
       dueUnit: s.dueOffsetUnit ?? "MONTH",
+      dueDir: (s.dueOffsetValue ?? 0) < 0 ? "AFTER" : "BEFORE",
     })),
   );
 
@@ -161,12 +171,15 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
       saveWorkflow(workflow.id, {
         name,
         isDefault,
-        steps: steps.map(({ id, label, status, actor, dueValue, dueUnit }) => ({
+        steps: steps.map(({ id, label, status, actor, dueValue, dueUnit, dueDir }) => ({
           id,
           label,
           status,
           actor,
-          dueOffsetValue: dueValue.trim() === "" ? null : Number(dueValue),
+          dueOffsetValue:
+            dueValue.trim() === ""
+              ? null
+              : Math.abs(Number(dueValue)) * (dueDir === "AFTER" ? -1 : 1),
           dueOffsetUnit: dueValue.trim() === "" ? null : dueUnit,
         })),
       }),
@@ -276,9 +289,10 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 ))}
               </SelectContent>
             </Select>
-            {/* When the step falls due: N units before the trip starts. Blank
-                = due as soon as it is the next step. Until the date, the step
-                reads muted ("from 12 Mar") and is nobody's move. */}
+            {/* When the step falls due: N units before or after the trip
+                starts (after = a balance invoiced once the trip is over).
+                Blank = due as soon as it is the next step. Until the date,
+                the step reads muted ("from 12 Mar") and is nobody's move. */}
             <span className="ml-7 flex items-center gap-1 sm:ml-0">
               <Label htmlFor={`${workflow.id}-due-${s.key}`} className="text-xs text-muted-foreground">
                 Due
@@ -298,7 +312,7 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 onValueChange={(v) => patch(i, { dueUnit: v as PaymentOffsetUnit })}
               >
                 <SelectTrigger
-                  className="w-36"
+                  className="w-28"
                   aria-label={`Step ${i + 1} due unit`}
                   disabled={s.dueValue.trim() === ""}
                 >
@@ -307,7 +321,26 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 <SelectContent>
                   {STEP_DUE_UNITS.map((u) => (
                     <SelectItem key={u} value={u}>
-                      {DUE_UNIT_LABELS[u]} before
+                      {DUE_UNIT_LABELS[u]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={s.dueDir}
+                onValueChange={(v) => patch(i, { dueDir: v as DueDir })}
+              >
+                <SelectTrigger
+                  className="w-32"
+                  aria-label={`Step ${i + 1} due before or after start`}
+                  disabled={s.dueValue.trim() === ""}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(DUE_DIR_LABELS) as DueDir[]).map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {DUE_DIR_LABELS[d]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -361,6 +394,7 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 status: "IN_PROGRESS",
                 actor: "US",
                 dueValue: "",
+                dueDir: "BEFORE",
                 dueUnit: "MONTH",
               },
             ])

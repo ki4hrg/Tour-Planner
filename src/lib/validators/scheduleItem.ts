@@ -59,6 +59,13 @@ export const scheduleItemSchema = z
     isBlock: z.boolean().optional(),
     // Times we don't control: ripple / slide / reorder never move it.
     fixedTime: z.boolean().optional(),
+    // Where within the venue ("Refectory"). Omitted ⇒ untouched on update;
+    // "" clears.
+    room: z.string().trim().max(120).optional(),
+    // Set ⇒ the item is a meal; null clears (and clears the provision).
+    // Omitted ⇒ untouched on update.
+    mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullish(),
+    mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullish(),
     // The catalogued talk this item delivers (optional).
     presentationId: optionalId,
     // Per-occurrence speaker override; empty ⇒ use the talk's default presenters.
