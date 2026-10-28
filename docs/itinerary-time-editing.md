@@ -102,10 +102,14 @@ Three parts, smallest-blast-radius first:
    skeleton. When the shifted run now overlaps the anchor, the toast says so — a
    first, minimal cut of #3.
 
-3. **Overflow / collision indicator.** After a replan, show whether the middle
-   actually _fits_ before the first pinned anchor, or has spilled past it.
-   `computeScheduleGaps` already finds gaps; an inverse pass finds overlaps. This is
-   what turns "I think it fits" into "it fits."
+3. **Overflow / collision indicator** — ✅ shipped. `overlappingItemIds` in
+   `src/lib/schedule-shift.ts` is the inverse pass of `computeScheduleGaps`: every
+   item whose start precedes the previous timed item's end is marked in the editor's
+   time gutter with a persistent `AlertTriangle` ("Overlaps previous item"). The
+   save toast is explicit about the ripple — `describeShifts` yields "Saved. 3 later
+   items moved 15 min later." and, when the run now collides with an anchor,
+   "Overlaps <label> <HH:MM>." — so a planner can tell whether four items moved or
+   none, and the collision stays visible after the toast fades.
 
 **Engine shape.** (Shipped with "stop at the anchor"; kept for the record.)
 `cascadeFromEdit` / `shiftDayItems` stay the right primitive — a
