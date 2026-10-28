@@ -77,6 +77,9 @@ export default async function TripDayPage({
                           email: true,
                         },
                       },
+                      // Standing constraints ("closed Mondays", "no groups
+                      // before 10") — one line under the contact, staff only.
+                      scheduleLimitations: true,
                     },
                   },
                 },

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
@@ -33,9 +34,21 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+// A card title is a heading (h2 under the page's h1) so the display serif
+// applies by element; pass `as` to change the level, or `asChild` to supply
+// the element.
+function CardTitle({
+  className,
+  as: Comp = "h2",
+  asChild = false,
+  ...props
+}: React.ComponentProps<"h2"> & {
+  as?: "h1" | "h2" | "h3" | "h4" | "div"
+  asChild?: boolean
+}) {
+  const Tag = asChild ? Slot.Root : Comp
   return (
-    <div
+    <Tag
       data-slot="card-title"
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",

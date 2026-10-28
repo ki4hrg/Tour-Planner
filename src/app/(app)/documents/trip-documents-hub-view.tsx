@@ -175,9 +175,7 @@ export function TripDocumentsHubView({
 
       {empty.length > 0 ? (
         <div className="space-y-1 border-t pt-3">
-          <p className="text-xs font-medium text-muted-foreground">
-            No files
-          </p>
+          <h4 className="text-sm font-medium">No files</h4>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {empty.map((g) => (
               <li key={g.key}>

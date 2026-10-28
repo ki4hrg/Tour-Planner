@@ -8,10 +8,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LinkCard } from "@/components/link-card";
+import { FilterChip } from "@/components/filter-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -86,30 +86,24 @@ export default async function LocationsPage({
       </form>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
+        <FilterChip
           href={qs({ archived: showArchived ? "1" : undefined, q: query })}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm focus-ring",
-            !type ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
+          active={!type}
         >
           All
-        </Link>
+        </FilterChip>
         {tripTypes.map((t) => (
-          <Link
+          <FilterChip
             key={t.id}
             href={qs({
               type: t.id,
               archived: showArchived ? "1" : undefined,
               q: query,
             })}
-            className={cn(
-              "rounded-full border px-3 py-1 text-sm focus-ring",
-              type === t.id ? "bg-muted font-medium" : "text-muted-foreground",
-            )}
+            active={type === t.id}
           >
             {t.name}
-          </Link>
+          </FilterChip>
         ))}
         <span className="ml-auto">
           <Link
@@ -129,7 +123,7 @@ export default async function LocationsPage({
             cardClassName={l.archivedAt ? "opacity-70" : undefined}
           >
             <CardHeader>
-              <CardTitle className="text-base">
+              <CardTitle>
                 {l.name}
                 {l.archivedAt ? (
                   <Badge variant="outline" className="ml-2 align-middle">

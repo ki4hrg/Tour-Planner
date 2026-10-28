@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Mail, Search } from "lucide-react";
@@ -196,7 +197,7 @@ function VenueCardGroup({
       <CardHeader className="gap-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/locations/${group.locationId}`}
                 className="link-quiet"
@@ -204,10 +205,10 @@ function VenueCardGroup({
                 {group.locationName}
               </Link>
               {group.attentionCount > 0 ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                <Badge variant="attention">
                   {group.attentionCount} need
                   {group.attentionCount === 1 ? "s" : ""} attention
-                </span>
+                </Badge>
               ) : null}
             </CardTitle>
             {group.regionPath ? (
@@ -399,7 +400,7 @@ function OtherBookings({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Other bookings</CardTitle>
+        <CardTitle>Other bookings</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {trips.map(({ trip, itemRows }) => (

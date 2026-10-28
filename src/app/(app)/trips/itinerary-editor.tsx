@@ -1034,9 +1034,7 @@ function PlannedLocations({
 
   return (
     <div className="space-y-2 border-b px-4 py-3">
-      <p className="text-xs font-medium text-muted-foreground">
-        Planned locations
-      </p>
+      <h4 className="text-sm font-medium">Planned locations</h4>
 
       {planned.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
@@ -1372,7 +1370,7 @@ function ItemRow({
                   <CategoryChip category={item.category} />
                 ) : null}
                 {item.isBlock ? (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
                     block
                   </span>
                 ) : null}

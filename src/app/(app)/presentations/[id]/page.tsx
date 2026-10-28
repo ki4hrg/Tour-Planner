@@ -61,7 +61,7 @@ export default async function PresentationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -106,7 +106,7 @@ export default async function PresentationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Default presenters ({presentation.defaultPresenters.length})
           </CardTitle>
         </CardHeader>
@@ -134,7 +134,7 @@ export default async function PresentationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Usage</CardTitle>
+          <CardTitle>Usage</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm">
@@ -149,7 +149,7 @@ export default async function PresentationDetailPage({
           {presentation.archivedAt ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Archived</CardTitle>
+                <CardTitle>Archived</CardTitle>
               </CardHeader>
               <CardContent>
                 <form action={unarchivePresentation}>
@@ -163,7 +163,7 @@ export default async function PresentationDetailPage({
           ) : null}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base text-destructive">
+              <CardTitle className="text-destructive">
                 Danger zone
               </CardTitle>
             </CardHeader>

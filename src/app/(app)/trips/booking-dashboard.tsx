@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ListChecks, SquareKanban, Table2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -139,37 +138,25 @@ export function BookingDashboard({
   }
 
   const viewToggle = (
-    <div
-      role="group"
-      aria-label="View"
-      className="inline-flex rounded-md border p-0.5 text-xs"
+    <Tabs
+      value={view}
+      onValueChange={(v) => switchView(v as DashboardView)}
     >
-      {(
-        [
-          ["table", "Table", Table2],
-          ["board", "Board", SquareKanban],
-          ["progress", "Progress", ListChecks],
-        ] as const
-      ).map(([value, label, Icon]) => (
-        <Button
-          key={value}
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-pressed={view === value}
-          onClick={() => switchView(value)}
-          className={cn(
-            "h-6 rounded px-2 text-xs",
-            view === value
-              ? "bg-muted text-foreground"
-              : "font-normal text-muted-foreground",
-          )}
-        >
-          <Icon className="size-3.5" />
-          {label}
-        </Button>
-      ))}
-    </div>
+      <TabsList variant="line" aria-label="View">
+        {(
+          [
+            ["table", "Table", Table2],
+            ["board", "Board", SquareKanban],
+            ["progress", "Progress", ListChecks],
+          ] as const
+        ).map(([value, label, Icon]) => (
+          <TabsTrigger key={value} value={value} className="px-2">
+            <Icon />
+            {label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 
   if (view === "progress") {

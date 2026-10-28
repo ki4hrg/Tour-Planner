@@ -21,6 +21,15 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Semantic status/attention variants — see CLAUDE.md "Status colours".
+        planned: "bg-secondary text-secondary-foreground",
+        progress: "bg-primary/10 text-primary dark:bg-primary/20",
+        confirmed:
+          "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+        attention:
+          "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+        overdue: "bg-destructive/10 text-destructive dark:bg-destructive/20",
+        muted: "bg-muted text-muted-foreground",
       },
     },
     defaultVariants: {

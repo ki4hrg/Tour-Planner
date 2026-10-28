@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { BookingStatus } from "@prisma/client";
@@ -16,7 +17,7 @@ import { isBookingSecured } from "@/lib/booking";
 import {
   BOOKING_STATUSES,
   BOOKING_STATUS_LABELS,
-  BOOKING_STATUS_CLASSES,
+  bookingStatusVariant,
 } from "@/lib/trips";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
@@ -287,14 +288,9 @@ export function BookingBoard({
               }}
             >
               <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    BOOKING_STATUS_CLASSES[col.status],
-                  )}
-                >
+                <Badge variant={bookingStatusVariant(col.status)}>
                   {col.label}
-                </span>
+                </Badge>
                 <span className="text-xs text-muted-foreground">{column.length}</span>
               </header>
               <ol className="min-h-24 flex-1 space-y-2 p-2">

@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { useId, useState } from "react";
 import { ChevronRight, Loader2 } from "lucide-react";
@@ -63,7 +64,7 @@ export function WindowCell({ row }: { row: VenueBookingRow }) {
     return <span className="text-muted-foreground">—</span>;
   if (row.open)
     return (
-      <span className="font-medium text-amber-700 dark:text-amber-300">
+      <span className="font-medium text-emerald-700 dark:text-emerald-300">
         Open now
       </span>
     );
@@ -88,9 +89,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
             currency={row.agreedCurrency}
             headcount={row.headcount}
           />
-          <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-            agreed
-          </span>
+          <Badge variant="confirmed">agreed</Badge>
         </div>
         <PaymentState row={row} />
       </div>
@@ -99,9 +98,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (row.costs.length === 0)
     return (
       <div className="space-y-0.5">
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          No price
-        </span>
+        <Badge variant="attention">No price</Badge>
         {/* Fixed-amount installments can be overdue without an agreed price. */}
         <PaymentState row={row} />
       </div>
@@ -119,20 +116,14 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
             <span className="text-muted-foreground"> {COST_UNIT_LABELS[c.unit]}</span>
           </span>
           {i === 0 ? (
-            <span
-              className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
-              title="Venue list price"
-            >
+            <Badge variant="muted" title="Venue list price">
               list
-            </span>
+            </Badge>
           ) : null}
           {isCostStale(c.confirmedAt) ? (
-            <span
-              className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-              title="Unconfirmed for 1+ year"
-            >
+            <Badge variant="attention" title="Unconfirmed for 1+ year">
               stale
-            </span>
+            </Badge>
           ) : null}
         </div>
       ))}
@@ -146,7 +137,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
 function PaymentState({ row }: { row: VenueBookingRow }) {
   if (row.overdueAmount > 0)
     return (
-      <span className="text-xs font-medium text-red-600 dark:text-red-400">
+      <span className="text-xs font-medium text-destructive">
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </span>
     );
@@ -248,9 +239,7 @@ export function VenueDetails({
           so what to know before calling sits next to the booking editor. */}
       <div className="min-w-0 space-y-3">
         <div>
-        <p className="mb-1 text-xs font-medium text-muted-foreground">
-          Covered sessions
-        </p>
+        <h4 className="mb-1 text-sm font-medium">Covered sessions</h4>
         {row.sessions.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {row.nightCount ? "Lodging only." : "No sessions."}
@@ -288,9 +277,7 @@ export function VenueDetails({
         </div>
         {row.bookingNotes ? (
           <div>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">
-              Booking notes
-            </p>
+            <h4 className="mb-1 text-sm font-medium">Booking notes</h4>
             <p className="whitespace-pre-line text-xs text-muted-foreground">
               {row.bookingNotes}
             </p>
@@ -298,9 +285,7 @@ export function VenueDetails({
         ) : null}
         {row.scheduleLimitations ? (
           <div>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">
-              Schedule
-            </p>
+            <h4 className="mb-1 text-sm font-medium">Schedule</h4>
             <p className="whitespace-pre-line text-xs text-muted-foreground">
               {row.scheduleLimitations}
             </p>
@@ -410,9 +395,7 @@ export function VenueDetails({
           confirmation. Needs the engagement to exist to attach to. */}
       {row.bookingId && (documents.length > 0 || canEdit) ? (
         <div className="md:col-span-2">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Documents
-          </p>
+          <h4 className="mb-2 text-sm font-medium">Documents</h4>
           <DocumentsPanel
             target="booking"
             targetId={row.bookingId}
@@ -429,7 +412,7 @@ export function VenueDetails({
 
 const INSTALLMENT_STATE_STYLES: Record<ResolvedInstallment["state"], string> = {
   paid: "text-emerald-700 dark:text-emerald-300",
-  overdue: "font-medium text-red-600 dark:text-red-400",
+  overdue: "font-medium text-destructive",
   upcoming: "text-muted-foreground",
   unscheduled: "text-amber-700 dark:text-amber-300",
 };
@@ -522,7 +505,7 @@ function PaymentSchedule({
 
   return (
     <div className="space-y-2 border-t pt-2">
-      <p className="flex items-baseline gap-2 text-xs font-medium text-muted-foreground">
+      <h4 className="flex items-baseline gap-2 text-sm font-medium">
         Payment schedule
         {canEdit && !editing ? (
           <Button
@@ -535,7 +518,7 @@ function PaymentSchedule({
             {row.schedule.length ? "Edit" : "Add"}
           </Button>
         ) : null}
-      </p>
+      </h4>
 
       {!editing ? (
         row.schedule.length === 0 ? (
@@ -765,15 +748,15 @@ function PaymentLog({
 
   return (
     <div className="space-y-2 border-t pt-2">
-      <p className="text-xs font-medium text-muted-foreground">
+      <h4 className="text-sm font-medium">
         Payments
         {row.agreedTotal != null ? (
-          <span className="ml-2 font-normal">
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
             {formatMoney(row.paidTotal, row.agreedCurrency)} of{" "}
             {formatMoney(row.agreedTotal, row.agreedCurrency)} paid
           </span>
         ) : null}
-      </p>
+      </h4>
       {row.payments.length > 0 ? (
         <ul className="space-y-0.5 text-sm">
           {row.payments.map((p) => (

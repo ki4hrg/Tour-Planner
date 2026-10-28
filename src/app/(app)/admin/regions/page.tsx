@@ -58,7 +58,7 @@ export default async function RegionsAdminPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Add region</CardTitle>
+          <CardTitle>Add region</CardTitle>
         </CardHeader>
         <CardContent>
           <RegionForm

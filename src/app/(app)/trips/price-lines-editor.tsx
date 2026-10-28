@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useId } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { formatMoney, COST_UNIT_LABELS } from "@/lib/money";
 import {
   agreedTotal,
@@ -28,10 +28,6 @@ import {
 // itinerary. Lines mirror the venue's Cost lines, so the total follows the trip
 // headcount (`agreedTotal` in costs.ts).
 
-const NO_HEADCOUNT_CHIP =
-  "rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
-// Same amber chip the dashboard's list-price cell uses for an unconfirmed price.
-const STALE_CHIP = NO_HEADCOUNT_CHIP;
 
 // Compact read view: a lone per-group line is just its amount; anything else
 // shows its working — "Admission £12 + Lunch £20 /person × 40 + Group £90 =
@@ -51,7 +47,7 @@ export function AgreedPrice({
   return (
     <>
       <span>{formatPriceBreakdown(lines, currency, headcount)}</span>
-      {unknown ? <span className={NO_HEADCOUNT_CHIP}>no headcount</span> : null}
+      {unknown ? <Badge variant="attention">no headcount</Badge> : null}
     </>
   );
 }
@@ -208,12 +204,13 @@ export function PriceLinesEditor({
             disabled={disabled}
           />
           {d.stale ? (
-            <span
-              className={cn(STALE_CHIP, "shrink-0")}
+            <Badge
+              variant="attention"
+              className="shrink-0"
               title="List price unconfirmed for 1+ year"
             >
               stale
-            </span>
+            </Badge>
           ) : null}
           <Select
             value={d.unit}
@@ -271,7 +268,7 @@ export function PriceLinesEditor({
                 {formatMoney(perPerson, currency)} /person
                 {perGroup ? ` + ${formatMoney(perGroup, currency)}` : ""}
               </span>
-              <span className={NO_HEADCOUNT_CHIP}>no headcount</span>
+              <Badge variant="attention">no headcount</Badge>
             </span>
           )
         ) : null}

@@ -47,7 +47,7 @@ export default async function AdminPage() {
           <Link key={s.href} href={s.href} className="block">
             <Card className="h-full transition-colors hover:border-foreground/25">
               <CardHeader>
-                <CardTitle className="text-base">{s.title}</CardTitle>
+                <CardTitle>{s.title}</CardTitle>
               </CardHeader>
             </Card>
           </Link>

@@ -86,7 +86,7 @@ export function ItineraryOverview({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <CardTitle className="text-base">Itinerary</CardTitle>
+        <CardTitle>Itinerary</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {days.length > 0 ? (
             <Button size="sm" variant="ghost" onClick={toggleAll}>
@@ -215,7 +215,7 @@ function DayRow({
                   </span>
                 )
               ) : hasNight ? (
-                <span className="flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-400">
+                <span className="flex items-center gap-1 text-xs font-medium text-destructive">
                   <Moon className="size-3 shrink-0" />
                   No lodging
                 </span>

@@ -54,7 +54,7 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -102,7 +102,7 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Templates</CardTitle>
+          <CardTitle>Templates</CardTitle>
           <Button asChild size="sm">
             <Link href="/trips/new?template=1">New template</Link>
           </Button>
@@ -135,7 +135,7 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Calendar feed</CardTitle>
+          <CardTitle>Calendar feed</CardTitle>
         </CardHeader>
         <CardContent>
           <CalendarFeedManager
@@ -149,7 +149,7 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base text-destructive">
+          <CardTitle className="text-destructive">
             Danger zone
           </CardTitle>
         </CardHeader>

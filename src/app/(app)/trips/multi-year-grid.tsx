@@ -28,20 +28,20 @@ export type VenueLine = {
 function MoneyLine({ row }: { row: VenueBookingRow }) {
   if (row.overdueAmount > 0)
     return (
-      <div className="text-[11px] font-medium text-red-600 dark:text-red-400">
+      <div className="text-xs font-medium text-destructive">
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </div>
     );
   if (row.agreedTotal == null) return null;
   if (row.settled)
     return (
-      <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+      <div className="text-xs text-emerald-700 dark:text-emerald-300">
         settled
       </div>
     );
   if (row.unpaidBalance != null && row.unpaidBalance > 0)
     return (
-      <div className="text-[11px] text-amber-700 dark:text-amber-300">
+      <div className="text-xs text-amber-700 dark:text-amber-300">
         {formatMoney(row.unpaidBalance, row.agreedCurrency)} left
       </div>
     );
@@ -74,7 +74,7 @@ function Cell({
         canEdit={canEdit}
         showAge={false}
       />
-      <div className="text-[11px] text-muted-foreground">
+      <div className="text-xs text-muted-foreground">
         {isBookingSecured(row.status)
           ? "Booked"
           : row.status === "NOT_NEEDED" || row.earliest == null

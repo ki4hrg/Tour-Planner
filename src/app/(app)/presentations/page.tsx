@@ -38,7 +38,7 @@ export default async function PresentationsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Talks ({presentations.length})
           </CardTitle>
         </CardHeader>

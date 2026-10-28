@@ -30,7 +30,8 @@ import {
   type BookingProgressView,
   type WaitingView,
 } from "@/lib/booking-workflow";
-import { BOOKING_STATUS_CLASSES } from "@/lib/trips";
+import { bookingStatusVariant } from "@/lib/trips";
+import { badgeVariants } from "@/components/ui/badge";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
   setBookingStatus,
@@ -106,7 +107,7 @@ function StepChip({
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors focus-ring disabled:cursor-default",
         done
-          ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[step.status])
+          ? badgeVariants({ variant: bookingStatusVariant(step.status) })
           : isNext
             ? step.actor === "VENUE"
               ? "border-foreground/30 text-muted-foreground"

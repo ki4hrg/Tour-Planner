@@ -34,7 +34,7 @@ export default async function NewLocationPage() {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <LocationForm

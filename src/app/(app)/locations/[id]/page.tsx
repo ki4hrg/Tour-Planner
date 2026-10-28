@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
@@ -70,6 +71,10 @@ export default async function LocationDetailPage({
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
+  // On a phone the contact log is usually written on site, so a new note
+  // starts as IN_PERSON. Client hint (Chromium only; Safari/Firefox never send
+  // it, and fall back to the CALL default).
+  const onMobile = (await headers()).get("sec-ch-ua-mobile") === "?1";
   const { id } = await params;
 
   const location = await prisma.location.findUnique({
@@ -562,7 +567,7 @@ export default async function LocationDetailPage({
         <div className="order-2 min-w-0 space-y-6 lg:col-span-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
+          <CardTitle>Notes &amp; contact log</CardTitle>
         </CardHeader>
         <CardContent>
           <NotesThread
@@ -573,6 +578,7 @@ export default async function LocationDetailPage({
             canEdit={canEdit}
             today={toDateInput(todayUtc())}
             todoistDestinationPicker={todoistConnected}
+            defaultMethod={onMobile ? "IN_PERSON" : "CALL"}
           />
         </CardContent>
       </Card>
@@ -580,7 +586,7 @@ export default async function LocationDetailPage({
       {progressLines.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2">
               Booking progress
               {parent ? (
                 <Link
@@ -600,7 +606,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Documents</CardTitle>
+          <CardTitle>Documents</CardTitle>
         </CardHeader>
         <CardContent>
           <DocumentsPanel
@@ -617,7 +623,7 @@ export default async function LocationDetailPage({
       {contractGroups.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Contracts by trip</CardTitle>
+            <CardTitle>Contracts by trip</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {contractGroups.map((g) => (
@@ -652,7 +658,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Visit history</CardTitle>
+          <CardTitle>Visit history</CardTitle>
         </CardHeader>
         <CardContent>
           {visits.length === 0 ? (
@@ -709,7 +715,7 @@ export default async function LocationDetailPage({
       {location.bookable && engagements.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Engagement history</CardTitle>
+            <CardTitle>Engagement history</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y text-sm">
@@ -748,7 +754,7 @@ export default async function LocationDetailPage({
                           {formatMoney(e.agreed, e.currency)}
                         </span>{" "}
                         {e.overdueAmount > 0 ? (
-                          <span className="font-medium text-red-600 dark:text-red-400">
+                          <span className="font-medium text-destructive">
                             · {formatMoney(e.overdueAmount, e.currency)} overdue
                           </span>
                         ) : e.outstanding && e.outstanding > 0 ? (
@@ -776,7 +782,7 @@ export default async function LocationDetailPage({
       {currentTrips.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2">
               Current trips here
               {parent ? (
                 <Link
@@ -801,7 +807,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -919,7 +925,7 @@ export default async function LocationDetailPage({
       (parent || location.coveredSites.length > 0 || canEdit) ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
+            <CardTitle>
               {location.coveredSites.length > 0 ? "Covers" : "Booked via"}
             </CardTitle>
           </CardHeader>
@@ -938,7 +944,7 @@ export default async function LocationDetailPage({
 
       <Card id="contacts" className="scroll-mt-20">
         <CardHeader>
-          <CardTitle className="text-base">Contacts</CardTitle>
+          <CardTitle>Contacts</CardTitle>
         </CardHeader>
         <CardContent>
           <LocationContactsManager
@@ -961,7 +967,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Costs</CardTitle>
+          <CardTitle>Costs</CardTitle>
         </CardHeader>
         <CardContent>
           <CostsManager
@@ -976,7 +982,7 @@ export default async function LocationDetailPage({
       {location.bookable && !parent ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Booking workflow</CardTitle>
+            <CardTitle>Booking workflow</CardTitle>
           </CardHeader>
           <CardContent>
             <LocationWorkflowSelect
@@ -991,7 +997,7 @@ export default async function LocationDetailPage({
       {location.bookable && !parent && (paymentTerms.length > 0 || canEdit) ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Payment terms</CardTitle>
+            <CardTitle>Payment terms</CardTitle>
           </CardHeader>
           <CardContent>
             <LocationPaymentTerms
@@ -1007,7 +1013,7 @@ export default async function LocationDetailPage({
       {location.hostSite || canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Host site</CardTitle>
+            <CardTitle>Host site</CardTitle>
           </CardHeader>
           <CardContent>
             <HostSitePanel
@@ -1024,7 +1030,7 @@ export default async function LocationDetailPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-destructive">
+            <CardTitle className="text-destructive">
               Danger zone
             </CardTitle>
           </CardHeader>

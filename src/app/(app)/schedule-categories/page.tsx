@@ -37,7 +37,7 @@ export default async function ScheduleCategoriesPage() {
       {canManage ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add category</CardTitle>
+            <CardTitle>Add category</CardTitle>
           </CardHeader>
           <CardContent>
             <CategoryForm action={createCategory} submitLabel="Create" />

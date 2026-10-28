@@ -49,7 +49,7 @@ export default async function ContactDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -96,7 +96,7 @@ export default async function ContactDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Locations served ({contact.locations.length})
           </CardTitle>
         </CardHeader>
@@ -123,7 +123,7 @@ export default async function ContactDetailPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-destructive">
+            <CardTitle className="text-destructive">
               Danger zone
             </CardTitle>
           </CardHeader>

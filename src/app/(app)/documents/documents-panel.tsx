@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Download, FileText, Paperclip } from "lucide-react";
@@ -216,19 +217,13 @@ export function DocumentRow({
             </p>
           ) : null}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-              {DOCUMENT_KIND_LABELS[doc.kind]}
-            </span>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 font-medium",
-                staffOnly
-                  ? "border text-muted-foreground"
-                  : "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
-              )}
+            <Badge variant="secondary">{DOCUMENT_KIND_LABELS[doc.kind]}</Badge>
+            <Badge
+              variant={staffOnly ? "outline" : "secondary"}
+              className={cn(staffOnly && "text-muted-foreground")}
             >
               {badge}
-            </span>
+            </Badge>
             <span>{formatFileSize(doc.size)}</span>
             <span className="truncate">· {doc.filename}</span>
             <span>

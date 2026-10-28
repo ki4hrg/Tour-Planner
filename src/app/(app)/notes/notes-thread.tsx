@@ -41,6 +41,7 @@ export function NotesThread({
   canEdit,
   today,
   todoistDestinationPicker = false,
+  defaultMethod = "CALL",
 }: {
   target: NoteTarget;
   targetId: string;
@@ -48,6 +49,9 @@ export function NotesThread({
   contacts: ContactOption[];
   canEdit: boolean;
   today: string; // yyyy-mm-dd default for the "contacted on" field
+  // Pre-picked method for a NEW note (an edit keeps the note's own). On-site
+  // logging from a phone defaults to IN_PERSON.
+  defaultMethod?: NoteInput["method"];
   // Location page only (and only when the viewer has a Todoist connection):
   // follow-ups on location notes offer a Todoist project destination select.
   // Trip-context notes route via trip/trip-type links automatically.
@@ -144,6 +148,7 @@ export function NotesThread({
           <NoteForm
             contacts={contacts}
             today={today}
+            defaultMethod={defaultMethod}
             pending={pending}
             todoistLocationId={
               todoistDestinationPicker && target === "location"
@@ -178,6 +183,7 @@ function NoteForm({
   contacts,
   initial,
   today,
+  defaultMethod = "CALL",
   todoistLocationId,
   submitLabel,
   pending = false,
@@ -187,6 +193,7 @@ function NoteForm({
   contacts: ContactOption[];
   initial?: SerializedNote;
   today: string;
+  defaultMethod?: NoteInput["method"];
   todoistLocationId?: string;
   submitLabel: string;
   pending?: boolean;
@@ -195,7 +202,7 @@ function NoteForm({
 }) {
   const [body, setBody] = useState(initial?.body ?? "");
   const [method, setMethod] = useState<NoteInput["method"]>(
-    initial?.method ?? "CALL",
+    initial?.method ?? defaultMethod,
   );
   const [contactId, setContactId] = useState(initial?.contact?.id ?? NONE);
   const [contactedOn, setContactedOn] = useState(initial?.contactedOn ?? today);

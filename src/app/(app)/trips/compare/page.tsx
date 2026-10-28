@@ -177,7 +177,7 @@ export default async function CompareYearsPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             {totalNeedsInfo > 0
               ? `${totalNeedsInfo} booking${totalNeedsInfo === 1 ? "" : "s"} need attention`
               : "Nothing to book"}

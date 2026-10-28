@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { Fragment } from "react";
 import Link from "next/link";
 import {
@@ -16,11 +17,10 @@ import {
 } from "lucide-react";
 import type { TravelMethod } from "@prisma/client";
 import { ContactChannels } from "@/components/contact-channels";
-import { cn } from "@/lib/utils";
 import { mapHref } from "@/lib/maps";
 import {
   bookingStageText,
-  BOOKING_STATUS_CLASSES,
+  bookingStatusVariant,
   effectivePresenters,
   groupItemsByVenue,
   scheduleItemPrimaryLabel,
@@ -258,13 +258,23 @@ function RunHeader({
       </h4>
       {showVenueContacts
         ? run.venues.map((v) => (
-            <VenueContactLine
-              key={v.id}
-              venue={v}
-              // A multi-venue run names which venue each person belongs to.
-              showVenueName={run.venues.length > 1}
-              canAdd={!!canAddContacts}
-            />
+            <Fragment key={v.id}>
+              <VenueContactLine
+                venue={v}
+                // A multi-venue run names which venue each person belongs to.
+                showVenueName={run.venues.length > 1}
+                canAdd={!!canAddContacts}
+              />
+              {v.scheduleLimitations ? (
+                <p
+                  className="mt-0.5 truncate text-xs text-muted-foreground"
+                  title={v.scheduleLimitations}
+                >
+                  {run.venues.length > 1 ? `${v.name} · ` : ""}
+                  {v.scheduleLimitations}
+                </p>
+              ) : null}
+            </Fragment>
           ))
         : null}
     </div>
@@ -498,8 +508,9 @@ export function CategoryChip({
   category: { name: string; color: string | null };
 }) {
   return (
-    <span
-      className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+    <Badge
+      variant="muted"
+      className="uppercase tracking-wide"
       style={{
         color: category.color ?? "var(--muted-foreground)",
         backgroundColor: category.color
@@ -508,7 +519,7 @@ export function CategoryChip({
       }}
     >
       {category.name}
-    </span>
+    </Badge>
   );
 }
 
@@ -528,14 +539,9 @@ export function BookingPill({
   const what = booking.label ?? forLocation ?? null;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs">
-      <span
-        className={cn(
-          "rounded-full px-2 py-0.5 font-medium",
-          BOOKING_STATUS_CLASSES[booking.status],
-        )}
-      >
+      <Badge variant={bookingStatusVariant(booking.status)}>
         {bookingStageText(booking)}
-      </span>
+      </Badge>
       {what ? <span className="text-muted-foreground">{what}</span> : null}
       {booking.bookedContact ? (
         <span className="text-muted-foreground">

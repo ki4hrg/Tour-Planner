@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
@@ -10,7 +9,7 @@ import {
 import { ContactForm } from "./contact-form";
 import { createContact } from "./actions";
 import { ContactsList } from "./contacts-list";
-import { cn } from "@/lib/utils";
+import { FilterChip } from "@/components/filter-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +49,7 @@ export default async function ContactsPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">New contact</CardTitle>
+            <CardTitle>New contact</CardTitle>
           </CardHeader>
           <CardContent>
             <ContactForm
@@ -63,29 +62,17 @@ export default async function ContactsPage({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={qs()}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm focus-ring",
-            isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
-        >
+        <FilterChip href={qs()} active={isGrouped}>
           By location
-        </Link>
-        <Link
-          href={qs("flat")}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm focus-ring",
-            !isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
-        >
+        </FilterChip>
+        <FilterChip href={qs("flat")} active={!isGrouped}>
           Flat
-        </Link>
+        </FilterChip>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Directory ({contacts.length})
           </CardTitle>
         </CardHeader>

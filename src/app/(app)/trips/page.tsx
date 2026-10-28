@@ -9,9 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LinkCard } from "@/components/link-card";
+import { FilterChip } from "@/components/filter-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { formatDate, todayUtc } from "@/lib/dates";
 import {
   TRIP_LIFECYCLE_LABELS,
@@ -105,36 +105,27 @@ export default async function TripsPage({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
+        <FilterChip
           href={qs({ templates: showTemplates ? "1" : undefined })}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm focus-ring",
-            !lifecycle && !showAll ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
+          active={!lifecycle && !showAll}
         >
           Current
-        </Link>
+        </FilterChip>
         {TRIP_LIFECYCLES.map((s) => (
-          <Link
+          <FilterChip
             key={s}
             href={qs({ status: s, templates: showTemplates ? "1" : undefined })}
-            className={cn(
-              "rounded-full border px-3 py-1 text-sm focus-ring",
-              lifecycle === s ? "bg-muted font-medium" : "text-muted-foreground",
-            )}
+            active={lifecycle === s}
           >
             {TRIP_LIFECYCLE_LABELS[s]}
-          </Link>
+          </FilterChip>
         ))}
-        <Link
+        <FilterChip
           href={qs({ status: "all", templates: showTemplates ? "1" : undefined })}
-          className={cn(
-            "rounded-full border px-3 py-1 text-sm focus-ring",
-            showAll ? "bg-muted font-medium" : "text-muted-foreground",
-          )}
+          active={showAll}
         >
           All
-        </Link>
+        </FilterChip>
         <span className="ml-auto">
           <Link
             href={qs({ status, templates: showTemplates ? undefined : "1" })}
@@ -148,7 +139,7 @@ export default async function TripsPage({
       {multiYearTypes.length ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Compare years</CardTitle>
+            <CardTitle>Compare years</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             {multiYearTypes.map((tt) => (
@@ -167,7 +158,7 @@ export default async function TripsPage({
           <div key={t.id} className="flex flex-col gap-1.5">
             <LinkCard href={`/trips/${t.id}`} className="flex-1">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between gap-2 text-base">
+                <CardTitle className="flex items-center justify-between gap-2">
                   <span>{t.name}</span>
                   {t.isTemplate ? (
                     <TemplateChip />

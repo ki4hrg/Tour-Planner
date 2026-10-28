@@ -69,7 +69,7 @@ export default async function NewTripPage({
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             {asTemplate ? "Template details" : "Trip details"}
           </CardTitle>
         </CardHeader>

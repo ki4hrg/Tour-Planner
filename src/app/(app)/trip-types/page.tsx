@@ -29,7 +29,7 @@ export default async function TripTypesPage() {
       {canManage ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add trip type</CardTitle>
+            <CardTitle>Add trip type</CardTitle>
           </CardHeader>
           <CardContent>
             <TripTypeForm action={createTripType} submitLabel="Create" />
@@ -42,7 +42,7 @@ export default async function TripTypesPage() {
           const body = (
             <>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+                <CardTitle className="flex items-center gap-2">
                   {t.color ? (
                     <span
                       className="inline-block h-3 w-3 rounded-full"

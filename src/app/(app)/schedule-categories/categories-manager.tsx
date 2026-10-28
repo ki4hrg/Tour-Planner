@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ArrowDown, ArrowUp } from "lucide-react";
@@ -65,9 +66,12 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 />
                 <span className="font-medium">{c.name}</span>
                 {c.system ? (
-                  <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Badge
+                    variant="outline"
+                    className="uppercase tracking-wide text-muted-foreground"
+                  >
                     Built-in
-                  </span>
+                  </Badge>
                 ) : null}
                 <span className="text-xs text-muted-foreground">
                   · {c.itemCount} item{c.itemCount === 1 ? "" : "s"}

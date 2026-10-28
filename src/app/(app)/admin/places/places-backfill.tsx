@@ -58,7 +58,7 @@ export function PlacesBackfill({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Place ID refresh</CardTitle>
+          <CardTitle>Place ID refresh</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
           <p className="text-muted-foreground">
@@ -77,7 +77,7 @@ export function PlacesBackfill({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Unlinked locations ({locations.length})
           </CardTitle>
         </CardHeader>

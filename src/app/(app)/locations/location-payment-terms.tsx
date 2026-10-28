@@ -115,7 +115,7 @@ export function LocationPaymentTerms({
 
   return (
     <div className="space-y-2">
-      <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+      <h4 className="flex items-center gap-2 text-sm font-medium">
         Standing terms
         {canEdit && !editing ? (
           <Button
@@ -127,7 +127,7 @@ export function LocationPaymentTerms({
             {terms.length ? "Edit" : "Add"}
           </Button>
         ) : null}
-      </p>
+      </h4>
 
       {!editing ? (
         terms.length === 0 ? (

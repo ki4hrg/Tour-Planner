@@ -135,6 +135,22 @@ export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
   NOT_NEEDED: "bg-muted text-muted-foreground",
 };
 
+/** The `<Badge variant>` for a booking status (same palette as BOOKING_STATUS_CLASSES). */
+export function bookingStatusVariant(
+  status: BookingStatus,
+): "planned" | "progress" | "confirmed" | "muted" {
+  switch (status) {
+    case "PLANNED":
+      return "planned";
+    case "IN_PROGRESS":
+      return "progress";
+    case "CONFIRMED":
+      return "confirmed";
+    default:
+      return "muted";
+  }
+}
+
 /**
  * What a booking's pill reads: its workflow stage ("Availability confirmed")
  * when it has one, else the coarse status. NOT_NEEDED always wins.
@@ -173,6 +189,8 @@ export type SerializedItemLocation = {
     lat?: number | null;
     lng?: number | null;
     primaryContact?: PrimaryContactSummary | null;
+    // Staff day page only: the venue's standing schedule constraints.
+    scheduleLimitations?: string | null;
   };
 };
 
@@ -388,6 +406,7 @@ export type VenueRun = {
     lat?: number | null;
     lng?: number | null;
     primaryContact?: PrimaryContactSummary | null;
+    scheduleLimitations?: string | null;
   }[];
   items: SerializedScheduleItem[];
 };
@@ -440,6 +459,7 @@ export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
       lat: s.location.lat,
       lng: s.location.lng,
       primaryContact: s.location.primaryContact,
+      scheduleLimitations: s.location.scheduleLimitations,
     }));
     if (last && last.venues.length > 0 && sigOf(last.venues) === sigOf(venues)) {
       last.items.push(item);
@@ -501,6 +521,7 @@ type ItemLocationRow = {
     lat?: number | null;
     lng?: number | null;
     primaryContact?: PrimaryContactSummary | null;
+    scheduleLimitations?: string | null;
   };
 };
 
@@ -609,6 +630,9 @@ export function serializeScheduleItem(
             : {}),
           ...(s.location.primaryContact !== undefined
             ? { primaryContact: s.location.primaryContact }
+            : {}),
+          ...(s.location.scheduleLimitations !== undefined
+            ? { scheduleLimitations: s.location.scheduleLimitations }
             : {}),
         },
       })),

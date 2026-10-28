@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
@@ -76,7 +77,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">New API key</CardTitle>
+        <CardTitle>New API key</CardTitle>
       </CardHeader>
       <CardContent>
         {state.key ? (
@@ -95,7 +96,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
               >
                 <span className="min-w-0 flex-1">{state.key}</span>
                 {copiedKey ? (
-                  <Check className="size-4 shrink-0 text-green-700" />
+                  <Check className="size-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
                 ) : (
                   <Copy className="size-4 shrink-0 text-muted-foreground" />
                 )}
@@ -181,7 +182,7 @@ export function ApiKeysManager({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Keys</CardTitle>
+          <CardTitle>Keys</CardTitle>
         </CardHeader>
         <CardContent>
           {keys.length === 0 ? (
@@ -227,9 +228,9 @@ export function ApiKeysManager({
                       </TableCell>
                       <TableCell className="text-sm">
                         {key.revokedAt ? (
-                          <span className="text-red-600 font-medium">Revoked</span>
+                          <Badge variant="muted">Revoked</Badge>
                         ) : (
-                          <span className="text-green-600 font-medium">Active</span>
+                          <Badge variant="confirmed">Active</Badge>
                         )}
                       </TableCell>
                       <TableCell>

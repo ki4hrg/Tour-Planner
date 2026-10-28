@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { notFound } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 import { prisma } from "@/lib/db";
@@ -577,7 +578,7 @@ export default async function TripOverviewPage({
 
           <Card id="lodging">
             <CardHeader>
-              <CardTitle className="text-base">Lodging</CardTitle>
+              <CardTitle>Lodging</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <LodgingNights nights={nightCells} />
@@ -608,7 +609,7 @@ export default async function TripOverviewPage({
 
           <Card id="documents">
             <CardHeader>
-              <CardTitle className="text-base">Documents</CardTitle>
+              <CardTitle>Documents</CardTitle>
             </CardHeader>
             <CardContent>
               <TripDocumentsHub tripId={trip.id} canEdit={canEdit} />
@@ -621,7 +622,7 @@ export default async function TripOverviewPage({
           {wrapUp ? (
             <Card className="border-amber-300 dark:border-amber-800">
               <CardHeader>
-                <CardTitle className="text-base">Wrap-up</CardTitle>
+                <CardTitle>Wrap-up</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">
@@ -630,9 +631,7 @@ export default async function TripOverviewPage({
 
                 {wrapUp.followUps.length > 0 ? (
                   <div>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">
-                      Open follow-ups
-                    </p>
+                    <h4 className="mb-1 text-sm font-medium">Open follow-ups</h4>
                     <ul className="space-y-0.5">
                       {wrapUp.followUps.map((f) => (
                         <li key={f.id} className="truncate">
@@ -649,9 +648,7 @@ export default async function TripOverviewPage({
 
                 {wrapUp.openEngagements.length > 0 ? (
                   <div>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">
-                      Bookings to close out
-                    </p>
+                    <h4 className="mb-1 text-sm font-medium">Bookings to close out</h4>
                     <ul className="space-y-0.5">
                       {wrapUp.openEngagements.map((e) => (
                         <li key={e.id}>
@@ -676,9 +673,7 @@ export default async function TripOverviewPage({
 
                 {wrapUp.staleCostLocations.length > 0 ? (
                   <div>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">
-                      Prices to re-confirm
-                    </p>
+                    <h4 className="mb-1 text-sm font-medium">Prices to re-confirm</h4>
                     <ul className="space-y-0.5">
                       {wrapUp.staleCostLocations.map((l) => (
                         <li key={l.id}>
@@ -724,7 +719,7 @@ export default async function TripOverviewPage({
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-base">Details</CardTitle>
+              <CardTitle>Details</CardTitle>
               {canEdit && !trip.isTemplate ? (
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" asChild>
@@ -813,7 +808,7 @@ export default async function TripOverviewPage({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Cost estimate</CardTitle>
+              <CardTitle>Cost estimate</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               {estimate.length === 0 ? (
@@ -872,12 +867,10 @@ export default async function TripOverviewPage({
           {showMoney ? (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2 text-base">
+                <CardTitle className="flex items-center gap-2">
                   Money
                   {overdueCount > 0 ? (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300">
-                      {overdueCount} overdue
-                    </span>
+                    <Badge variant="overdue">{overdueCount} overdue</Badge>
                   ) : null}
                 </CardTitle>
                 <Link
@@ -926,13 +919,11 @@ export default async function TripOverviewPage({
                 {moneyAttention.length > 0 ? (
                   <div className="border-t pt-2">
                     {overdueCount > 0 ? (
-                      <p className="mb-1 text-xs font-medium text-red-600 dark:text-red-400">
+                      <h4 className="mb-1 text-sm font-medium text-destructive">
                         {overdueCount} payment{overdueCount === 1 ? "" : "s"} overdue
-                      </p>
+                      </h4>
                     ) : (
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        Next due
-                      </p>
+                      <h4 className="mb-1 text-sm font-medium">Next due</h4>
                     )}
                     <ul className="space-y-0.5">
                       {moneyAttention.slice(0, 3).map((a, i) => (
@@ -940,7 +931,7 @@ export default async function TripOverviewPage({
                           <div
                             className={
                               a.overdue
-                                ? "font-medium text-red-600 dark:text-red-400"
+                                ? "font-medium text-destructive"
                                 : "font-medium text-amber-700 dark:text-amber-300"
                             }
                           >
@@ -965,7 +956,7 @@ export default async function TripOverviewPage({
           {todoistConnected ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Todoist</CardTitle>
+                <CardTitle>Todoist</CardTitle>
               </CardHeader>
               <CardContent>
                 <TripTodoistPanel
@@ -980,7 +971,7 @@ export default async function TripOverviewPage({
           {canEdit && !trip.isTemplate ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Share links</CardTitle>
+                <CardTitle>Share links</CardTitle>
               </CardHeader>
               <CardContent>
                 <ShareManager
@@ -1004,7 +995,7 @@ export default async function TripOverviewPage({
           {canEdit && !trip.isTemplate ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Calendar feed</CardTitle>
+                <CardTitle>Calendar feed</CardTitle>
               </CardHeader>
               <CardContent>
                 <CalendarFeedManager
@@ -1020,7 +1011,7 @@ export default async function TripOverviewPage({
           {canEdit ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base text-destructive">
+                <CardTitle className="text-destructive">
                   Danger zone
                 </CardTitle>
               </CardHeader>
