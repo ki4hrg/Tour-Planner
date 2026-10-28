@@ -7,6 +7,7 @@ import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { useAction } from "@/lib/use-action";
+import { useOrigin } from "@/lib/use-origin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -41,9 +42,8 @@ export type SerializedShareLink = {
 
 type HostSite = { id: string; name: string };
 
-function shareUrl(token: string): string {
-  if (typeof window === "undefined") return `/share/${token}`;
-  return `${window.location.origin}/share/${token}`;
+function shareUrl(token: string, origin: string): string {
+  return `${origin}/share/${token}`;
 }
 
 // The redacted calendar (.ics) for a share link — same audience scoping as the
@@ -52,13 +52,11 @@ function shareUrl(token: string): string {
 function icsPath(token: string): string {
   return `/api/share/${token}.ics`;
 }
-function icsHttpsUrl(token: string): string {
-  if (typeof window === "undefined") return icsPath(token);
-  return `${window.location.origin}${icsPath(token)}`;
+function icsHttpsUrl(token: string, origin: string): string {
+  return `${origin}${icsPath(token)}`;
 }
-function icsWebcalUrl(token: string): string {
-  if (typeof window === "undefined") return icsPath(token);
-  return `webcal://${window.location.host}${icsPath(token)}`;
+function icsWebcalUrl(token: string, host: string): string {
+  return host ? `webcal://${host}${icsPath(token)}` : icsPath(token);
 }
 
 export function ShareManager({
@@ -98,18 +96,19 @@ function LinkRow({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const { origin, host } = useOrigin();
   const [copied, setCopied] = useState(false);
   const [icsCopied, setIcsCopied] = useState(false);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(shareUrl(link.token));
+    await navigator.clipboard.writeText(shareUrl(link.token, origin));
     setCopied(true);
     toast.success("Link copied.");
     setTimeout(() => setCopied(false), 1500);
   };
 
   const copyIcs = async () => {
-    await navigator.clipboard.writeText(icsHttpsUrl(link.token));
+    await navigator.clipboard.writeText(icsHttpsUrl(link.token, origin));
     setIcsCopied(true);
     toast.success("Calendar URL copied.");
     setTimeout(() => setIcsCopied(false), 1500);
@@ -137,7 +136,7 @@ function LinkRow({
       <div className="mt-2 flex items-center gap-2">
         <Input
           readOnly
-          value={shareUrl(link.token)}
+          value={shareUrl(link.token, origin)}
           className="h-8 font-mono text-base md:text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
@@ -155,7 +154,7 @@ function LinkRow({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">Calendar:</span>
           <Button asChild size="sm" variant="outline">
-            <a href={icsWebcalUrl(link.token)}>
+            <a href={icsWebcalUrl(link.token, host)}>
               <CalendarPlus className="size-4" /> Subscribe
             </a>
           </Button>

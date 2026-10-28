@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAction } from "@/lib/use-action";
+import { useOrigin } from "@/lib/use-origin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -29,13 +30,11 @@ function feedPath(token: string): string {
 
 // https URL for pasting into Google Calendar ("From URL"); webcal:// for one-tap
 // subscribe on iOS/macOS (and Google honours it too).
-function httpsUrl(token: string): string {
-  if (typeof window === "undefined") return feedPath(token);
-  return `${window.location.origin}${feedPath(token)}`;
+function httpsUrl(token: string, origin: string): string {
+  return `${origin}${feedPath(token)}`;
 }
-function webcalUrl(token: string): string {
-  if (typeof window === "undefined") return feedPath(token);
-  return `webcal://${window.location.host}${feedPath(token)}`;
+function webcalUrl(token: string, host: string): string {
+  return host ? `webcal://${host}${feedPath(token)}` : feedPath(token);
 }
 
 export function CalendarFeedManager({
@@ -77,10 +76,11 @@ function FeedRow({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const { origin, host } = useOrigin();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(httpsUrl(feed.token));
+    await navigator.clipboard.writeText(httpsUrl(feed.token, origin));
     setCopied(true);
     toast.success("Copied.");
     setTimeout(() => setCopied(false), 1500);
@@ -99,7 +99,7 @@ function FeedRow({
       <div className="mt-2 flex items-center gap-2">
         <Input
           readOnly
-          value={httpsUrl(feed.token)}
+          value={httpsUrl(feed.token, origin)}
           className="h-8 font-mono text-base md:text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
@@ -114,7 +114,7 @@ function FeedRow({
         </Button>
         {feed.enabled ? (
           <Button asChild size="sm" variant="outline">
-            <a href={webcalUrl(feed.token)}>
+            <a href={webcalUrl(feed.token, host)}>
               <CalendarPlus className="size-4" /> Subscribe
             </a>
           </Button>
