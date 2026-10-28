@@ -149,6 +149,15 @@ export function bookingStageText(b: {
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---
 
+// A venue's go-to person as itinerary surfaces show it. `email`/`role` ride
+// along only where the page's query selected them (the staff day view).
+export type PrimaryContactSummary = {
+  name: string;
+  phone: string | null;
+  email?: string | null;
+  role?: string | null;
+};
+
 // mapUrl/primaryContact are only loaded (and serialized) on staff surfaces that
 // need them (the day view); they must never reach the public share page — see
 // redactDaysForShare, which strips them defensively.
@@ -163,7 +172,7 @@ export type SerializedItemLocation = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
   };
 };
 
@@ -378,7 +387,7 @@ export type VenueRun = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
   }[];
   items: SerializedScheduleItem[];
 };
@@ -491,7 +500,7 @@ type ItemLocationRow = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
   };
 };
 
