@@ -116,6 +116,7 @@ export function ItineraryOverview({
             {days.map((day, i) => (
               <DayRow
                 key={day.id}
+                tripId={tripId}
                 day={day}
                 open={open.has(day.id)}
                 onToggle={() => toggleDay(day.id)}
@@ -133,6 +134,7 @@ export function ItineraryOverview({
 }
 
 function DayRow({
+  tripId,
   day,
   open,
   onToggle,
@@ -140,6 +142,7 @@ function DayRow({
   city,
   hasNight,
 }: {
+  tripId: string;
   day: SerializedDay;
   open: boolean;
   onToggle: () => void;
@@ -160,20 +163,38 @@ function DayRow({
   return (
     <li className="py-1">
       <Collapsible open={open} onOpenChange={onToggle}>
-        {/* <sm the location roll-up drops to its own line under the title —
+        {/* The chevron is the real (keyboard-reachable) toggle; the rest of the
+            row toggles on tap as a pointer convenience, except the day title,
+            which links to the day page — an <a> can't sit inside the trigger
+            <button>, so the title lives beside it, not in it.
+            <sm the location roll-up drops to its own line under the title —
             sharing one flex row squeezes the title into one-word-per-line
             wrapping that collides with the location text. */}
-        <CollapsibleTrigger className="flex w-full items-start gap-2 rounded-md py-1.5 text-left hover:bg-muted/50">
-          <ChevronRight
-            className={cn(
-              "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-90",
-            )}
-          />
-          <span className="min-w-0 flex-1 sm:flex sm:items-baseline sm:justify-between sm:gap-3">
+        <div className="flex items-start gap-1 rounded-md hover:bg-muted/50">
+          <CollapsibleTrigger
+            className="flex min-h-10 min-w-10 shrink-0 items-center justify-center"
+            aria-label={`${open ? "Collapse" : "Expand"} day ${day.dayIndex}`}
+          >
+            <ChevronRight
+              className={cn(
+                "size-4 text-muted-foreground transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          </CollapsibleTrigger>
+          <div
+            onClick={onToggle}
+            className="min-w-0 flex-1 cursor-pointer py-1.5 sm:flex sm:items-baseline sm:justify-between sm:gap-3"
+          >
             <span className="block">
-              <span className="font-medium">Day {day.dayIndex}</span>
-              {day.title ? ` — ${day.title}` : ""}
+              <Link
+                href={`/trips/${tripId}/days/${day.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="link-quiet"
+              >
+                <span className="font-medium">Day {day.dayIndex}</span>
+                {day.title ? ` — ${day.title}` : ""}
+              </Link>
               {day.date ? (
                 <span className="text-muted-foreground"> · {formatDate(day.date)}</span>
               ) : null}
@@ -213,8 +234,8 @@ function DayRow({
                 ) : null}
               </span>
             ) : null}
-          </span>
-        </CollapsibleTrigger>
+          </div>
+        </div>
         <CollapsibleContent>
           <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
             {plannedNames.length > 0 ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,35 +8,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Lock } from "lucide-react";
-import type { FormState } from "@/lib/forms";
-import type { DayLodgingSummary, SerializedScheduleItem } from "@/lib/trips";
-import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
+import { Lock, Pencil } from "lucide-react";
+import { useAction } from "@/lib/use-action";
+import type { SerializedScheduleItem } from "@/lib/trips";
+import {
+  timeToMinutes,
+  minutesToTime,
+  formatDuration,
+} from "@/lib/schedule-gaps";
 import { scheduleItemPrimaryLabel } from "@/lib/trips";
-import { TimelineGroups } from "../../../itinerary-timeline";
+import {
+  TimelineGroups,
+  type OvernightLodging,
+} from "../../../itinerary-timeline";
 import { VenueEngagementStatus } from "../../../venue-engagements";
 import { updateScheduleItem, shiftDaySchedule } from "../../../actions";
 
-// Local direct-call action helper — same shape as booking-row / itinerary-editor
-// (a deliberate per-file copy, per project convention).
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
+const LAST_MINUTE = 24 * 60 - 1;
 
 // The day view's timeline: the shared read component plus, for planners, an
 // inline quick-edit on each row — time / title / notes tweaks without leaving
 // the phone screen. Structural changes (venues, category, reorder) jump to the
 // full itinerary editor anchored at this item.
+//
+// This is the one-handed coach screen: every control here is a real Button at
+// 40px+ (min-h-10) rather than an inline text link.
 export function DayTimeline({
   tripId,
   dayId,
@@ -47,7 +43,7 @@ export function DayTimeline({
   tripId: string;
   dayId: string;
   items: SerializedScheduleItem[];
-  lodging: DayLodgingSummary | null;
+  lodging: OvernightLodging | null;
   canEdit: boolean;
 }) {
   const hasTimedItems = items.some((it) => it.startTime);
@@ -74,6 +70,8 @@ export function DayTimeline({
   );
 }
 
+const SHIFT_PRESETS = [15, 30, 45] as const;
+
 // Slide the whole day, or everything from a chosen item onward, by a fixed number
 // of minutes — items keep their own lengths and spacing. This is a *slide*, not a
 // *compress*: it moves later items rigidly, so it won't hold a fixed end time (a
@@ -93,6 +91,20 @@ function DayShiftControl({
 
   const timedItems = items.filter((it) => it.startTime);
 
+  // Opening from the coach mid-day: the slide almost always starts at the next
+  // thing on the schedule, so preselect the first item still ahead of the
+  // clock (an event handler, so reading the clock here is render-pure).
+  const openPanel = () => {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const next = timedItems.find((it) => {
+      const start = timeToMinutes(it.startTime ?? "");
+      return start !== null && start > nowMin;
+    });
+    setFromId(next?.id ?? "");
+    setOpen(true);
+  };
+
   const apply = (sign: 1 | -1) => {
     const delta = sign * Math.abs(Math.trunc(minutes));
     if (!delta) {
@@ -107,54 +119,20 @@ function DayShiftControl({
 
   if (!open) {
     return (
-      <button
+      <Button
         type="button"
-        onClick={() => setOpen(true)}
-        className="text-xs text-muted-foreground link-quiet"
+        variant="outline"
+        className="min-h-10"
+        onClick={openPanel}
       >
         Slide times
-      </button>
+      </Button>
     );
   }
 
   return (
-    <div className="space-y-2.5 rounded-md border border-dashed p-3">
+    <div className="space-y-3 rounded-md border border-dashed p-3">
       <p className="text-sm font-medium">Slide times</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs" htmlFor={`shift-min-${dayId}`}>
-            Minutes
-          </Label>
-          <Input
-            id={`shift-min-${dayId}`}
-            type="number"
-            min={1}
-            step={5}
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
-            className="w-24"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => apply(-1)}
-          >
-            − Earlier
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={pending}
-            onClick={() => apply(1)}
-          >
-            + Later
-          </Button>
-        </div>
-      </div>
       <div className="space-y-1">
         <Label className="text-xs" htmlFor={`shift-from-${dayId}`}>
           From
@@ -163,27 +141,83 @@ function DayShiftControl({
           id={`shift-from-${dayId}`}
           value={fromId}
           onChange={(e) => setFromId(e.target.value)}
-          className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+          className="h-10 w-full rounded-md border bg-background px-2 text-sm"
         >
           <option value="">Whole day</option>
           {timedItems.map((it) => (
             <option key={it.id} value={it.id}>
               {it.startTime} · {scheduleItemPrimaryLabel(it).primary}
+              {/* A fixed item never moves and stops the slide — say so where
+                  the planner picks the start point. */}
+              {it.fixedTime ? " (fixed)" : ""}
             </option>
           ))}
         </select>
       </div>
-      <button
+      <div className="space-y-1">
+        <Label className="text-xs" htmlFor={`shift-min-${dayId}`}>
+          Minutes
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id={`shift-min-${dayId}`}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={5}
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            className="h-10 w-20 font-mono tabular-nums"
+          />
+          {SHIFT_PRESETS.map((m) => (
+            <Button
+              key={m}
+              type="button"
+              variant={minutes === m ? "secondary" : "outline"}
+              aria-pressed={minutes === m}
+              className="min-h-10 flex-1"
+              onClick={() => setMinutes(m)}
+            >
+              {m}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-10 w-full"
+          disabled={pending}
+          onClick={() => apply(-1)}
+        >
+          − Earlier
+        </Button>
+        <Button
+          type="button"
+          className="min-h-10 w-full"
+          disabled={pending}
+          onClick={() => apply(1)}
+        >
+          + Later
+        </Button>
+      </div>
+      <Button
         type="button"
+        variant="ghost"
+        className="min-h-10"
+        disabled={pending}
         onClick={() => setOpen(false)}
-        className="text-xs text-muted-foreground link-quiet"
       >
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }
 
+// The Edit affordance plus the form it opens. The form is mounted only while
+// open, so Cancel discards the draft and the next open starts from the saved
+// item again.
 function QuickEdit({
   tripId,
   item,
@@ -192,6 +226,39 @@ function QuickEdit({
   item: SerializedScheduleItem;
 }) {
   const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <div className="mt-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Edit"
+          className="-ml-2.5 min-h-10 text-muted-foreground"
+          onClick={() => setOpen(true)}
+        >
+          <Pencil aria-hidden />
+          Edit
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <QuickEditForm tripId={tripId} item={item} onClose={() => setOpen(false)} />
+  );
+}
+
+function QuickEditForm({
+  tripId,
+  item,
+  onClose,
+}: {
+  tripId: string;
+  item: SerializedScheduleItem;
+  onClose: () => void;
+}) {
   const { pending, run } = useAction();
 
   const [title, setTitle] = useState(item.title ?? "");
@@ -202,23 +269,26 @@ function QuickEdit({
   // Ripple a time change through the rest of the day (default on).
   const [cascade, setCascade] = useState(true);
 
+  const startMin = startTime ? timeToMinutes(startTime) : null;
+  const endMin = endTime ? timeToMinutes(endTime) : null;
+
   // End can't precede start: `min` guides the picker; this backstops manual entry.
   const timesInvalid =
-    !!startTime &&
-    !!endTime &&
-    timeToMinutes(startTime) !== null &&
-    timeToMinutes(endTime) !== null &&
-    (timeToMinutes(endTime) as number) < (timeToMinutes(startTime) as number);
+    startMin !== null && endMin !== null && endMin < startMin;
+  const duration =
+    startMin !== null && endMin !== null && endMin >= startMin
+      ? endMin - startMin
+      : null;
 
-  // Pushing the start past the end drags the end along, preserving the duration.
+  // Moving the start moves the end with it, either direction, so a nudge keeps
+  // the item's length (clamped to the day's last minute).
   const onStartChange = (v: string) => {
     const vMin = v ? timeToMinutes(v) : null;
-    const endMin = endTime ? timeToMinutes(endTime) : null;
-    if (vMin !== null && endMin !== null && vMin > endMin) {
-      const prevStart = startTime ? timeToMinutes(startTime) : null;
-      const prevDuration =
-        prevStart !== null && endMin >= prevStart ? endMin - prevStart : 0;
-      setEndTime(minutesToTime(Math.min(24 * 60 - 1, vMin + prevDuration)));
+    if (vMin !== null && startMin !== null && endMin !== null) {
+      const delta = vMin - startMin;
+      setEndTime(
+        minutesToTime(Math.max(0, Math.min(LAST_MINUTE, endMin + delta))),
+      );
     }
     setStartTime(v);
   };
@@ -246,24 +316,25 @@ function QuickEdit({
           },
           { cascade: canCascade && cascade },
         ),
-      () => setOpen(false),
+      onClose,
     );
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-0.5 text-xs text-muted-foreground link-quiet"
-      >
-        Edit
-      </button>
-    );
-  }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md border border-dashed p-2.5">
-      <div className="grid grid-cols-2 gap-2">
+    <form
+      className="mt-2 space-y-2 rounded-md border border-dashed p-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!pending && !timesInvalid) save();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      {/* One column on a phone: a side-by-side pair clips the picker text. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="space-y-1">
           <Label className="text-xs" htmlFor={`qe-start-${item.id}`}>
             Start
@@ -273,6 +344,7 @@ function QuickEdit({
             type="time"
             value={startTime}
             onChange={(e) => onStartChange(e.target.value)}
+            className="min-h-10 min-w-0 font-mono tabular-nums"
           />
         </div>
         <div className="space-y-1">
@@ -286,23 +358,26 @@ function QuickEdit({
             min={startTime || undefined}
             aria-invalid={timesInvalid}
             onChange={(e) => setEndTime(e.target.value)}
+            className="min-h-10 min-w-0 font-mono tabular-nums"
           />
         </div>
       </div>
 
       {timesInvalid ? (
-        <p className="text-xs text-destructive">
-          End is before start.
+        <p className="text-xs text-destructive">End is before start.</p>
+      ) : duration !== null && duration > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {/* The gap formatter's default label is "free"; this is a length. */}
+          {formatDuration(duration, "").trim()}
         </p>
       ) : null}
 
       {startTime ? (
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
+        <div className="space-y-0.5">
           {/* A fixed time is one we don't control (a public event): shifting
               and reordering never move it, and a ripple stops there. */}
-          <label className="flex items-start gap-2 text-sm">
+          <label className="flex min-h-10 w-full items-center gap-3 text-sm">
             <Checkbox
-              className="mt-0.5"
               checked={fixedTime}
               onCheckedChange={(v) => setFixedTime(v === true)}
             />
@@ -312,9 +387,8 @@ function QuickEdit({
             </span>
           </label>
           {canCascade ? (
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex min-h-10 w-full items-center gap-3 text-sm">
               <Checkbox
-                className="mt-0.5"
                 checked={cascade}
                 onCheckedChange={(v) => setCascade(v === true)}
               />
@@ -332,6 +406,7 @@ function QuickEdit({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Optional"
+          className="min-h-10"
         />
       </div>
       <div className="space-y-1">
@@ -347,27 +422,31 @@ function QuickEdit({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button
-          size="sm"
+          type="submit"
+          className="min-h-10"
           disabled={pending || timesInvalid}
-          onClick={save}
         >
           {pending ? "Saving…" : "Save"}
         </Button>
         <Button
-          size="sm"
+          type="button"
           variant="ghost"
+          className="min-h-10"
           disabled={pending}
-          onClick={() => setOpen(false)}
+          onClick={onClose}
         >
           Cancel
         </Button>
-        <Link
-          href={`/trips/${tripId}/itinerary#item-${item.id}`}
-          className="ml-auto text-xs text-muted-foreground link-quiet"
+        <Button
+          asChild
+          variant="ghost"
+          className="ml-auto min-h-10 text-muted-foreground"
         >
-          All options
-        </Link>
+          <Link href={`/trips/${tripId}/itinerary#item-${item.id}`}>
+            All options
+          </Link>
+        </Button>
       </div>
-    </div>
+    </form>
   );
 }

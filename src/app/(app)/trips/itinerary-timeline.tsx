@@ -52,9 +52,10 @@ export function TimelineGroups({
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
-  lodging?: DayLodgingSummary | null;
-  // Link venue subheaders to their location pages. Only for authenticated app
-  // surfaces — the public share page and print view keep plain text.
+  lodging?: OvernightLodging | null;
+  // Link venue subheaders (and the overnight venue) to their location pages.
+  // Only for authenticated app surfaces — the public share page and print view
+  // keep plain text.
   linkVenues?: boolean;
   // Call/WhatsApp + map affordances on venue subheaders. Day-view only; the
   // data (primaryContact/mapUrl) is only loaded there anyway.
@@ -94,6 +95,7 @@ export function TimelineGroups({
             run={run}
             linkVenues={linkVenues}
             showVenueContacts={showVenueContacts}
+            canAddContacts={showBookings}
             renderVenueExtra={renderVenueExtra}
           />
           <ul className="space-y-1">
@@ -113,10 +115,28 @@ export function TimelineGroups({
           </ul>
         </div>
       ))}
-      {lodging ? <OvernightLine lodging={lodging} /> : null}
+      {lodging ? (
+        <OvernightLine lodging={lodging} linkVenue={linkVenues} />
+      ) : null}
     </div>
   );
 }
+
+// A venue's go-to person as the day view shows it. `email`/`role` ride along
+// only where the page's query selected them (the staff day view); the base
+// summary type carries name + phone.
+type VenueContact = {
+  name: string;
+  phone: string | null;
+  email?: string | null;
+  role?: string | null;
+};
+
+// The lodging summary plus, where the caller resolved it, the venue's id so the
+// overnight line can link through to the location page.
+export type OvernightLodging = DayLodgingSummary & {
+  locationId?: string | null;
+};
 
 // Browsers don't break lines after "/", so a compound like "House/Museum" is
 // one unbreakable token that forces the whole thing onto the next line. Insert
@@ -149,15 +169,31 @@ function GapLine({ gap }: { gap: { durationMinutes: number } }) {
 
 // Where the group sleeps that night — surfaced inline in the itinerary so the
 // overnight venue reads as part of the day, not just the Lodging panel (GH #15).
-export function OvernightLine({ lodging }: { lodging: DayLodgingSummary }) {
+export function OvernightLine({
+  lodging,
+  linkVenue = false,
+}: {
+  lodging: OvernightLodging;
+  // Link the venue name to its location page (needs `lodging.locationId`).
+  linkVenue?: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <Moon className="size-3.5 shrink-0" />
       <span>
         Overnight ·{" "}
-        <span className="font-medium text-foreground">
-          {lodging.locationName}
-        </span>
+        {linkVenue && lodging.locationId ? (
+          <Link
+            href={`/locations/${lodging.locationId}`}
+            className="font-medium text-foreground link-quiet"
+          >
+            {lodging.locationName}
+          </Link>
+        ) : (
+          <span className="font-medium text-foreground">
+            {lodging.locationName}
+          </span>
+        )}
       </span>
     </div>
   );
@@ -169,58 +205,109 @@ function RunHeader({
   run,
   linkVenues,
   showVenueContacts,
+  canAddContacts,
   renderVenueExtra,
 }: {
   run: VenueRun;
   linkVenues?: boolean;
   showVenueContacts?: boolean;
+  // Offer "Add contact" for a venue with no primary contact — planner surfaces
+  // only (the location page's contact form is PLANNER-gated).
+  canAddContacts?: boolean;
   renderVenueExtra?: (locationId: string) => React.ReactNode;
 }) {
   if (run.venues.length === 0) return null;
   return (
-    <h4 className="mb-2 break-after-avoid-page text-base font-semibold tracking-tight text-foreground">
-      {run.venues.map((v, i) => {
-        const maps = showVenueContacts ? mapHref(v) : null;
-        return (
-          <span key={v.id} className="[&:not(:first-child)]:ml-1.5">
-            {i > 0 ? "· " : ""}
-            {linkVenues ? (
-              <Link
-                href={`/locations/${v.id}`}
-                className="underline-offset-4 hover:underline"
-              >
-                {breakAfterSlashes(v.name)}
-              </Link>
-            ) : (
-              breakAfterSlashes(v.name)
-            )}
-            {showVenueContacts && v.primaryContact?.phone ? (
-              <ContactChannels
-                phone={v.primaryContact.phone}
-                className="ml-1.5 align-middle"
-              />
-            ) : null}
-            {maps ? (
-              <a
-                href={maps}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Open ${v.name} in Maps`}
-                title={`Open ${v.name} in Maps`}
-                className="ml-1 inline-flex size-7 items-center justify-center rounded-full border align-middle text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <MapPin className="size-3.5" />
-              </a>
-            ) : null}
-            {renderVenueExtra ? (
-              <span className="ml-2 inline-flex align-middle font-sans text-xs font-normal tracking-normal">
-                {renderVenueExtra(v.id)}
-              </span>
-            ) : null}
-          </span>
-        );
-      })}
-    </h4>
+    <div className="mb-2 break-after-avoid-page">
+      <h4 className="text-base font-semibold tracking-tight text-foreground">
+        {run.venues.map((v, i) => {
+          const maps = showVenueContacts ? mapHref(v) : null;
+          return (
+            <span key={v.id} className="[&:not(:first-child)]:ml-1.5">
+              {i > 0 ? "· " : ""}
+              {linkVenues ? (
+                <Link
+                  href={`/locations/${v.id}`}
+                  className="underline-offset-4 hover:underline"
+                >
+                  {breakAfterSlashes(v.name)}
+                </Link>
+              ) : (
+                breakAfterSlashes(v.name)
+              )}
+              {maps ? (
+                <a
+                  href={maps}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open ${v.name} in Maps`}
+                  title={`Open ${v.name} in Maps`}
+                  className="ml-1 inline-flex size-7 items-center justify-center rounded-full border align-middle text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <MapPin className="size-3.5" />
+                </a>
+              ) : null}
+              {renderVenueExtra ? (
+                <span className="ml-2 inline-flex align-middle font-sans text-xs font-normal tracking-normal">
+                  {renderVenueExtra(v.id)}
+                </span>
+              ) : null}
+            </span>
+          );
+        })}
+      </h4>
+      {showVenueContacts
+        ? run.venues.map((v) => (
+            <VenueContactLine
+              key={v.id}
+              venue={v}
+              // A multi-venue run names which venue each person belongs to.
+              showVenueName={run.venues.length > 1}
+              canAdd={!!canAddContacts}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
+// Who to ring at the venue: "Name · Role" plus one-tap call / text / email,
+// or (for planners) a link to add one. The channels are the point of this
+// line on the coach, so the name is never shown without them.
+function VenueContactLine({
+  venue,
+  showVenueName,
+  canAdd,
+}: {
+  venue: { id: string; name: string; primaryContact?: VenueContact | null };
+  showVenueName: boolean;
+  canAdd: boolean;
+}) {
+  const c = venue.primaryContact;
+  if (!c) {
+    if (!canAdd) return null;
+    return (
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {showVenueName ? `${venue.name} · ` : ""}
+        {/* Negative margins pad the tap target to 40px without adding space. */}
+        <Link
+          href={`/locations/${venue.id}#contacts`}
+          className="-my-3 inline-block py-3 link-quiet"
+        >
+          Add contact
+        </Link>
+      </p>
+    );
+  }
+  return (
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span>
+        {showVenueName ? `${venue.name} · ` : ""}
+        {c.name}
+        {c.role ? ` · ${c.role}` : ""}
+      </span>
+      <ContactChannels phone={c.phone} email={c.email} />
+    </p>
   );
 }
 

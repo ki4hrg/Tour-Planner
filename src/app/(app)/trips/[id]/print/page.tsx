@@ -9,6 +9,7 @@ import {
   TRAVEL_LEG_INCLUDE,
   type SerializedDay,
 } from "@/lib/trips";
+import { lodgingForDays } from "@/lib/stays";
 import { TimelineGroups } from "../../itinerary-timeline";
 import { PrintActions } from "./print-actions";
 
@@ -25,6 +26,40 @@ function unscheduledLocations(day: SerializedDay): string[] {
   return (day.plannedLocations ?? [])
     .filter((p) => !visited.has(p.name))
     .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
+}
+
+// The day's venue contacts for the paper fallback: each visited venue's
+// primary contact plus the overnight venue's, deduped by venue, in visit
+// order. Name alone is kept (a name to ask for at the desk) when the contact
+// has no phone.
+type DayContact = { venue: string; name: string; phone: string | null };
+function dayContacts(
+  day: SerializedDay,
+  overnight: {
+    id: string;
+    name: string;
+    primaryContact: { name: string; phone: string | null } | null;
+  } | null,
+): DayContact[] {
+  const seen = new Set<string>();
+  const out: DayContact[] = [];
+  for (const item of day.items) {
+    for (const s of item.sites) {
+      const c = s.location.primaryContact;
+      if (!c || seen.has(s.location.id)) continue;
+      seen.add(s.location.id);
+      out.push({ venue: s.location.name, name: c.name, phone: c.phone });
+    }
+  }
+  // A day spent at the overnight venue already lists its contact above.
+  if (overnight?.primaryContact && !seen.has(overnight.id)) {
+    out.push({
+      venue: `${overnight.name} (overnight)`,
+      name: overnight.primaryContact.name,
+      phone: overnight.primaryContact.phone,
+    });
+  }
+  return out;
 }
 
 // A print-friendly, fully-expanded itinerary. The app nav (print:hidden) and the
@@ -61,7 +96,15 @@ export default async function TripPrintPage({
               travel: TRAVEL_LEG_INCLUDE,
               sites: {
                 orderBy: { order: "asc" },
-                include: { location: { select: { id: true, name: true } } },
+                include: {
+                  location: {
+                    select: {
+                      id: true,
+                      name: true,
+                      primaryContact: { select: { name: true, phone: true } },
+                    },
+                  },
+                },
               },
               bookings: {
                 orderBy: { createdAt: "asc" },
@@ -79,9 +122,18 @@ export default async function TripPrintPage({
   const stays = await prisma.stay.findMany({
     where: { tripId: id },
     orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
-    include: { location: { select: { id: true, name: true } } },
+    include: {
+      location: {
+        select: {
+          id: true,
+          name: true,
+          primaryContact: { select: { name: true, phone: true } },
+        },
+      },
+    },
   });
   const lodgingByDay = summarizeDayLodging(trip.days, stays);
+  const overnightByDay = lodgingForDays(trip.days, stays);
   const days = trip.days.map(serializeDay);
 
   return (
@@ -105,6 +157,10 @@ export default async function TripPrintPage({
       ) : (
         days.map((day, i) => {
           const planned = unscheduledLocations(day);
+          const contacts = dayContacts(
+            day,
+            overnightByDay.get(day.id)?.location ?? null,
+          );
           return (
             <section
               key={day.id}
@@ -142,6 +198,20 @@ export default async function TripPrintPage({
                 <p className="mt-2 break-inside-avoid-page text-xs text-muted-foreground">
                   <span className="font-medium">Planned:</span>{" "}
                   {planned.join(" · ")}
+                </p>
+              ) : null}
+              {contacts.length > 0 ? (
+                <p className="mt-2 break-inside-avoid-page text-xs text-muted-foreground">
+                  <span className="font-medium">Contacts:</span>{" "}
+                  {contacts.map((c, ci) => (
+                    <span key={`${c.venue}-${ci}`}>
+                      {ci > 0 ? " · " : ""}
+                      {c.venue} — {c.name}
+                      {c.phone ? (
+                        <span className="tabular-nums"> {c.phone}</span>
+                      ) : null}
+                    </span>
+                  ))}
                 </p>
               ) : null}
             </section>

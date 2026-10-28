@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
   TRAVEL_LEG_INCLUDE,
   PLANNED_LOCATIONS_INCLUDE,
 } from "@/lib/trips";
+import { lodgingForDays } from "@/lib/stays";
 import { DayTimeline } from "./day-timeline";
 import { VenueEngagementsProvider } from "../../../venue-engagements";
 import { loadVenueEngagements } from "@/lib/venue-engagements";
@@ -65,7 +66,16 @@ export default async function TripDayPage({
                       googlePlaceId: true,
                       lat: true,
                       lng: true,
-                      primaryContact: { select: { name: true, phone: true } },
+                      // Who to ring: name/role + every channel. This page is
+                      // behind requireUser, so staff-only data is fine here.
+                      primaryContact: {
+                        select: {
+                          name: true,
+                          role: true,
+                          phone: true,
+                          email: true,
+                        },
+                      },
                     },
                   },
                 },
@@ -95,7 +105,13 @@ export default async function TripDayPage({
     orderBy: [{ priority: "desc" }, { checkIn: "asc" }],
     include: { location: { select: { id: true, name: true } } },
   });
-  const lodging = summarizeDayLodging(trip.days, stays)[day.id] ?? null;
+  const lodgingSummary = summarizeDayLodging(trip.days, stays)[day.id] ?? null;
+  // The summary carries only the name; resolve the stay again for the venue id
+  // so the Overnight line can link through to the location page.
+  const overnightStay = lodgingForDays(trip.days, stays).get(day.id) ?? null;
+  const lodging = lodgingSummary
+    ? { ...lodgingSummary, locationId: overnightStay?.location.id ?? null }
+    : null;
 
   const serialized = serializeDay(day);
   // Each venue's (trip, location) engagement, shown beside the venue subheader.
@@ -109,9 +125,9 @@ export default async function TripDayPage({
   const visitedNames = new Set(
     serialized.items.flatMap((it) => it.sites.map((s) => s.location.name)),
   );
-  const plannedNames = (serialized.plannedLocations ?? [])
-    .filter((p) => !visitedNames.has(p.name))
-    .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
+  const planned = (serialized.plannedLocations ?? []).filter(
+    (p) => !visitedNames.has(p.name),
+  );
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -131,9 +147,24 @@ export default async function TripDayPage({
           Day {day.dayIndex}
           {day.date ? ` · ${formatDate(day.date)}` : ""}
         </p>
-        <h1 className="text-2xl font-semibold">
-          {day.title ?? `Day ${day.dayIndex}`}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold">
+            {day.title ?? `Day ${day.dayIndex}`}
+          </h1>
+          {canEdit ? (
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="min-h-10 shrink-0"
+            >
+              <Link href={`/trips/${trip.id}/itinerary#day-${day.id}`}>
+                <Pencil aria-hidden />
+                Edit day
+              </Link>
+            </Button>
+          ) : null}
+        </div>
         {day.logisticalNotes ? (
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">
             {day.logisticalNotes}
@@ -144,10 +175,18 @@ export default async function TripDayPage({
             {day.participantNotes}
           </p>
         ) : null}
-        {plannedNames.length > 0 ? (
+        {planned.length > 0 ? (
           <p className="text-sm text-muted-foreground">
             <span className="font-medium">Planned:</span>{" "}
-            {plannedNames.join(" · ")}
+            {planned.map((p, i) => (
+              <span key={p.id}>
+                {i > 0 ? " · " : ""}
+                <Link href={`/locations/${p.locationId}`} className="link-quiet">
+                  {p.name}
+                </Link>
+                {p.note ? ` (${p.note})` : ""}
+              </span>
+            ))}
           </p>
         ) : null}
       </header>
@@ -174,7 +213,7 @@ export default async function TripDayPage({
 
       <nav className="flex items-center justify-between gap-2">
         {prev ? (
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="lg" className="min-h-10">
             <Link href={`/trips/${trip.id}/days/${prev.id}`}>
               <ChevronLeft className="size-4" /> Day {prev.dayIndex}
             </Link>
@@ -182,11 +221,11 @@ export default async function TripDayPage({
         ) : (
           <span />
         )}
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="lg" className="min-h-10">
           <Link href={`/trips/${trip.id}/itinerary`}>Full itinerary</Link>
         </Button>
         {next ? (
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="lg" className="min-h-10">
             <Link href={`/trips/${trip.id}/days/${next.id}`}>
               Day {next.dayIndex} <ChevronRight className="size-4" />
             </Link>
