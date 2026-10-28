@@ -52,7 +52,7 @@ export function TodoistConnectForm() {
   return (
     <form action={formAction} className="space-y-3">
       <div className="space-y-1.5">
-        <Label htmlFor="token">Todoist API token</Label>
+        <Label htmlFor="token">API token</Label>
         <Input
           id="token"
           name="token"
@@ -103,7 +103,7 @@ export function TodoistManager({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>— Inbox —</SelectItem>
+        <SelectItem value={NONE}>Inbox</SelectItem>
         {(projects ?? []).map((p) => (
           <SelectItem key={p.id} value={p.id}>
             {p.name}
@@ -146,7 +146,7 @@ export function TodoistManager({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs">Per-trip-type projects</Label>
+        <Label className="text-xs">Projects by trip type</Label>
         <ul className="space-y-2">
           {tripTypes.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-3">

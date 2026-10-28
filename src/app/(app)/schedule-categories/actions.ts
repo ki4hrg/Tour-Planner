@@ -30,7 +30,7 @@ export async function createCategory(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "That name is already used." };
+      return { error: "Name already in use." };
     }
     throw e;
   }
@@ -66,7 +66,7 @@ export async function updateCategory(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "That name is already used." };
+      return { error: "Name already in use." };
     }
     throw e;
   }

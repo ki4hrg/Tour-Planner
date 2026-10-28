@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const SECTIONS = [
   {
     href: "/trip-types",
-    title: "Trip Types",
+    title: "Trip types",
   },
   {
     href: "/schedule-categories",
@@ -32,7 +32,7 @@ const SECTIONS = [
   },
   {
     href: "/admin/api-keys",
-    title: "API Keys",
+    title: "API keys",
   },
 ];
 

@@ -40,7 +40,7 @@ export async function createCalendarFeed(input: {
   });
 
   revalidateForScope(input.scope, { tripId, tripTypeId });
-  return { ok: true, message: "Calendar feed created." };
+  return { ok: true, message: "Feed created." };
 }
 
 export async function setCalendarFeedEnabled(

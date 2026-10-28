@@ -53,7 +53,7 @@ export default async function TripTypeDetailPage({
           className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
         >
           <ChevronLeft className="size-4" />
-          All trip types
+          Trip types
         </Link>
       </div>
 
@@ -92,7 +92,7 @@ export default async function TripTypeDetailPage({
           >
             <TripTypeForm
               action={updateTripType}
-              submitLabel="Save changes"
+              submitLabel="Save"
               initial={{
                 id: tripType.id,
                 name: tripType.name,
@@ -107,7 +107,7 @@ export default async function TripTypeDetailPage({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Template itineraries</CardTitle>
+          <CardTitle className="text-base">Templates</CardTitle>
           <Button asChild size="sm" variant="outline">
             <Link href="/trips/new?template=1">New template</Link>
           </Button>

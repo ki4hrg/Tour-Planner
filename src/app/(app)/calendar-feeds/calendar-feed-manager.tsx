@@ -98,7 +98,7 @@ function FeedRow({
   const copy = async () => {
     await navigator.clipboard.writeText(httpsUrl(feed.token));
     setCopied(true);
-    toast.success("Feed URL copied.");
+    toast.success("Copied.");
     setTimeout(() => setCopied(false), 1500);
   };
 
@@ -183,14 +183,14 @@ function CreateForm({
 
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
-      <p className="font-medium">New calendar feed</p>
+      <p className="font-medium">New feed</p>
       <div className="space-y-1">
         <Label htmlFor="feed-label">Label (optional)</Label>
         <Input
           id="feed-label"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. Leaders' calendar"
+          placeholder="Leaders' calendar"
         />
       </div>
       <p className="text-xs text-muted-foreground">

@@ -95,7 +95,7 @@ export async function refreshPlaceIdsNow(): Promise<FormState> {
   const s = await refreshStalePlaceIds();
   revalidatePath("/admin/places");
   if (s.checked === 0 && s.failed === 0) {
-    return { ok: true, message: "No place IDs are due for a refresh." };
+    return { ok: true, message: "No place IDs due for refresh." };
   }
   return {
     ok: s.failed === 0,

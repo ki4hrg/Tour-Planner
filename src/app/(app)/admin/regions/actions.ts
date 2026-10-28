@@ -58,7 +58,7 @@ export async function createRegion(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "That name is already used here." };
+      return { error: "Name already in use here." };
     }
     throw e;
   }
@@ -98,7 +98,7 @@ export async function updateRegion(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "That name is already used here." };
+      return { error: "Name already in use here." };
     }
     throw e;
   }

@@ -29,7 +29,7 @@ export default async function ApiKeysPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">API Keys</h1>
+      <h1 className="text-2xl font-semibold">API keys</h1>
       <ApiKeysManager
         keys={keys.map((k) => ({
           ...k,

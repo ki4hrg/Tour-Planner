@@ -116,10 +116,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="key-tripTypes">
-                Trip types{" "}
-                <span className="text-muted-foreground">(none = all)</span>
-              </Label>
+              <Label htmlFor="key-tripTypes">Limit to trip types</Label>
               <div className="flex flex-wrap gap-2">
                 {tripTypes.map((tt) => (
                   <label key={tt.id} className="flex items-center gap-2 cursor-pointer">
@@ -136,7 +133,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
             </div>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={pending}>
-                {pending ? "Creating…" : "Create API key"}
+                {pending ? "Creating…" : "Create key"}
               </Button>
             </div>
           </form>

@@ -276,7 +276,7 @@ export default async function Home({
                 onlyMine ? "bg-muted font-medium" : "text-muted-foreground",
               )}
             >
-              Only mine
+              Mine
             </Link>
           </div>
         </CardHeader>
