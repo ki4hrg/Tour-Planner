@@ -59,7 +59,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Toaster richColors position="top-center" />
+        <Toaster richColors position="top-center" offset={56} mobileOffset={56} />
       </body>
     </html>
   );
