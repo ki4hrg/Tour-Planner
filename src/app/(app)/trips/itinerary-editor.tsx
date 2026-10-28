@@ -11,7 +11,14 @@ import {
 } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, CalendarPlus, GripVertical, Lock, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Ellipsis,
+  GripVertical,
+  Lock,
+  X,
+} from "lucide-react";
 import {
   useVenueEngagementVia,
   VenueEngagementStatus,
@@ -35,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ConfirmButton } from "@/components/confirm-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useAction } from "@/lib/use-action";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
@@ -102,6 +109,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { applyItineraryMove, type ItineraryMove } from "@/lib/itinerary-moves";
@@ -327,11 +338,14 @@ export function ItineraryEditor({
     applyItineraryMove,
   );
   const [, startMove] = useTransition();
+  // A move confirms with the action's message, else "Moved." — the ↑/↓ arrows
+  // and a drop re-lay the day's times, which is easy to miss on a long day.
   const commit = (move: ItineraryMove, fn: () => Promise<FormState>) =>
     startMove(async () => {
       preview(move);
       const res = await fn();
       if (res.error) toast.error(res.error);
+      else toast.success(res.message ?? "Moved.");
     });
 
   // A day reorder that moves nights with lodging on them asks first whether
@@ -342,11 +356,9 @@ export function ItineraryEditor({
   } | null>(null);
   const applyDayOrder = (ids: string[], moveStays: boolean) => {
     setLodgingPrompt(null);
-    commit({ kind: "days", orderedIds: ids }, async () => {
-      const res = await reorderDays(tripId, ids, { moveStays });
-      if (res.message) toast.success(res.message);
-      return res;
-    });
+    commit({ kind: "days", orderedIds: ids }, () =>
+      reorderDays(tripId, ids, { moveStays }),
+    );
   };
   const reorderDayIds = (ids: string[]) =>
     startMove(async () => {
@@ -553,6 +565,7 @@ function DayCard({
 }) {
   const { pending, run } = useAction();
   const [editingDay, setEditingDay] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [adding, setAdding] = useState<"item" | "travel" | null>(null);
   const [title, setTitle] = useState(day.title ?? "");
   const [notes, setNotes] = useState(day.logisticalNotes ?? "");
@@ -617,8 +630,10 @@ function DayCard({
           )}
         />
       ) : null}
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-1">
+      {/* Stacked below `sm`: the title row takes the full width with one
+          actions menu at its end; from `sm` the toolbar sits beside it. */}
+      <div className="flex flex-col items-start gap-2 border-b bg-muted/40 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full min-w-0 items-start gap-1 sm:w-auto sm:flex-1 sm:items-center">
           {canEdit ? (
             <span
               draggable
@@ -626,14 +641,16 @@ function DayCard({
                 dnd.begin(e, { kind: "day", id: day.id }, cardRef.current)
               }
               onDragEnd={dnd.end}
-              className="-ml-2 shrink-0 cursor-grab rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing"
+              // Native drag never fires on touch, so the grip only shows on a
+              // wide screen with a fine pointer.
+              className="-ml-2 hidden shrink-0 cursor-grab rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
               title="Drag to reorder"
               aria-hidden
             >
               <GripVertical className="size-4" />
             </span>
           ) : null}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
           {/* The day page is the phone-friendly, on-the-ground view of this day. */}
           <Link
             href={`/trips/${day.tripId}/days/${day.id}`}
@@ -655,9 +672,48 @@ function DayCard({
             </span>
           ) : null}
           </div>
+          {canEdit ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-my-1 -mr-2 size-10 shrink-0 sm:hidden"
+                  aria-label="Day actions"
+                >
+                  <Ellipsis />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-auto min-w-40">
+                <DropdownMenuItem onSelect={() => setEditingDay((v) => !v)}>
+                  {editingDay ? "Close" : "Edit day"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={pending || index === 0}
+                  onSelect={() => onMove(index, -1)}
+                >
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={pending || index === total - 1}
+                  onSelect={() => onMove(index, 1)}
+                >
+                  Move down
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={pending}
+                  onSelect={() => setConfirmDelete(true)}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
         {canEdit ? (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="hidden shrink-0 items-center gap-1 sm:flex">
             <Button
               variant="ghost"
               size="sm"
@@ -683,23 +739,34 @@ function DayCard({
             >
               {editingDay ? "Close" : "Edit day"}
             </Button>
-            <ConfirmButton
+            <Button
               variant="ghost"
               size="sm"
               className="text-destructive"
               disabled={pending}
-              title={`Delete day ${day.dayIndex}?`}
-              description={
-                day.items.length
-                  ? `Deletes its ${day.items.length} item${day.items.length === 1 ? "" : "s"}. Later days renumber.`
-                  : "Later days renumber."
-              }
-              confirmLabel="Delete day"
-              onConfirm={() => run(() => deleteDay(day.id))}
+              onClick={() => setConfirmDelete(true)}
             >
               Delete
-            </ConfirmButton>
+            </Button>
           </div>
+        ) : null}
+        {canEdit ? (
+          <ConfirmDialog
+            open={confirmDelete}
+            onOpenChange={setConfirmDelete}
+            title={`Delete day ${day.dayIndex}?`}
+            description={
+              day.items.length
+                ? `Deletes its ${day.items.length} item${day.items.length === 1 ? "" : "s"}. Later days renumber.`
+                : "Later days renumber."
+            }
+            confirmLabel="Delete day"
+            pending={pending}
+            onConfirm={() => {
+              setConfirmDelete(false);
+              run(() => deleteDay(day.id));
+            }}
+          />
         ) : null}
       </div>
 
@@ -1136,6 +1203,7 @@ function ItemRow({
 }) {
   const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const dnd = useItineraryDnd();
   const rowRef = useRef<HTMLLIElement>(null);
 
@@ -1196,6 +1264,11 @@ function ItemRow({
       }
       return { ...res, message: undefined };
     });
+  // A booked item confirms (the cascade is irreversible); a plain one goes
+  // straight to the undo-able remove.
+  const requestRemove = () =>
+    item.bookings.length > 0 ? setConfirmDelete(true) : remove();
+  const otherDays = dayOptions.filter((d) => d.id !== dayId);
 
   return (
     // Anchor target for deep links from the day view's quick-edit ("All options →").
@@ -1225,7 +1298,7 @@ function ItemRow({
         />
       ) : null}
       <Marker item={item} />
-      <div className="flex items-start justify-between gap-3 py-1.5">
+      <div className="flex items-start justify-between gap-2 py-1.5 sm:gap-3">
         <div className="min-w-0 flex-1">
           {editing && canEdit ? (
             <div className="space-y-4 rounded-md border bg-background p-3">
@@ -1378,87 +1451,139 @@ function ItemRow({
         </div>
 
         {canEdit && !editing ? (
-          <div className="flex shrink-0 items-center gap-1">
-            <span
-              draggable
-              onDragStart={(e) =>
-                dnd.begin(e, { kind: "item", id: item.id, dayId }, rowRef.current)
-              }
-              onDragEnd={dnd.end}
-              className="cursor-grab rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
-              title="Drag to move"
-              aria-hidden
-            >
-              <GripVertical className="size-4" />
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending || index === 0}
-              onClick={() => onMove(index, -1)}
-              aria-label="Move item up"
-            >
-              ↑
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending || index === total - 1}
-              onClick={() => onMove(index, 1)}
-              aria-label="Move item down"
-            >
-              ↓
-            </Button>
-            {dayOptions.length > 1 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    Move
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-auto max-w-72">
-                  {dayOptions
-                    .filter((d) => d.id !== dayId)
-                    .map((d) => (
+          <>
+            {/* Below `sm` one menu holds every row action, so the content
+                column keeps the width; the inline toolbar is for wide screens. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-my-1 size-10 shrink-0 sm:hidden"
+                  aria-label="Item actions"
+                >
+                  <Ellipsis />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-auto min-w-40">
+                <DropdownMenuItem onSelect={() => setEditing(true)}>
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={pending || index === 0}
+                  onSelect={() => onMove(index, -1)}
+                >
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={pending || index === total - 1}
+                  onSelect={() => onMove(index, 1)}
+                >
+                  Move down
+                </DropdownMenuItem>
+                {otherDays.length > 0 ? (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Move to day…</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="max-w-64">
+                      {otherDays.map((d) => (
+                        <DropdownMenuItem
+                          key={d.id}
+                          onSelect={() => onMoveToDay(d.id)}
+                        >
+                          <span className="truncate">{d.label}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={pending}
+                  onSelect={requestRemove}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="hidden shrink-0 items-center gap-1 sm:flex">
+              <span
+                draggable
+                onDragStart={(e) =>
+                  dnd.begin(e, { kind: "item", id: item.id, dayId }, rowRef.current)
+                }
+                onDragEnd={dnd.end}
+                // Native drag never fires on touch: fine pointers only.
+                className="hidden cursor-grab rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
+                title="Drag to move"
+                aria-hidden
+              >
+                <GripVertical className="size-4" />
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending || index === 0}
+                onClick={() => onMove(index, -1)}
+                aria-label="Move item up"
+              >
+                ↑
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending || index === total - 1}
+                onClick={() => onMove(index, 1)}
+                aria-label="Move item down"
+              >
+                ↓
+              </Button>
+              {otherDays.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      Move
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-auto max-w-72">
+                    {otherDays.map((d) => (
                       <DropdownMenuItem key={d.id} onSelect={() => onMoveToDay(d.id)}>
                         <span className="truncate">{d.label}</span>
                       </DropdownMenuItem>
                     ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-            {item.bookings.length > 0 ? (
-              <ConfirmButton
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                disabled={pending}
-                title="Delete item?"
-                description={`Deletes its booking${item.bookings.length === 1 ? "" : "s"}${
-                  paymentTotal
-                    ? ` and ${paymentTotal} payment${paymentTotal === 1 ? "" : "s"}`
-                    : ""
-                }.`}
-                confirmLabel="Delete item"
-                onConfirm={remove}
-              >
-                Delete
-              </ConfirmButton>
-            ) : (
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-destructive"
                 disabled={pending}
-                onClick={remove}
+                onClick={requestRemove}
               >
                 Delete
               </Button>
-            )}
-          </div>
+            </div>
+            <ConfirmDialog
+              open={confirmDelete}
+              onOpenChange={setConfirmDelete}
+              title="Delete item?"
+              description={`Deletes its booking${item.bookings.length === 1 ? "" : "s"}${
+                paymentTotal
+                  ? ` and ${paymentTotal} payment${paymentTotal === 1 ? "" : "s"}`
+                  : ""
+              }.`}
+              confirmLabel="Delete item"
+              pending={pending}
+              onConfirm={() => {
+                setConfirmDelete(false);
+                remove();
+              }}
+            />
+          </>
         ) : null}
       </div>
     </li>
