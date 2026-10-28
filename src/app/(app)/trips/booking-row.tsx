@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
-import { ChevronRight } from "lucide-react";
-import { toast } from "sonner";
+import { useId, useState } from "react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,11 +21,10 @@ import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
-import { formatDate } from "@/lib/dates";
+import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
 import { hasAgreedPrice } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
-import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
   describeCadence,
@@ -50,19 +50,8 @@ import {
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
 
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
+// Inside a mutation button while its action is in flight.
+const Spinner = () => <Loader2 className="animate-spin" aria-hidden />;
 
 // The window cell: when can this be booked (or is it already done).
 export function WindowCell({ row }: { row: VenueBookingRow }) {
@@ -218,6 +207,7 @@ export function VenueDetails({
   documents: SerializedDocument[];
 }) {
   const { pending, run } = useAction();
+  const uid = useId();
 
   const [label, setLabel] = useState(row.label ?? "");
   const [contactId, setContactId] = useState(row.bookedContactId ?? NONE);
@@ -252,9 +242,12 @@ export function VenueDetails({
     );
 
   return (
-    <div className="grid grid-cols-1 gap-4 py-1 md:grid-cols-2">
-      {/* Covered sessions — so a multi-timeslot booking stays visible. */}
-      <div className="min-w-0">
+    <div className="grid grid-cols-1 gap-4 py-1 md:grid-cols-[1fr_2fr]">
+      {/* Covered sessions — so a multi-timeslot booking stays visible — plus
+          the venue's standing notes and constraints from its Location record,
+          so what to know before calling sits next to the booking editor. */}
+      <div className="min-w-0 space-y-3">
+        <div>
         <p className="mb-1 text-xs font-medium text-muted-foreground">
           Covered sessions
         </p>
@@ -292,6 +285,27 @@ export function VenueDetails({
             ))}
           </ul>
         )}
+        </div>
+        {row.bookingNotes ? (
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              Booking notes
+            </p>
+            <p className="whitespace-pre-line text-xs text-muted-foreground">
+              {row.bookingNotes}
+            </p>
+          </div>
+        ) : null}
+        {row.scheduleLimitations ? (
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              Schedule
+            </p>
+            <p className="whitespace-pre-line text-xs text-muted-foreground">
+              {row.scheduleLimitations}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* Manage the engagement (other than status, which is one-click above). */}
@@ -299,16 +313,22 @@ export function VenueDetails({
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">Label</Label>
+              <Label htmlFor={`${uid}-label`} className="text-xs">
+                Label
+              </Label>
               <Input
+                id={`${uid}-label`}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="e.g. hall hire"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Confirmation ref</Label>
+              <Label htmlFor={`${uid}-ref`} className="text-xs">
+                Confirmation ref
+              </Label>
               <Input
+                id={`${uid}-ref`}
                 value={confirmationRef}
                 onChange={(e) => setConfirmationRef(e.target.value)}
                 placeholder="e.g. CONF123"
@@ -316,8 +336,11 @@ export function VenueDetails({
             </div>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Booked on</Label>
+            <Label htmlFor={`${uid}-booked-on`} className="text-xs">
+              Booked on
+            </Label>
             <Input
+              id={`${uid}-booked-on`}
               type="date"
               value={bookedOn}
               onChange={(e) => setBookedOn(e.target.value)}
@@ -335,9 +358,11 @@ export function VenueDetails({
             disabled={pending}
           />
           <div className="space-y-1">
-            <Label className="text-xs">Point of contact</Label>
+            <Label htmlFor={`${uid}-contact`} className="text-xs">
+              Point of contact
+            </Label>
             <Select value={contactId} onValueChange={setContactId}>
-              <SelectTrigger size="sm">
+              <SelectTrigger id={`${uid}-contact`} size="sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -351,8 +376,11 @@ export function VenueDetails({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Notes</Label>
+            <Label htmlFor={`${uid}-notes`} className="text-xs">
+              Notes
+            </Label>
             <Textarea
+              id={`${uid}-notes`}
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -360,6 +388,7 @@ export function VenueDetails({
             />
           </div>
           <Button size="sm" disabled={pending} onClick={save}>
+            {pending ? <Spinner /> : null}
             Save booking
           </Button>
         </div>
@@ -449,6 +478,7 @@ function PaymentSchedule({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const uid = useId();
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<InstallmentDraft[]>([]);
 
@@ -537,8 +567,11 @@ function PaymentSchedule({
           {drafts.map((d, idx) => (
             <div key={d.key} className="flex flex-wrap items-end gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Label</Label>
+                <Label htmlFor={`${uid}-${d.key}-label`} className="text-xs">
+                  Label
+                </Label>
                 <Input
+                  id={`${uid}-${d.key}-label`}
                   value={d.label}
                   onChange={(e) => patch(d.key, { label: e.target.value })}
                   placeholder={`Installment ${idx + 1}`}
@@ -546,8 +579,11 @@ function PaymentSchedule({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Amount</Label>
+                <Label htmlFor={`${uid}-${d.key}-amount`} className="text-xs">
+                  Amount
+                </Label>
                 <Input
+                  id={`${uid}-${d.key}-amount`}
                   type="number"
                   min="0"
                   step="0.01"
@@ -575,8 +611,11 @@ function PaymentSchedule({
               {d.anchor !== "NONE" ? (
                 <>
                   <div className="space-y-1">
-                    <Label className="text-xs">Offset</Label>
+                    <Label htmlFor={`${uid}-${d.key}-offset`} className="text-xs">
+                      Offset
+                    </Label>
                     <Input
+                      id={`${uid}-${d.key}-offset`}
                       type="number"
                       step="1"
                       inputMode="numeric"
@@ -661,6 +700,7 @@ function PaymentSchedule({
               }
               onClick={save}
             >
+              {pending ? <Spinner /> : null}
               Save schedule
             </Button>
             <Button
@@ -691,10 +731,13 @@ function PaymentLog({
 }) {
   const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
   const { pending, run } = useAction();
+  const uid = useId();
 
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(row.agreedCurrency);
-  const [paidOn, setPaidOn] = useState("");
+  // Most payments are logged the day they're made: default to today
+  // (todayUtc isolates "now" in lib — react-hooks/purity).
+  const [paidOn, setPaidOn] = useState(() => toDateInput(todayUtc()));
   const [method, setMethod] = useState("");
   const [note, setNote] = useState("");
 
@@ -710,7 +753,7 @@ function PaymentLog({
         }),
       () => {
         setAmount("");
-        setPaidOn("");
+        setPaidOn(toDateInput(todayUtc()));
         setMethod("");
         setNote("");
       },
@@ -744,14 +787,20 @@ function PaymentLog({
                 </span>
               ) : null}
               {canEdit ? (
-                <button
-                  type="button"
+                <ConfirmButton
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-destructive"
                   disabled={pending}
-                  onClick={() => run(() => deletePayment(p.id))}
-                  className="ml-auto text-xs text-destructive underline-offset-2 hover:underline"
+                  pending={pending}
+                  title="Remove payment"
+                  description={`Removes the ${formatMoney(p.amount, p.currency)} payment of ${formatDate(p.paidOn)}.`}
+                  confirmLabel="Remove"
+                  onConfirm={() => run(() => deletePayment(p.id))}
                 >
+                  {pending ? <Spinner /> : null}
                   Remove
-                </button>
+                </ConfirmButton>
               ) : null}
             </li>
           ))}
@@ -762,8 +811,11 @@ function PaymentLog({
       {canEdit ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
-            <Label className="text-xs">Amount</Label>
+            <Label htmlFor={`${uid}-amount`} className="text-xs">
+              Amount
+            </Label>
             <Input
+              id={`${uid}-amount`}
               type="number"
               min="0"
               step="0.01"
@@ -774,9 +826,11 @@ function PaymentLog({
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Currency</Label>
+            <Label htmlFor={`${uid}-currency`} className="text-xs">
+              Currency
+            </Label>
             <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger size="sm" className="w-24">
+              <SelectTrigger id={`${uid}-currency`} size="sm" className="w-24">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -789,8 +843,11 @@ function PaymentLog({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Paid on</Label>
+            <Label htmlFor={`${uid}-paid-on`} className="text-xs">
+              Paid on
+            </Label>
             <Input
+              id={`${uid}-paid-on`}
               type="date"
               value={paidOn}
               onChange={(e) => setPaidOn(e.target.value)}
@@ -798,8 +855,11 @@ function PaymentLog({
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Method</Label>
+            <Label htmlFor={`${uid}-method`} className="text-xs">
+              Method
+            </Label>
             <Input
+              id={`${uid}-method`}
               value={method}
               onChange={(e) => setMethod(e.target.value)}
               placeholder="e.g. bank transfer"
@@ -807,8 +867,14 @@ function PaymentLog({
             />
           </div>
           <div className="min-w-32 flex-1 space-y-1">
-            <Label className="text-xs">Note</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            <Label htmlFor={`${uid}-note`} className="text-xs">
+              Note
+            </Label>
+            <Input
+              id={`${uid}-note`}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
           </div>
           <Button
             size="sm"
@@ -816,6 +882,7 @@ function PaymentLog({
             disabled={pending || !amount || !paidOn}
             onClick={add}
           >
+            {pending ? <Spinner /> : null}
             Log payment
           </Button>
         </div>

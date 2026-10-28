@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { formatMoney, COST_UNIT_LABELS } from "@/lib/money";
 import {
   agreedTotal,
@@ -28,6 +30,8 @@ import {
 
 const NO_HEADCOUNT_CHIP =
   "rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
+// Same amber chip the dashboard's list-price cell uses for an unconfirmed price.
+const STALE_CHIP = NO_HEADCOUNT_CHIP;
 
 // Compact read view: a lone per-group line is just its amount; anything else
 // shows its working — "Admission £12 + Lunch £20 /person × 40 + Group £90 =
@@ -52,12 +56,15 @@ export function AgreedPrice({
   );
 }
 
-// One editable line's local form state (amount kept as typed).
+// One editable line's local form state (amount kept as typed). `stale` marks
+// a line copied from a list price unconfirmed for 1+ year; it clears once the
+// amount is edited (the planner has then checked it) and never reaches the save.
 export type PriceLineDraft = {
   key: number;
   label: string;
   amount: string;
   unit: PriceLine["unit"];
+  stale?: boolean;
 };
 
 export function draftsFromLines(lines: PriceLine[]): PriceLineDraft[] {
@@ -106,6 +113,7 @@ export function PriceLinesEditor({
   listCosts?: (CostLike & { label: string })[];
   disabled?: boolean;
 }) {
+  const uid = useId();
   const nextKey = () => (drafts[drafts.length - 1]?.key ?? -1) + 1;
   const patch = (key: number, part: Partial<PriceLineDraft>) =>
     onDraftsChange(drafts.map((d) => (d.key === key ? { ...d, ...part } : d)));
@@ -129,6 +137,7 @@ export function PriceLinesEditor({
         label: l.label,
         amount: String(l.amount),
         unit: l.unit,
+        stale: l.stale,
       })),
     );
     onCurrencyChange(list.currency);
@@ -141,9 +150,16 @@ export function PriceLinesEditor({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <Label className="text-xs">Agreed price</Label>
+        <Label htmlFor={`${uid}-currency`} className="text-xs">
+          Agreed price
+        </Label>
         <Select value={currency} onValueChange={onCurrencyChange} disabled={disabled}>
-          <SelectTrigger size="sm" className="h-7 w-20" aria-label="Currency">
+          <SelectTrigger
+            id={`${uid}-currency`}
+            size="sm"
+            className="h-7 w-20"
+            aria-label="Currency"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -166,14 +182,16 @@ export function PriceLinesEditor({
         ) : null}
       </div>
 
+      {/* Each line wraps on a phone: the label keeps a readable width and the
+          amount, basis and remove controls take the next line. */}
       {drafts.map((d) => (
-        <div key={d.key} className="flex items-center gap-1.5">
+        <div key={d.key} className="flex flex-wrap items-center gap-1.5">
           <Input
             value={d.label}
             onChange={(e) => patch(d.key, { label: e.target.value })}
             placeholder="e.g. Admission"
             aria-label="Line label"
-            className="min-w-0 flex-1"
+            className="min-w-32 flex-1"
             disabled={disabled}
           />
           <Input
@@ -182,11 +200,19 @@ export function PriceLinesEditor({
             step="0.01"
             inputMode="decimal"
             value={d.amount}
-            onChange={(e) => patch(d.key, { amount: e.target.value })}
+            onChange={(e) => patch(d.key, { amount: e.target.value, stale: false })}
             aria-label="Amount"
             className="w-24"
             disabled={disabled}
           />
+          {d.stale ? (
+            <span
+              className={cn(STALE_CHIP, "shrink-0")}
+              title="List price unconfirmed for 1+ year"
+            >
+              stale
+            </span>
+          ) : null}
           <Select
             value={d.unit}
             onValueChange={(unit) => patch(d.key, { unit: unit as PriceLine["unit"] })}

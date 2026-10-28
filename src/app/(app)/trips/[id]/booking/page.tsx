@@ -131,6 +131,8 @@ export default async function BookingDashboardPage({
           bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
+          bookingNotes: true,
+          scheduleLimitations: true,
           defaultWorkflowId: true,
           costs: true,
         },

@@ -77,6 +77,12 @@ export type VenueBookingRow = {
   contactName: string | null;
   contactPhone: string | null;
   contactEmail: string | null;
+  // The venue's standing booking notes + schedule constraints (Location
+  // fields) — what to know before picking up the phone; null when unset.
+  // Optional only so hand-built row fixtures elsewhere stay valid; the
+  // builder always sets both.
+  bookingNotes?: string | null;
+  scheduleLimitations?: string | null;
   sessions: CoveredSession[];
   nightCount: number;
   costs: SerializedCost[];
@@ -236,6 +242,9 @@ type LocationInput = {
   bookable: boolean;
   defaultWorkflowId?: string | null;
   bookingOpensLeadDays: number | null;
+  // Optional so callers that don't load them (compare grid) stay valid.
+  bookingNotes?: string | null;
+  scheduleLimitations?: string | null;
   costs: Cost[];
 };
 
@@ -465,6 +474,8 @@ export function buildDashboardRows(data: DashboardData): {
       contactName: eng?.bookedContact?.name ?? null,
       contactPhone: eng?.bookedContact?.phone ?? null,
       contactEmail: eng?.bookedContact?.email ?? null,
+      bookingNotes: loc?.bookingNotes?.trim() || null,
+      scheduleLimitations: loc?.scheduleLimitations?.trim() || null,
       bookedOn: eng?.bookedOn ? toDateInput(eng.bookedOn) : null,
       sessions: v.sessions,
       nightCount: v.nights,

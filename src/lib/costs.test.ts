@@ -152,7 +152,9 @@ describe("listPriceLines", () => {
     ]);
     expect(s).toEqual({
       currency: "GBP",
-      lines: [pp("Admission", 12), pp("Lunch", 20), grp("Group charge", 90)],
+      lines: [pp("Admission", 12), pp("Lunch", 20), grp("Group charge", 90)].map(
+        (l) => ({ ...l, stale: false }),
+      ),
       skipped: 0,
     });
   });
@@ -178,5 +180,20 @@ describe("listPriceLines", () => {
 
   it("is null for a venue with no list prices", () => {
     expect(listPriceLines([])).toBeNull();
+  });
+
+  it("flags lines whose list price is stale, and only those", () => {
+    const s = listPriceLines([
+      { ...cost("Admission", 12, "PER_PERSON"), confirmedAt: new Date() },
+      { ...cost("Lunch", 20, "PER_PERSON"), confirmedAt: "2020-01-01T00:00:00.000Z" },
+      { ...cost("Guide", 90, "PER_GROUP"), confirmedAt: null },
+      cost("Parking", 5, "PER_GROUP"), // no confirmedAt at all — not flagged
+    ]);
+    expect(s?.lines.map((l) => [l.label, l.stale])).toEqual([
+      ["Admission", false],
+      ["Lunch", true],
+      ["Guide", true],
+      ["Parking", false],
+    ]);
   });
 });
