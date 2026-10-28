@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Lock, Pencil } from "lucide-react";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { useAction } from "@/lib/use-action";
 import type { SerializedScheduleItem } from "@/lib/trips";
 import {
@@ -16,20 +17,33 @@ import {
   minutesToTime,
   formatDuration,
 } from "@/lib/schedule-gaps";
+import { gapAfterRemoval, type RemovalGap } from "@/lib/schedule-shift";
 import { scheduleItemPrimaryLabel } from "@/lib/trips";
 import {
   TimelineGroups,
   type OvernightLodging,
 } from "../../../itinerary-timeline";
 import { VenueEngagementStatus } from "../../../venue-engagements";
-import { updateScheduleItem, shiftDaySchedule } from "../../../actions";
+import {
+  addScheduleItem,
+  deleteScheduleItem,
+  pullScheduleForward,
+  shiftDaySchedule,
+  updateScheduleItem,
+} from "../../../actions";
 
 const LAST_MINUTE = 24 * 60 - 1;
 
+// A venue the quick-add can pick: `tagged` = catalogued under this trip's type
+// (listed first; the rest sit under a second group).
+export type DayLocationOption = { id: string; name: string; tagged: boolean };
+
 // The day view's timeline: the shared read component plus, for planners, an
 // inline quick-edit on each row — time / title / notes tweaks without leaving
-// the phone screen. Structural changes (venues, category, reorder) jump to the
-// full itinerary editor anchored at this item.
+// the phone screen — a compact quick-add at the foot of the list, and a
+// one-tap remove that offers to close the hole it leaves. Structural changes
+// (venues, category, reorder) jump to the full itinerary editor anchored at
+// this item.
 //
 // This is the one-handed coach screen: every control here is a real Button at
 // 40px+ (min-h-10) rather than an inline text link.
@@ -39,33 +53,73 @@ export function DayTimeline({
   items,
   lodging,
   canEdit,
+  locations,
 }: {
   tripId: string;
   dayId: string;
   items: SerializedScheduleItem[];
   lodging: OvernightLodging | null;
   canEdit: boolean;
+  locations: DayLocationOption[];
 }) {
   const hasTimedItems = items.some((it) => it.startTime);
+
+  // The pull-forward offered on the remove toast runs from here: by the time
+  // it is tapped the removed row (and its own transition) has unmounted.
+  const { run: runPull } = useAction();
+  const onRemoved = (gap: RemovalGap | null) => {
+    if (!gap) {
+      toast.success("Item removed.");
+      return;
+    }
+    // The minutes sit in the description, not the action label: at phone
+    // width sonner lays title and action on one row, and a long label clips.
+    toast.success("Item removed.", {
+      description: `Leaves a ${gap.minutes} min gap.`,
+      // Long enough to read the hole and decide, phone in hand.
+      duration: 10_000,
+      action: {
+        label: "Pull forward",
+        onClick: () =>
+          runPull(() => pullScheduleForward(dayId, gap.nextId, gap.minutes)),
+      },
+    });
+  };
+
   return (
     <div className="space-y-3">
       {canEdit && hasTimedItems ? (
         <DayShiftControl dayId={dayId} items={items} />
       ) : null}
-      <TimelineGroups
-        items={items}
-        lodging={lodging}
-        showBookings={canEdit}
-        linkVenues
-        showVenueContacts
-        showGaps
-        renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
-        renderItemExtra={
-          canEdit
-            ? (item) => <QuickEdit key={item.id} tripId={tripId} item={item} />
-            : undefined
-        }
-      />
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
+      ) : (
+        <TimelineGroups
+          items={items}
+          lodging={lodging}
+          showBookings={canEdit}
+          linkVenues
+          showVenueContacts
+          showGaps
+          renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
+          renderItemExtra={
+            canEdit
+              ? (item) => (
+                  <QuickEdit
+                    key={item.id}
+                    tripId={tripId}
+                    item={item}
+                    // Measured against the list as it stands before the
+                    // remove, so the offer reflects the hole actually left.
+                    gap={gapAfterRemoval(items, item.id)}
+                    onRemoved={onRemoved}
+                  />
+                )
+              : undefined
+          }
+        />
+      )}
+      {canEdit ? <QuickAdd dayId={dayId} locations={locations} /> : null}
     </div>
   );
 }
@@ -221,9 +275,13 @@ function DayShiftControl({
 function QuickEdit({
   tripId,
   item,
+  gap,
+  onRemoved,
 }: {
   tripId: string;
   item: SerializedScheduleItem;
+  gap: RemovalGap | null;
+  onRemoved: (gap: RemovalGap | null) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -246,17 +304,27 @@ function QuickEdit({
   }
 
   return (
-    <QuickEditForm tripId={tripId} item={item} onClose={() => setOpen(false)} />
+    <QuickEditForm
+      tripId={tripId}
+      item={item}
+      gap={gap}
+      onRemoved={onRemoved}
+      onClose={() => setOpen(false)}
+    />
   );
 }
 
 function QuickEditForm({
   tripId,
   item,
+  gap,
+  onRemoved,
   onClose,
 }: {
   tripId: string;
   item: SerializedScheduleItem;
+  gap: RemovalGap | null;
+  onRemoved: (gap: RemovalGap | null) => void;
   onClose: () => void;
 }) {
   const { pending, run } = useAction();
@@ -318,6 +386,19 @@ function QuickEditForm({
         ),
       onClose,
     );
+
+  // "Site closed, move on": drop the item; the parent's toast then offers to
+  // pull what follows into the hole. The action's own message is swallowed
+  // so the one toast carries both the fact and the offer.
+  const remove = () =>
+    run(async () => {
+      const res = await deleteScheduleItem(item.id);
+      if (!res.error) onRemoved(gap);
+      return { ...res, message: undefined };
+    }, onClose);
+
+  // A booked item confirms first (same rule as the itinerary editor).
+  const bookingCount = item.bookings.length;
 
   return (
     <form
@@ -437,6 +518,29 @@ function QuickEditForm({
         >
           Cancel
         </Button>
+        {bookingCount > 0 ? (
+          <ConfirmButton
+            variant="ghost"
+            className="min-h-10 text-destructive"
+            disabled={pending}
+            title="Remove item?"
+            description={`Deletes its booking${bookingCount === 1 ? "" : "s"}.`}
+            confirmLabel="Remove"
+            onConfirm={remove}
+          >
+            Remove
+          </ConfirmButton>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            className="min-h-10 text-destructive"
+            disabled={pending}
+            onClick={remove}
+          >
+            Remove
+          </Button>
+        )}
         <Button
           asChild
           variant="ghost"
@@ -445,6 +549,210 @@ function QuickEditForm({
           <Link href={`/trips/${tripId}/itinerary#item-${item.id}`}>
             All options
           </Link>
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// "+ Add item" at the foot of the day: a one-screen form (title, times, venue)
+// that lands the item by its start time. Anything beyond that — category,
+// speakers, a travel leg — is the full editor's job.
+function QuickAdd({
+  dayId,
+  locations,
+}: {
+  dayId: string;
+  locations: DayLocationOption[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-10 w-full"
+        onClick={() => setOpen(true)}
+      >
+        + Add item
+      </Button>
+    );
+  }
+
+  return (
+    <QuickAddForm
+      dayId={dayId}
+      locations={locations}
+      onClose={() => setOpen(false)}
+    />
+  );
+}
+
+function QuickAddForm({
+  dayId,
+  locations,
+  onClose,
+}: {
+  dayId: string;
+  locations: DayLocationOption[];
+  onClose: () => void;
+}) {
+  const { pending, run } = useAction();
+  const [title, setTitle] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [locationId, setLocationId] = useState("");
+
+  const startMin = startTime ? timeToMinutes(startTime) : null;
+  const endMin = endTime ? timeToMinutes(endTime) : null;
+  const timesInvalid =
+    startMin !== null && endMin !== null && endMin < startMin;
+
+  // Same nudge as the quick edit: once both ends are set, moving the start
+  // carries the end along so the length holds.
+  const onStartChange = (v: string) => {
+    const vMin = v ? timeToMinutes(v) : null;
+    if (vMin !== null && startMin !== null && endMin !== null) {
+      setEndTime(
+        minutesToTime(
+          Math.max(0, Math.min(LAST_MINUTE, endMin + (vMin - startMin))),
+        ),
+      );
+    }
+    setStartTime(v);
+  };
+
+  // The server's identity rule: a title or a venue.
+  const identified = title.trim().length > 0 || locationId !== "";
+
+  const tagged = locations.filter((l) => l.tagged);
+  const others = locations.filter((l) => !l.tagged);
+
+  const save = () =>
+    run(
+      () =>
+        addScheduleItem(dayId, {
+          title: title.trim(),
+          startTime: startTime || undefined,
+          endTime: endTime || undefined,
+          presenterIds: [],
+          locationIds: locationId ? [locationId] : [],
+        }),
+      onClose,
+    );
+
+  return (
+    <form
+      className="space-y-2 rounded-md border border-dashed p-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!pending && !timesInvalid && identified) save();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <p className="text-sm font-medium">New item</p>
+      <div className="space-y-1">
+        <Label className="text-xs" htmlFor={`qa-title-${dayId}`}>
+          Title
+        </Label>
+        <Input
+          id={`qa-title-${dayId}`}
+          value={title}
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+          className="min-h-10"
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label className="text-xs" htmlFor={`qa-start-${dayId}`}>
+            Start
+          </Label>
+          <Input
+            id={`qa-start-${dayId}`}
+            type="time"
+            value={startTime}
+            onChange={(e) => onStartChange(e.target.value)}
+            className="min-h-10 min-w-0 font-mono tabular-nums"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs" htmlFor={`qa-end-${dayId}`}>
+            End
+          </Label>
+          <Input
+            id={`qa-end-${dayId}`}
+            type="time"
+            value={endTime}
+            min={startTime || undefined}
+            aria-invalid={timesInvalid}
+            onChange={(e) => setEndTime(e.target.value)}
+            className="min-h-10 min-w-0 font-mono tabular-nums"
+          />
+        </div>
+      </div>
+      {timesInvalid ? (
+        <p className="text-xs text-destructive">End is before start.</p>
+      ) : null}
+      <div className="space-y-1">
+        <Label className="text-xs" htmlFor={`qa-location-${dayId}`}>
+          Location
+        </Label>
+        <select
+          id={`qa-location-${dayId}`}
+          value={locationId}
+          onChange={(e) => setLocationId(e.target.value)}
+          className="h-10 w-full rounded-md border bg-background px-2 text-sm"
+        >
+          <option value="">None</option>
+          {tagged.length > 0 && others.length > 0 ? (
+            <>
+              <optgroup label="This trip type">
+                {tagged.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="All locations">
+                {others.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </optgroup>
+            </>
+          ) : (
+            locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="submit"
+          className="min-h-10"
+          disabled={pending || timesInvalid || !identified}
+        >
+          {pending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="min-h-10"
+          disabled={pending}
+          onClick={onClose}
+        >
+          Cancel
         </Button>
       </div>
     </form>

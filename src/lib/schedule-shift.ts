@@ -157,6 +157,40 @@ export function shiftDayItems(
   return shiftRun(items, deltaMinutes, fromOrder);
 }
 
+/** The hole a removed item leaves, and the item that would be pulled into it. */
+export interface RemovalGap {
+  /** The first timed item ordered after the removed one. */
+  nextId: string;
+  /** Minutes the next item would move earlier to start where the removed one did. */
+  minutes: number;
+}
+
+/**
+ * "Site closed, move on": after an item is dropped, the next timed item after it
+ * in the day's order and how far earlier it would start to begin where the removed
+ * item did (`nextStart − removedStart`). The pull itself is
+ * `shiftDayItems(items, −minutes, next.order)`, which carries everything after it
+ * along and stops at the next fixed-time anchor beyond. Null when there is
+ * nothing to pull: the removed item is untimed, no timed item follows, the next
+ * one already starts no later, or the next one is itself a fixed-time anchor
+ * (the gap before an anchor never closes).
+ */
+export function gapAfterRemoval(
+  items: DayScheduleItem[],
+  removedId: string,
+): RemovalGap | null {
+  const removed = items.find((it) => it.id === removedId);
+  const removedStart = removed?.startTime ? timeToMinutes(removed.startTime) : null;
+  if (!removed || removedStart === null) return null;
+  const next = [...items]
+    .sort((a, b) => a.order - b.order)
+    .find((it) => it.order > removed.order && it.startTime != null);
+  const nextStart = next?.startTime ? timeToMinutes(next.startTime) : null;
+  if (!next || nextStart === null || next.fixedTime) return null;
+  const minutes = nextStart - removedStart;
+  return minutes > 0 ? { nextId: next.id, minutes } : null;
+}
+
 /**
  * Fixed-time items that, once `shifts` are applied, overlap the movable item
  * just before them in the day's order — the ripple ran into the anchor. Returns

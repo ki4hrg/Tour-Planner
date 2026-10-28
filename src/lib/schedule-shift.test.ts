@@ -3,6 +3,7 @@ import {
   cascadeFromEdit,
   describeShifts,
   fixedTimeOverlaps,
+  gapAfterRemoval,
   overlappingItemIds,
   shiftDayItems,
   type DayScheduleItem,
@@ -174,6 +175,76 @@ describe("shiftDayItems", () => {
     const items = [item("a", 1, "00:30", "01:00")];
     expect(shape(shiftDayItems(items, -60))).toEqual([
       { id: "a", start: "00:00", end: "00:00" },
+    ]);
+  });
+});
+
+describe("gapAfterRemoval", () => {
+  // 09:00–10:00 · 10:30–11:00 · (untimed) · 12:00–12:30
+  const items = [
+    item("a", 1, "09:00", "10:00"),
+    item("b", 2, "10:30", "11:00"),
+    item("c", 3, null),
+    item("d", 4, "12:00", "12:30"),
+  ];
+
+  it("names the next timed item and the gap from the removed item's start", () => {
+    expect(gapAfterRemoval(items, "a")).toEqual({ nextId: "b", minutes: 90 });
+    // Skips the untimed item in between.
+    expect(gapAfterRemoval(items, "b")).toEqual({ nextId: "d", minutes: 90 });
+  });
+
+  it("is null when nothing follows, or the removed item is untimed", () => {
+    expect(gapAfterRemoval(items, "d")).toBeNull();
+    expect(gapAfterRemoval(items, "c")).toBeNull();
+    expect(gapAfterRemoval(items, "zzz")).toBeNull();
+  });
+
+  it("is null when the next item is a fixed-time anchor", () => {
+    const fixedNext = [
+      item("a", 1, "09:00", "10:00"),
+      { ...item("b", 2, "10:30", "11:00"), fixedTime: true },
+    ];
+    expect(gapAfterRemoval(fixedNext, "a")).toBeNull();
+  });
+
+  it("is null when the next item already starts no later (overlap)", () => {
+    const overlapping = [
+      item("a", 1, "09:00", "10:00"),
+      item("b", 2, "09:00", "09:30"),
+    ];
+    expect(gapAfterRemoval(overlapping, "a")).toBeNull();
+  });
+
+  it("pairs with shiftDayItems to close the hole and stop at the next anchor", () => {
+    const day = [
+      item("a", 1, "09:00", "10:00"),
+      item("b", 2, "10:30", "11:00"),
+      item("c", 3, "11:15", "11:45"),
+      { ...item("d", 4, "13:00", "14:00"), fixedTime: true },
+      item("e", 5, "14:15", "15:00"),
+    ];
+    const gap = gapAfterRemoval(day, "a")!;
+    const next = day.find((it) => it.id === gap.nextId)!;
+    expect(shape(shiftDayItems(day, -gap.minutes, next.order))).toEqual([
+      { id: "b", start: "09:00", end: "09:30" },
+      { id: "c", start: "09:45", end: "10:15" },
+    ]);
+  });
+});
+
+describe("shiftDayItems from the day's lowest order", () => {
+  it("moves an order-0 item when the whole day shifts from the minimum order", () => {
+    // A renumbering race can leave a day starting at 0; "whole day" must
+    // start from the lowest order present, not a hard-coded 1.
+    const items = [
+      item("a", 0, "09:00", "10:00"),
+      item("b", 1, "10:30", "11:00"),
+    ];
+    const minOrder = Math.min(...items.map((it) => it.order));
+    expect(shape(shiftDayItems(items, 15, minOrder))).toEqual([
+      { id: "a", start: "09:15", end: "10:15" },
+      { id: "b", start: "10:45", end: "11:15" },
     ]);
   });
 });

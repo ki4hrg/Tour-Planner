@@ -114,6 +114,21 @@ export default async function TripDayPage({
     : null;
 
   const serialized = serializeDay(day);
+
+  // Venues for the quick-add's picker (planners only): every live location,
+  // with the ones catalogued under this trip's type flagged so they list first.
+  const locations = canEdit
+    ? await prisma.location.findMany({
+        where: { archivedAt: null },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          tripTypes: { where: { id: trip.tripTypeId }, select: { id: true } },
+        },
+      })
+    : [];
+
   // Each venue's (trip, location) engagement, shown beside the venue subheader.
   const engagements = await loadVenueEngagements(
     trip.id,
@@ -192,7 +207,9 @@ export default async function TripDayPage({
       </header>
 
       <div className="rounded-lg border bg-card p-4">
-        {serialized.items.length === 0 ? (
+        {/* A planner always gets the timeline shell: an empty day still
+            carries the quick-add. */}
+        {serialized.items.length === 0 && !canEdit ? (
           <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
         ) : (
           <VenueEngagementsProvider
@@ -206,6 +223,11 @@ export default async function TripDayPage({
               items={serialized.items}
               lodging={lodging}
               canEdit={canEdit}
+              locations={locations.map((l) => ({
+                id: l.id,
+                name: l.name,
+                tagged: l.tripTypes.length > 0,
+              }))}
             />
           </VenueEngagementsProvider>
         )}
