@@ -95,17 +95,19 @@ export default async function DocumentsPage({
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Documents</h1>
 
-      <form className="flex flex-wrap items-center gap-2" action="/documents">
+      <form className="flex max-w-sm gap-2" action="/documents">
         {kindFilter ? (
           <input type="hidden" name="kind" value={kindFilter} />
         ) : null}
         <Input
+          type="search"
           name="q"
           defaultValue={query ?? ""}
           placeholder="Search…"
-          className="max-w-xs"
+          aria-label="Search documents"
+          className="flex-1"
         />
-        <Button type="submit" variant="secondary" size="sm">
+        <Button type="submit" variant="outline">
           Search
         </Button>
       </form>

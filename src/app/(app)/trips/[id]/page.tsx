@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { formatDate, toDateInput, isOngoing, todayUtc } from "@/lib/dates";
 import {
   TRIP_LIFECYCLE_LABELS,
@@ -705,7 +706,7 @@ export default async function TripOverviewPage({
                   <div className="flex flex-wrap gap-2 pt-1">
                     <form action={archiveTrip}>
                       <input type="hidden" name="id" value={trip.id} />
-                      <Button type="submit" size="sm">
+                      <Button type="submit" size="sm" variant="outline">
                         Archive trip
                       </Button>
                     </form>
@@ -930,8 +931,8 @@ export default async function TripOverviewPage({
                     )}
                     <ul className="space-y-0.5">
                       {moneyAttention.slice(0, 3).map((a, i) => (
-                        <li key={`${a.venue}-${a.dueDate}-${i}`} className="truncate">
-                          <span
+                        <li key={`${a.venue}-${a.dueDate}-${i}`}>
+                          <div
                             className={
                               a.overdue
                                 ? "font-medium text-red-600 dark:text-red-400"
@@ -939,15 +940,14 @@ export default async function TripOverviewPage({
                             }
                           >
                             {formatMoney(a.amount, a.currency)}
-                          </span>{" "}
-                          <span className="text-muted-foreground">
-                            —{" "}
-                            <Link href={a.href} className="hover:underline">
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            <Link href={a.href} className="link-quiet">
                               {a.venue}
                             </Link>{" "}
                             · {a.overdue ? "was due" : "due"}{" "}
                             {formatDate(a.dueDate)}
-                          </span>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -1020,13 +1020,19 @@ export default async function TripOverviewPage({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <form action={deleteTrip}>
+                <form id="delete-trip-form" action={deleteTrip}>
                   <input type="hidden" name="id" value={trip.id} />
-                  <Button type="submit" variant="destructive">
+                  <ConfirmButton
+                    formId="delete-trip-form"
+                    variant="destructive"
+                    title="Delete trip"
+                    description="Deletes all days, items, stays and bookings."
+                    confirmLabel="Delete trip"
+                  >
                     Delete trip
-                  </Button>
+                  </ConfirmButton>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Deletes all days and items.
+                    Deletes all days, items, stays and bookings.
                   </p>
                 </form>
               </CardContent>

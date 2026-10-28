@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,21 +40,6 @@ export type SuggestedStaySpan = Pick<
   SerializedStay,
   "checkIn" | "checkOut" | "checkInDayIndex" | "checkOutDayIndex"
 >;
-
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 export function LodgingManager({
   tripId,
@@ -313,22 +299,19 @@ function StayRow({
                 >
                   Edit
                 </Button>
-                <Button
+                <ConfirmButton
                   variant="ghost"
                   size="sm"
                   className="text-destructive"
                   disabled={pending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Delete stay at ${stay.location.name}? Deletes its files and notes.`,
-                      )
-                    )
-                      run(() => deleteStay(stay.id));
-                  }}
+                  pending={pending}
+                  title={`Delete stay at ${stay.location.name}`}
+                  description="Deletes its files and notes."
+                  confirmLabel="Delete stay"
+                  onConfirm={() => run(() => deleteStay(stay.id))}
                 >
                   Delete
-                </Button>
+                </ConfirmButton>
               </div>
             ) : null}
           </div>

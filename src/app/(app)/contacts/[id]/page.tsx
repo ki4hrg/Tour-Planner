@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { ContactChannels } from "@/components/contact-channels";
 import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
@@ -67,9 +67,25 @@ export default async function ContactDetailPage({
                 <dt className="text-muted-foreground">Role</dt>
                 <dd>{contact.role ?? "—"}</dd>
                 <dt className="text-muted-foreground">Email</dt>
-                <dd>{contact.email ?? "—"}</dd>
+                <dd className="break-all">
+                  {contact.email ? (
+                    <a href={`mailto:${contact.email}`} className="link-quiet">
+                      {contact.email}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
                 <dt className="text-muted-foreground">Phone</dt>
-                <dd>{contact.phone ?? "—"}</dd>
+                <dd>
+                  {contact.phone ? (
+                    <a href={`tel:${contact.phone}`} className="link-quiet">
+                      {contact.phone}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
                 <dt className="text-muted-foreground">Notes</dt>
                 <dd className="whitespace-pre-wrap">{contact.notes ?? "—"}</dd>
               </dl>
@@ -118,11 +134,17 @@ export default async function ContactDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={deleteContact}>
+            <form id="delete-contact-form" action={deleteContact}>
               <input type="hidden" name="id" value={contact.id} />
-              <Button type="submit" variant="destructive">
+              <ConfirmButton
+                formId="delete-contact-form"
+                variant="destructive"
+                title="Delete contact"
+                description="Permanently deletes. Links from locations, bookings and notes are removed."
+                confirmLabel="Delete contact"
+              >
                 Delete contact
-              </Button>
+              </ConfirmButton>
             </form>
           </CardContent>
         </Card>

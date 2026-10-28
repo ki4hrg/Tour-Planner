@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import {
   Select,
   SelectContent,
@@ -10,25 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { FormState } from "@/lib/forms";
 import { listMyTodoistProjects } from "../settings/actions";
 import { linkTripTodoistProject, createTripTodoistProject } from "./actions";
 
 const NONE = "__none__";
-
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 // The trip page's Todoist row: which project this trip's follow-ups go to for
 // the current user. Project options load lazily when the picker is opened.

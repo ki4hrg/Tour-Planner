@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Download, FileText, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/dates";
-import type { FormState } from "@/lib/forms";
 import { cn } from "@/lib/utils";
 import {
   defaultKindForTarget,
@@ -40,21 +41,9 @@ import {
 } from "@/lib/validators/document";
 import { deleteDocument, updateDocument, uploadDocument } from "./actions";
 
-// Direct-call action runner: a transition plus a toast on the FormState result.
-// Exported so the trip documents hub runs its uploads the same way.
-export function useDocumentAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
+// The shared direct-call action runner, re-exported under the name the trip
+// documents hub imports so its uploads run the same way.
+export const useDocumentAction = useAction;
 
 /**
  * A reusable, target-agnostic file list — the documents counterpart to
@@ -180,17 +169,9 @@ export function DocumentList({
             canEdit={canEdit}
             pending={pending}
             onEdit={() => setEditingId(doc.id)}
-            onDelete={() => {
-              // Hard delete — there is no archive or undo for a file.
-              if (
-                !window.confirm(
-                  `Delete "${doc.title}"? This can't be undone.`,
-                )
-              ) {
-                return;
-              }
-              run(() => deleteDocument(doc.id));
-            }}
+            // Hard delete — there is no archive or undo for a file; the row
+            // confirms before calling this.
+            onDelete={() => run(() => deleteDocument(doc.id))}
           />
         ),
       )}
@@ -266,26 +247,32 @@ export function DocumentRow({
         </a>
       </div>
       {canEdit && (onEdit || onDelete) ? (
-        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center gap-1">
           {onEdit ? (
-            <button
+            <Button
               type="button"
-              className="hover:underline"
+              variant="ghost"
+              size="sm"
               onClick={onEdit}
               disabled={pending}
             >
               Edit
-            </button>
+            </Button>
           ) : null}
           {onDelete ? (
-            <button
-              type="button"
-              className="text-destructive hover:underline"
-              onClick={onDelete}
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
               disabled={pending}
+              pending={pending}
+              title={`Delete ${doc.title}`}
+              description="Permanently deletes the file."
+              confirmLabel="Delete file"
+              onConfirm={onDelete}
             >
               Delete
-            </button>
+            </ConfirmButton>
           ) : null}
         </div>
       ) : null}

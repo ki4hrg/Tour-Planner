@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -152,16 +153,20 @@ function RevokeKeyButton({ keyId }: { keyId: string }) {
   useToastEffect(state);
 
   return (
-    <form action={action} className="inline">
+    <form id={`revoke-key-${keyId}`} action={action} className="inline">
       <input type="hidden" name="keyId" value={keyId} />
-      <Button
-        type="submit"
+      <ConfirmButton
+        formId={`revoke-key-${keyId}`}
         variant="destructive"
         size="sm"
         disabled={pending}
+        pending={pending}
+        title="Revoke key"
+        description="Requests with this key fail immediately."
+        confirmLabel="Revoke"
       >
         {pending ? "Revoking…" : "Revoke"}
-      </Button>
+      </ConfirmButton>
     </form>
   );
 }

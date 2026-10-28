@@ -104,9 +104,9 @@ export function MergeLocationPanel({
             Discards {p.source.name}&rsquo;s payment terms.
           </p>
         ) : null}
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button variant="destructive" disabled={pending} onClick={confirm}>
-            Merge and delete {p.source.name}
+            Merge and delete
           </Button>
           <Button
             variant="outline"

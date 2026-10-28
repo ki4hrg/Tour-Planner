@@ -67,7 +67,7 @@ export function TripHeader({
           {!isTemplate ? (
             <Link
               href={`/trips/compare?type=${tripTypeId}`}
-              className="hover:underline sm:ml-auto"
+              className="link-quiet sm:ml-auto"
             >
               Compare years
             </Link>

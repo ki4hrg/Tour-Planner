@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import type { ShareAudience } from "@prisma/client";
 import { toast } from "sonner";
 import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -38,24 +40,6 @@ export type SerializedShareLink = {
 };
 
 type HostSite = { id: string; name: string };
-
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (
-    fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>,
-    onOk?: () => void,
-  ) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 function shareUrl(token: string): string {
   if (typeof window === "undefined") return `/share/${token}`;
@@ -154,7 +138,7 @@ function LinkRow({
         <Input
           readOnly
           value={shareUrl(link.token)}
-          className="h-8 font-mono text-xs"
+          className="h-8 font-mono text-base md:text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
         <Button
@@ -202,16 +186,19 @@ function LinkRow({
           >
             {link.enabled ? "Disable" : "Enable"}
           </Button>
-          <Button
-            type="button"
+          <ConfirmButton
             size="sm"
             variant="ghost"
             className="text-destructive"
             disabled={pending}
-            onClick={() => run(() => deleteShareLink(link.id))}
+            pending={pending}
+            title="Delete share link?"
+            description="Anyone holding the link loses access immediately."
+            confirmLabel="Delete"
+            onConfirm={() => run(() => deleteShareLink(link.id))}
           >
             <Trash2 className="size-4" /> Delete
-          </Button>
+          </ConfirmButton>
         </div>
       ) : null}
     </li>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/dates";
-import type { FormState } from "@/lib/forms";
 import type { SerializedNote } from "@/lib/notes";
 import {
   NOTE_METHODS,
@@ -32,20 +31,6 @@ import {
 
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
-
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 // A reusable, target-agnostic contact log. Newest-first list + add/edit/delete.
 export function NotesThread({
@@ -68,7 +53,7 @@ export function NotesThread({
   // Trip-context notes route via trip/trip-type links automatically.
   todoistDestinationPicker?: boolean;
 }) {
-  const { run } = useAction();
+  const { pending, run } = useAction();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -86,6 +71,7 @@ export function NotesThread({
                 contacts={contacts}
                 initial={note}
                 today={today}
+                pending={pending}
                 todoistLocationId={
                   todoistDestinationPicker && target === "location"
                     ? targetId
@@ -126,20 +112,25 @@ export function NotesThread({
                 </span>
                 {canEdit ? (
                   <>
-                    <button
+                    <Button
                       type="button"
-                      className="hover:underline"
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
                       onClick={() => setEditingId(note.id)}
                     >
                       Edit
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="text-destructive hover:underline"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                      disabled={pending}
                       onClick={() => run(() => deleteNote(note.id))}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </>
                 ) : null}
               </div>
@@ -153,6 +144,7 @@ export function NotesThread({
           <NoteForm
             contacts={contacts}
             today={today}
+            pending={pending}
             todoistLocationId={
               todoistDestinationPicker && target === "location"
                 ? targetId
@@ -188,6 +180,7 @@ function NoteForm({
   today,
   todoistLocationId,
   submitLabel,
+  pending = false,
   onSubmit,
   onCancel,
 }: {
@@ -196,6 +189,7 @@ function NoteForm({
   today: string;
   todoistLocationId?: string;
   submitLabel: string;
+  pending?: boolean;
   onSubmit: (data: NoteInput, done: () => void) => void;
   onCancel: () => void;
 }) {
@@ -347,10 +341,21 @@ function NoteForm({
       </div>
 
       <div className="flex gap-2">
-        <Button type="button" size="sm" onClick={submit}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={pending || !body.trim()}
+          onClick={submit}
+        >
           {submitLabel}
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          onClick={onCancel}
+        >
           Cancel
         </Button>
       </div>

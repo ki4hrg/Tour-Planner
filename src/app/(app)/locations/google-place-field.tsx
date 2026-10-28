@@ -109,7 +109,13 @@ export function GooglePlaceField({
           >
             Open <ExternalLink className="size-3" />
           </a>
-          <Button type="button" variant="ghost" size="sm" onClick={clearPlace}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={picking}
+            onClick={clearPlace}
+          >
             <X className="size-3.5" /> Clear
           </Button>
         </div>

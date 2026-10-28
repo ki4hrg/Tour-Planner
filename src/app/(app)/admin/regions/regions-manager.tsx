@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { regionOptions, effectiveDialCode, type RegionNode } from "@/lib/regions";
 import { RegionForm } from "./region-form";
 import { updateRegion, deleteRegion } from "./actions";
@@ -79,16 +80,19 @@ export function RegionsManager({
               >
                 {editingId === r.id ? "Close" : "Edit"}
               </Button>
-              <form action={deleteRegion}>
+              <form id={`delete-region-${r.id}`} action={deleteRegion}>
                 <input type="hidden" name="id" value={r.id} />
-                <Button
-                  type="submit"
+                <ConfirmButton
+                  formId={`delete-region-${r.id}`}
                   variant="ghost"
                   size="sm"
                   className="text-destructive"
+                  title={`Delete ${r.name}`}
+                  description="Sub-regions move to the top level and locations lose the region."
+                  confirmLabel="Delete region"
                 >
                   Delete
-                </Button>
+                </ConfirmButton>
               </form>
             </div>
           </div>

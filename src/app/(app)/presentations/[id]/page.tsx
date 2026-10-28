@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { EditableSection } from "@/components/editable-section";
 import { PresentationForm } from "../presentation-form";
 import {
@@ -178,11 +179,27 @@ export default async function PresentationDetailPage({
                   ? `Used by ${presentation._count.items} item(s); archives instead of deleting.`
                   : "Permanently deletes."}
               </p>
-              <form action={deletePresentation}>
+              <form id="delete-presentation-form" action={deletePresentation}>
                 <input type="hidden" name="id" value={presentation.id} />
-                <Button type="submit" variant="destructive">
+                <ConfirmButton
+                  formId="delete-presentation-form"
+                  variant="destructive"
+                  title={
+                    presentation._count.items > 0
+                      ? "Archive presentation"
+                      : "Delete presentation"
+                  }
+                  description={
+                    presentation._count.items > 0
+                      ? `Used by ${presentation._count.items} item(s); archives instead of deleting.`
+                      : "Permanently deletes."
+                  }
+                  confirmLabel={
+                    presentation._count.items > 0 ? "Archive" : "Delete"
+                  }
+                >
                   {presentation._count.items > 0 ? "Archive" : "Delete"}
-                </Button>
+                </ConfirmButton>
               </form>
             </CardContent>
           </Card>

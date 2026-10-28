@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import type { CalendarFeedScope } from "@prisma/client";
 import { toast } from "sonner";
 import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -21,23 +22,6 @@ export type SerializedCalendarFeed = {
   enabled: boolean;
 };
 
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (
-    fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>,
-    onOk?: () => void,
-  ) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 function feedPath(token: string): string {
   return `/api/feed/${token}.ics`;
@@ -116,7 +100,7 @@ function FeedRow({
         <Input
           readOnly
           value={httpsUrl(feed.token)}
-          className="h-8 font-mono text-xs"
+          className="h-8 font-mono text-base md:text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
         <Button

@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { EditableSection } from "@/components/editable-section";
 import { TripTypeForm } from "../trip-type-form";
 import { updateTripType, deleteTripType } from "../actions";
@@ -159,15 +160,18 @@ export default async function TripTypeDetailPage({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={deleteTripType}>
+          <form id="delete-trip-type-form" action={deleteTripType}>
             <input type="hidden" name="id" value={tripType.id} />
-            <Button
-              type="submit"
+            <ConfirmButton
+              formId="delete-trip-type-form"
               variant="destructive"
               disabled={tripType._count.trips > 0}
+              title="Delete trip type"
+              description="Permanently deletes."
+              confirmLabel="Delete trip type"
             >
               Delete trip type
-            </Button>
+            </ConfirmButton>
             {tripType._count.trips > 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
                 In use by {tripType._count.trips} trip(s).

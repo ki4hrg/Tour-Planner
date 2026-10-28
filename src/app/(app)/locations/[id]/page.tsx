@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
 import {
   agreedTotal,
@@ -19,7 +20,7 @@ import {
   serializePriceLines,
   tripHeadcount,
 } from "@/lib/costs";
-import { bookingStageText } from "@/lib/trips";
+import { bookingStageText, scheduleItemPrimaryLabel } from "@/lib/trips";
 import {
   BOOKING_PROGRESS_SELECT,
   WORKFLOW_STEP_SELECT,
@@ -316,11 +317,15 @@ export default async function LocationDetailPage({
     progress: progressView(t.bookings[0] ?? null, engagementWorkflowId),
   }));
 
-  // Visit history: which non-template trips this venue appears in, newest first.
-  // Timed schedule-item stops and rough-plan (time-less) day assignments are
-  // counted separately so an unfirmed plan still shows up here.
-  const tripSelect = {
-    day: { select: { trip: { select: { id: true, name: true, startDate: true } } } },
+  // Visit history: every slot this venue holds on a non-template trip, grouped
+  // by trip (newest first) — each timed schedule-item stop with its day, time
+  // and label, plus rough-plan (time-less) day assignments so an unfirmed plan
+  // still shows up here.
+  const daySelect = {
+    dayIndex: true,
+    date: true,
+    title: true,
+    trip: { select: { id: true, name: true, startDate: true } },
   } as const;
   const [visitRows, plannedRows] = await Promise.all([
     prisma.scheduleItemSite.findMany({
@@ -328,38 +333,79 @@ export default async function LocationDetailPage({
         locationId: id,
         scheduleItem: { day: { trip: { isTemplate: false } } },
       },
-      select: { scheduleItem: { select: tripSelect } },
+      select: {
+        scheduleItem: {
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            notes: true,
+            presentation: { select: { title: true } },
+            category: { select: { name: true } },
+            day: { select: daySelect },
+          },
+        },
+      },
     }),
     prisma.itineraryDayLocation.findMany({
       where: { locationId: id, day: { trip: { isTemplate: false } } },
-      select: tripSelect,
+      select: { day: { select: daySelect } },
     }),
   ]);
+  type VisitSlot = {
+    key: string;
+    dayIndex: number;
+    date: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    // Null for a rough-plan assignment (no item yet).
+    itemId: string | null;
+    label: string | null;
+  };
   const visitMap = new Map<
     string,
-    {
-      id: string;
-      name: string;
-      startDate: Date | null;
-      count: number;
-      planned: number;
-    }
+    { id: string; name: string; startDate: Date | null; slots: VisitSlot[] }
   >();
-  const tally = (
-    t: { id: string; name: string; startDate: Date | null },
-    key: "count" | "planned",
-  ) => {
-    const existing =
-      visitMap.get(t.id) ??
-      { id: t.id, name: t.name, startDate: t.startDate, count: 0, planned: 0 };
-    existing[key] += 1;
+  const tripEntry = (t: { id: string; name: string; startDate: Date | null }) => {
+    const existing = visitMap.get(t.id) ?? { ...t, slots: [] };
     visitMap.set(t.id, existing);
+    return existing;
   };
-  for (const v of visitRows) tally(v.scheduleItem.day.trip, "count");
-  for (const p of plannedRows) tally(p.day.trip, "planned");
-  const visits = [...visitMap.values()].sort(
-    (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
-  );
+  for (const { scheduleItem: item } of visitRows) {
+    tripEntry(item.day.trip).slots.push({
+      key: `item-${item.id}`,
+      dayIndex: item.day.dayIndex,
+      date: item.day.date ? toDateInput(item.day.date) : null,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      itemId: item.id,
+      // The venue is this page's heading, so the slot reads as the session
+      // ("Chapel tour"), not the venue name again.
+      label: scheduleItemPrimaryLabel(item, { venueInHeading: false }).primary,
+    });
+  }
+  for (const { day } of plannedRows) {
+    tripEntry(day.trip).slots.push({
+      key: `planned-${day.trip.id}-${day.dayIndex}`,
+      dayIndex: day.dayIndex,
+      date: day.date ? toDateInput(day.date) : null,
+      startTime: null,
+      endTime: null,
+      itemId: null,
+      label: null,
+    });
+  }
+  const visits = [...visitMap.values()]
+    .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0))
+    .map((t) => ({
+      ...t,
+      slots: t.slots.sort(
+        (a, b) =>
+          a.dayIndex - b.dayIndex ||
+          (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99"),
+      ),
+    }));
 
   // Engagement history (GH #86 part C): the money conversation for this venue in
   // one place — every non-template trip's booking here with its status and
@@ -498,15 +544,7 @@ export default async function LocationDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          {location.name}
-          {location.archivedAt ? (
-            <Badge variant="outline" className="ml-2 align-middle">
-              archived
-            </Badge>
-          ) : null}
-        </h1>
+      <div className="space-y-3">
         <Link
           href="/locations"
           className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
@@ -514,6 +552,14 @@ export default async function LocationDetailPage({
           <ChevronLeft className="size-4" />
           All locations
         </Link>
+        <h1 className="text-xl font-semibold text-balance sm:text-2xl">
+          {location.name}
+          {location.archivedAt ? (
+            <Badge variant="outline" className="ml-2 align-middle">
+              archived
+            </Badge>
+          ) : null}
+        </h1>
       </div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
@@ -620,26 +666,45 @@ export default async function LocationDetailPage({
               No visits.
             </p>
           ) : (
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-3 text-sm">
               {visits.map((v) => (
-                <li
-                  key={v.id}
-                  className="flex items-baseline justify-between gap-2"
-                >
-                  <Link href={`/trips/${v.id}`} className="hover:underline">
+                <li key={v.id} className="space-y-1">
+                  <Link
+                    href={`/trips/${v.id}`}
+                    className="font-medium link-quiet"
+                  >
                     {v.name}
                   </Link>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {[
-                      v.startDate ? formatDate(v.startDate) : "—",
-                      v.count
-                        ? `${v.count} visit${v.count === 1 ? "" : "s"}`
-                        : null,
-                      v.planned ? `${v.planned} planned` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {v.slots.map((s) => {
+                      const line = [
+                        `Day ${s.dayIndex}`,
+                        s.date ? formatDate(s.date) : null,
+                        s.startTime
+                          ? s.endTime
+                            ? `${s.startTime}–${s.endTime}`
+                            : s.startTime
+                          : null,
+                        s.itemId ? s.label : "planned",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+                      return (
+                        <li key={s.key}>
+                          {s.itemId ? (
+                            <Link
+                              href={`/trips/${v.id}/itinerary#item-${s.itemId}`}
+                              className="link-quiet"
+                            >
+                              {line}
+                            </Link>
+                          ) : (
+                            line
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </li>
               ))}
             </ul>
@@ -791,8 +856,12 @@ export default async function LocationDetailPage({
                   {location.description ?? "—"}
                 </dd>
                 <dt className="text-muted-foreground">Schedule</dt>
-                <dd className="col-span-2">
+                <dd className="col-span-2 whitespace-pre-wrap">
                   {location.scheduleLimitations ?? "—"}
+                </dd>
+                <dt className="text-muted-foreground">Booking notes</dt>
+                <dd className="col-span-2 whitespace-pre-wrap">
+                  {location.bookingNotes ?? "—"}
                 </dd>
                 <dt className="text-muted-foreground">Bookable</dt>
                 <dd className="col-span-2">
@@ -974,11 +1043,21 @@ export default async function LocationDetailPage({
                 </Button>
               </form>
             ) : (
-              <form action={deleteLocation}>
+              <form id="delete-location-form" action={deleteLocation}>
                 <input type="hidden" name="id" value={location.id} />
-                <Button type="submit" variant="destructive">
+                <ConfirmButton
+                  formId="delete-location-form"
+                  variant="destructive"
+                  title={referenced ? "Archive location" : "Delete location"}
+                  description={
+                    referenced
+                      ? `Used by ${location._count.scheduleItems} item(s); archives instead of deleting.`
+                      : "Permanently deletes."
+                  }
+                  confirmLabel={referenced ? "Archive location" : "Delete location"}
+                >
                   {referenced ? "Archive location" : "Delete location"}
-                </Button>
+                </ConfirmButton>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {referenced
                     ? `Used by ${location._count.scheduleItems} item(s); archives instead of deleting.`

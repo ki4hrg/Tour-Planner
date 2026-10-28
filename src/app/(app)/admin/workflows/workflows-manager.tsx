@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { FormState } from "@/lib/forms";
 import type { StepActor, StepStatus } from "@/lib/booking-workflow";
 import { cn } from "@/lib/utils";
 import { createWorkflow, saveWorkflow, deleteWorkflow } from "./actions";
@@ -47,17 +47,6 @@ const STEP_ACTOR_LABELS: Record<StepActor, string> = {
   US: "Us",
   VENUE: "Venue",
 };
-
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else if (res.message) toast.success(res.message);
-    });
-  return { pending, run };
-}
 
 export function WorkflowsManager({ workflows }: { workflows: WorkflowRow[] }) {
   const { pending, run } = useAction();
@@ -151,24 +140,16 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
     );
   };
 
-  const remove = () => {
-    const uses = [
-      workflow.bookingCount
-        ? `${workflow.bookingCount} booking${workflow.bookingCount === 1 ? "" : "s"} will keep their status without a workflow`
-        : null,
-      workflow.locationCount
-        ? `${workflow.locationCount} location${workflow.locationCount === 1 ? "" : "s"} will lose it as their default`
-        : null,
-    ].filter(Boolean);
-    if (
-      !window.confirm(
-        `Delete ${workflow.name}?${uses.length ? ` ${uses.join("; ")}.` : ""}`,
-      )
-    ) {
-      return;
-    }
-    run(() => deleteWorkflow(workflow.id));
-  };
+  // The consequence line for the delete confirm.
+  const removeUses = [
+    workflow.bookingCount
+      ? `${workflow.bookingCount} booking${workflow.bookingCount === 1 ? "" : "s"} keep their status without a workflow`
+      : null,
+    workflow.locationCount
+      ? `${workflow.locationCount} location${workflow.locationCount === 1 ? "" : "s"} lose it as their default`
+      : null,
+  ].filter(Boolean);
+  const remove = () => run(() => deleteWorkflow(workflow.id));
 
   return (
     <section
@@ -313,15 +294,23 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
         <Button size="sm" disabled={pending} onClick={save}>
           Save
         </Button>
-        <Button
+        <ConfirmButton
           variant="ghost"
           size="sm"
           className="ml-auto text-destructive"
           disabled={pending}
-          onClick={remove}
+          pending={pending}
+          title={`Delete ${workflow.name}`}
+          description={
+            removeUses.length
+              ? `${removeUses.join("; ")}.`
+              : "Permanently deletes."
+          }
+          confirmLabel="Delete workflow"
+          onConfirm={remove}
         >
           Delete
-        </Button>
+        </ConfirmButton>
       </div>
     </section>
   );
