@@ -10,7 +10,7 @@ import {
 import { TripForm, type TripSource } from "../trip-form";
 import { createTrip } from "../actions";
 import { toDateInput } from "@/lib/dates";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -58,17 +58,14 @@ export default async function NewTripPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink
+          href={asTemplate ? "/trips?templates=1" : "/trips"}
+          label={asTemplate ? "All templates" : "All trips"}
+        />
         <h1 className="text-2xl font-semibold">
           {asTemplate ? "New template" : "New trip"}
         </h1>
-        <Link
-          href={asTemplate ? "/trips?templates=1" : "/trips"}
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          {asTemplate ? "All templates" : "All trips"}
-        </Link>
       </div>
       <Card>
         <CardHeader>
@@ -89,7 +86,7 @@ export default async function NewTripPage({
           ) : (
             <p className="text-sm text-muted-foreground">
               No trip types.{" "}
-              <Link href="/trip-types" className="underline">
+              <Link href="/trip-types" className="link-quiet">
                 Add trip type
               </Link>
             </p>

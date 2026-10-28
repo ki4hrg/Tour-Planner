@@ -59,7 +59,7 @@ import { engagementsToFold } from "@/lib/booked-via.server";
 import { NotesThread } from "../../notes/notes-thread";
 import { DocumentRow, DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -545,13 +545,7 @@ export default async function LocationDetailPage({
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <Link
-          href="/locations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All locations
-        </Link>
+        <BackLink href="/locations" label="All locations" />
         <h1 className="text-xl font-semibold text-balance sm:text-2xl">
           {location.name}
           {location.archivedAt ? (
@@ -631,7 +625,7 @@ export default async function LocationDetailPage({
                 <h4 className="text-sm font-medium">
                   <Link
                     href={bookingDashboardHref(g.tripId, location.id)}
-                    className="hover:underline"
+                    className="link-quiet"
                   >
                     {g.tripName}
                   </Link>{" "}
@@ -727,7 +721,7 @@ export default async function LocationDetailPage({
                   <span className="min-w-0">
                     <Link
                       href={bookingDashboardHref(e.tripId, location.id)}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {e.tripName}
                     </Link>
@@ -824,7 +818,7 @@ export default async function LocationDetailPage({
                       href={mapHref(location)!}
                       target="_blank"
                       rel="noreferrer"
-                      className="ml-2 whitespace-nowrap text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      className="ml-2 whitespace-nowrap text-xs text-muted-foreground link-quiet hover:text-foreground"
                     >
                       Open in Maps
                     </a>
@@ -843,7 +837,7 @@ export default async function LocationDetailPage({
                       href={location.website}
                       target="_blank"
                       rel="noreferrer"
-                      className="hover:underline"
+                      className="link-quiet"
                     >
                       {location.website}
                     </a>

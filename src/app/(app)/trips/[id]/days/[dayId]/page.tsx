@@ -18,6 +18,7 @@ import { lodgingForDays } from "@/lib/stays";
 import { DayTimeline } from "./day-timeline";
 import { VenueEngagementsProvider } from "../../../venue-engagements";
 import { loadVenueEngagements } from "@/lib/venue-engagements";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -147,13 +148,7 @@ export default async function TripDayPage({
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <Link
-          href={`/trips/${trip.id}`}
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          {trip.name}
-        </Link>
+        <BackLink href={`/trips/${trip.id}`} label={trip.name} />
         <Badge variant="secondary">{TRIP_LIFECYCLE_LABELS[lifecycle]}</Badge>
       </div>
 

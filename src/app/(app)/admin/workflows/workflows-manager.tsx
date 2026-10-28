@@ -82,9 +82,10 @@ export function WorkflowsManager({ workflows }: { workflows: WorkflowRow[] }) {
         <Button
           type="submit"
           variant="outline"
+          size="sm"
           disabled={pending || !name.trim()}
         >
-          Add workflow
+          + Add workflow
         </Button>
       </form>
     </div>
@@ -215,7 +216,7 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                   aria-checked={s.actor === a}
                   onClick={() => patch(i, { actor: a })}
                   className={cn(
-                    "rounded px-2 py-1",
+                    "rounded px-2 py-1 focus-ring",
                     s.actor === a
                       ? "bg-muted font-medium text-foreground"
                       : "text-muted-foreground hover:text-foreground",

@@ -249,6 +249,7 @@ function DayShiftControl({
         </Button>
         <Button
           type="button"
+          variant="outline"
           className="min-h-10 w-full"
           disabled={pending}
           onClick={() => apply(1)}

@@ -126,7 +126,7 @@ function BackfillRow({ row }: { row: Row }) {
     <div className="space-y-3 px-6 py-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="text-sm">
-          <a href={`/locations/${row.id}`} className="font-medium hover:underline">
+          <a href={`/locations/${row.id}`} className="font-medium link-quiet">
             {row.name}
           </a>
           {row.needsReview ? (
@@ -179,7 +179,7 @@ function BackfillRow({ row }: { row: Row }) {
                       href={googlePlaceHref(c.name ?? row.name, c.placeId)}
                       target="_blank"
                       rel="noreferrer"
-                      className="ml-2 inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground"
+                      className="ml-2 inline-flex items-center gap-0.5 link-quiet hover:text-foreground"
                     >
                       Open in Maps <ExternalLink className="size-3" />
                     </a>

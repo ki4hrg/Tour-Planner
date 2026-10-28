@@ -268,7 +268,7 @@ export function VenueDetails({
                       href={`/trips/${tripId}/days/${s.dayId}${
                         s.planned ? "" : `#item-${s.id}`
                       }`}
-                      className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                      className="link-quiet"
                     >
                       {s.label}
                     </Link>
@@ -525,13 +525,15 @@ function PaymentSchedule({
       <p className="flex items-baseline gap-2 text-xs font-medium text-muted-foreground">
         Payment schedule
         {canEdit && !editing ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             onClick={startEditing}
-            className="font-normal underline-offset-2 hover:underline"
+            className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
           >
             {row.schedule.length ? "Edit" : "Add"}
-          </button>
+          </Button>
         ) : null}
       </p>
 
@@ -656,16 +658,18 @@ function PaymentSchedule({
                   <SelectItem value="NONE">no deadline</SelectItem>
                 </SelectContent>
               </Select>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 disabled={pending}
                 onClick={() =>
                   setDrafts((prev) => prev.filter((x) => x.key !== d.key))
                 }
-                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+                className="text-destructive"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           ))}
           <div className="flex flex-wrap items-center gap-2">
@@ -928,7 +932,8 @@ export function VenueRow({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="flex items-start gap-1.5 text-left"
+            aria-expanded={open}
+            className="flex items-start gap-1.5 rounded-md text-left focus-ring"
           >
             <ChevronRight
               className={cn(
@@ -1035,7 +1040,8 @@ export function VenueCard({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 items-start gap-1.5 text-left"
+          aria-expanded={open}
+          className="flex min-w-0 items-start gap-1.5 rounded-md text-left focus-ring"
         >
           <ChevronRight
             className={cn(
@@ -1130,14 +1136,16 @@ export function ItemRow({
     <>
     <TableRow>
       <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
-        <button
+        <Button
           type="button"
-          className="text-left font-medium hover:underline"
+          variant="ghost"
+          size="sm"
+          className="-ml-2.5 h-auto justify-start py-1 text-left font-medium whitespace-normal"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
         >
           {row.label}
-        </button>
+        </Button>
         <span className="block text-xs text-muted-foreground">
           Day {row.dayIndex}
           {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off
@@ -1213,14 +1221,16 @@ export function ItemCard({
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0">
-          <button
+          <Button
             type="button"
-            className="text-left font-medium hover:underline"
+            variant="ghost"
+            size="sm"
+            className="-ml-2.5 h-auto justify-start py-1 text-left font-medium whitespace-normal"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
           >
             {row.label}
-          </button>
+          </Button>
           <span className="block text-xs text-muted-foreground">
             Day {row.dayIndex}
             {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off

@@ -42,7 +42,7 @@ export default async function CrossTripBookingsPage({
   };
   const chip = (active: boolean) =>
     cn(
-      "rounded-full border px-3 py-1 text-sm",
+      "rounded-full border px-3 py-1 text-sm focus-ring",
       active ? "bg-muted font-medium" : "text-muted-foreground",
     );
 

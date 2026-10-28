@@ -201,7 +201,7 @@ export default async function Home({
                   <div className="min-w-0">
                     <Link
                       href={`/trips/${t.id}`}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {t.name}
                     </Link>
@@ -295,7 +295,7 @@ export default async function Home({
                   <span className="min-w-0">
                     <Link
                       href={f.target.href}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {f.target.label}
                     </Link>
@@ -338,7 +338,7 @@ export default async function Home({
               ) : (
                 <>
                   No upcoming trips.{" "}
-                  <Link href="/trips/new" className="underline">
+                  <Link href="/trips/new" className="link-quiet">
                     New trip
                   </Link>
                 </>
@@ -354,7 +354,7 @@ export default async function Home({
                   <span className="min-w-0">
                     <Link
                       href={`/trips/${t.id}`}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {t.name}
                     </Link>

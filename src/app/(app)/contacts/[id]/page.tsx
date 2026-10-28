@@ -13,7 +13,7 @@ import { ContactChannels } from "@/components/contact-channels";
 import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -39,18 +39,12 @@ export default async function ContactDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/contacts" label="All contacts" />
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">{contact.name}</h1>
           <ContactChannels phone={contact.phone} email={contact.email} />
         </div>
-        <Link
-          href="/contacts"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All contacts
-        </Link>
       </div>
 
       <Card>
@@ -111,7 +105,7 @@ export default async function ContactDetailPage({
             <ul className="space-y-1">
               {contact.locations.map((l) => (
                 <li key={l.id}>
-                  <Link href={`/locations/${l.id}`} className="hover:underline">
+                  <Link href={`/locations/${l.id}`} className="link-quiet">
                     {l.name}
                   </Link>
                   {l.region ? (

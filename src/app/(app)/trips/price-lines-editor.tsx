@@ -171,14 +171,16 @@ export function PriceLinesEditor({
           </SelectContent>
         </Select>
         {list ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             disabled={disabled}
             onClick={useListPrice}
-            className="link-quiet ml-auto text-xs text-muted-foreground"
+            className="ml-auto h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
           >
             Use list price
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -249,7 +251,7 @@ export function PriceLinesEditor({
           disabled={disabled}
           onClick={addLine}
         >
-          Add line
+          + Add line
         </Button>
         {lines.length > 0 ? (
           total != null ? (

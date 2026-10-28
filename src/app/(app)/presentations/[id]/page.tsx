@@ -18,7 +18,7 @@ import {
   deletePresentation,
   unarchivePresentation,
 } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,8 @@ export default async function PresentationDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/presentations" label="All presentations" />
         <h1 className="text-2xl font-semibold">
           {presentation.title}
           {presentation.archivedAt ? (
@@ -56,13 +57,6 @@ export default async function PresentationDetailPage({
             </Badge>
           ) : null}
         </h1>
-        <Link
-          href="/presentations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All presentations
-        </Link>
       </div>
 
       <Card>
@@ -123,7 +117,7 @@ export default async function PresentationDetailPage({
                 <li key={c.id}>
                   <Link
                     href={`/contacts/${c.id}`}
-                    className="hover:underline"
+                    className="link-quiet"
                   >
                     {c.name}
                   </Link>

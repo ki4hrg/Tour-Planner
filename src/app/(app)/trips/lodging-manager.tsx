@@ -106,7 +106,7 @@ export function LodgingManager({
         isTemplate && dayCount === 0 ? (
           <p className="text-sm text-muted-foreground">
             No days.{" "}
-            <Link href={`/trips/${tripId}/itinerary`} className="underline">
+            <Link href={`/trips/${tripId}/itinerary`} className="link-quiet">
               Add days
             </Link>
           </p>
@@ -276,16 +276,18 @@ function StayRow({
                   Booking
                 </Link>
                 {canEdit || documents.length > 0 ? (
-                  <button
+                  <Button
                     type="button"
-                    className="text-xs text-muted-foreground link-quiet"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
                     onClick={() => setShowFiles((v) => !v)}
                     aria-expanded={showFiles}
                   >
                     {documents.length > 0
                       ? `Files (${documents.length})`
                       : "Files"}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

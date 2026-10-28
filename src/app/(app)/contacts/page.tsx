@@ -66,7 +66,7 @@ export default async function ContactsPage({
         <Link
           href={qs()}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm",
+            "rounded-full border px-3 py-1 text-sm focus-ring",
             isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
@@ -75,7 +75,7 @@ export default async function ContactsPage({
         <Link
           href={qs("flat")}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm",
+            "rounded-full border px-3 py-1 text-sm focus-ring",
             !isGrouped ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >

@@ -157,12 +157,7 @@ function UserRowItem({
               </SelectContent>
             </Select>
           </div>
-          <Button
-            type="submit"
-            variant="outline"
-            size="sm"
-            disabled={rolePending}
-          >
+          <Button type="submit" size="sm" disabled={rolePending}>
             Save
           </Button>
         </form>

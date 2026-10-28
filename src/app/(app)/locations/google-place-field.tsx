@@ -105,7 +105,7 @@ export function GooglePlaceField({
             href={googlePlaceHref(locationName || pickedName, placeId)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground link-quiet hover:text-foreground"
           >
             Open <ExternalLink className="size-3" />
           </a>
@@ -147,7 +147,7 @@ export function GooglePlaceField({
                   <button
                     type="button"
                     onClick={() => pick(s)}
-                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent"
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent focus-ring"
                   >
                     <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                     <span>

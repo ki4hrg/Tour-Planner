@@ -175,7 +175,7 @@ export default async function SharePage({
                   )}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium hover:underline"
+                  className="font-medium link-quiet"
                 >
                   {doc.title}
                 </a>

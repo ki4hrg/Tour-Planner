@@ -91,7 +91,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
                 type="button"
                 onClick={copyToClipboard}
                 aria-label="Copy key"
-                className="flex w-full items-start gap-2 text-left font-mono text-sm break-all bg-white border rounded p-2 hover:bg-amber-100"
+                className="flex w-full items-start gap-2 text-left font-mono text-sm break-all bg-white border rounded p-2 hover:bg-amber-100 focus-ring"
               >
                 <span className="min-w-0 flex-1">{state.key}</span>
                 {copiedKey ? (

@@ -47,7 +47,7 @@ export function LocationTripsPanel({
               <span className="min-w-0">
                 <Link
                   href={`/trips/${r.tripId}`}
-                  className="font-medium hover:underline"
+                  className="font-medium link-quiet"
                 >
                   {r.tripName}
                 </Link>

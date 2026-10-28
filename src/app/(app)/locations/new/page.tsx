@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/authz";
 import {
@@ -10,7 +9,7 @@ import {
 import { LocationForm } from "../location-form";
 import { createLocation } from "../actions";
 import { placesEnabled } from "@/lib/google-places";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -29,15 +28,9 @@ export default async function NewLocationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/locations" label="All locations" />
         <h1 className="text-2xl font-semibold">New location</h1>
-        <Link
-          href="/locations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All locations
-        </Link>
       </div>
       <Card>
         <CardHeader>

@@ -3,11 +3,11 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
-  Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LinkCard } from "@/components/link-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,7 +89,7 @@ export default async function LocationsPage({
         <Link
           href={qs({ archived: showArchived ? "1" : undefined, q: query })}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm",
+            "rounded-full border px-3 py-1 text-sm focus-ring",
             !type ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
@@ -104,7 +104,7 @@ export default async function LocationsPage({
               q: query,
             })}
             className={cn(
-              "rounded-full border px-3 py-1 text-sm",
+              "rounded-full border px-3 py-1 text-sm focus-ring",
               type === t.id ? "bg-muted font-medium" : "text-muted-foreground",
             )}
           >
@@ -123,12 +123,14 @@ export default async function LocationsPage({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {locations.map((l) => (
-          <Card key={l.id} className={l.archivedAt ? "opacity-70" : undefined}>
+          <LinkCard
+            key={l.id}
+            href={`/locations/${l.id}`}
+            cardClassName={l.archivedAt ? "opacity-70" : undefined}
+          >
             <CardHeader>
               <CardTitle className="text-base">
-                <Link href={`/locations/${l.id}`} className="hover:underline">
-                  {l.name}
-                </Link>
+                {l.name}
                 {l.archivedAt ? (
                   <Badge variant="outline" className="ml-2 align-middle">
                     archived
@@ -151,7 +153,7 @@ export default async function LocationsPage({
                 ))}
               </div>
             </CardContent>
-          </Card>
+          </LinkCard>
         ))}
         {locations.length === 0 ? (
           <p className="text-sm text-muted-foreground">

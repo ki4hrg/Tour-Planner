@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LinkCard } from "@/components/link-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -107,7 +108,7 @@ export default async function TripsPage({
         <Link
           href={qs({ templates: showTemplates ? "1" : undefined })}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm",
+            "rounded-full border px-3 py-1 text-sm focus-ring",
             !lifecycle && !showAll ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
@@ -118,7 +119,7 @@ export default async function TripsPage({
             key={s}
             href={qs({ status: s, templates: showTemplates ? "1" : undefined })}
             className={cn(
-              "rounded-full border px-3 py-1 text-sm",
+              "rounded-full border px-3 py-1 text-sm focus-ring",
               lifecycle === s ? "bg-muted font-medium" : "text-muted-foreground",
             )}
           >
@@ -128,7 +129,7 @@ export default async function TripsPage({
         <Link
           href={qs({ status: "all", templates: showTemplates ? "1" : undefined })}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm",
+            "rounded-full border px-3 py-1 text-sm focus-ring",
             showAll ? "bg-muted font-medium" : "text-muted-foreground",
           )}
         >
@@ -161,49 +162,54 @@ export default async function TripsPage({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {trips.map((t) => (
-          <Card key={t.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-2 text-base">
-                <Link href={`/trips/${t.id}`} className="hover:underline">
-                  {t.name}
-                </Link>
-                {t.isTemplate ? (
-                  <TemplateChip />
-                ) : (
-                  <Badge variant="secondary" className="shrink-0">
-                    {TRIP_LIFECYCLE_LABELS[deriveTripLifecycle(t, today)]}
-                  </Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm text-muted-foreground">
-              <p>{t.tripType.name}</p>
-              {!t.isTemplate ? (
+          // The whole card is the link; Duplicate sits under it, outside the
+          // anchor (nested anchors are invalid HTML).
+          <div key={t.id} className="flex flex-col gap-1.5">
+            <LinkCard href={`/trips/${t.id}`} className="flex-1">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between gap-2 text-base">
+                  <span>{t.name}</span>
+                  {t.isTemplate ? (
+                    <TemplateChip />
+                  ) : (
+                    <Badge variant="secondary" className="shrink-0">
+                      {TRIP_LIFECYCLE_LABELS[deriveTripLifecycle(t, today)]}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1 text-sm text-muted-foreground">
+                <p>{t.tripType.name}</p>
+                {!t.isTemplate ? (
+                  <p>
+                    {t.startDate
+                      ? `${formatDate(t.startDate)}${
+                          t.endDate ? ` → ${formatDate(t.endDate)}` : ""
+                        }`
+                      : "Dates not set"}
+                  </p>
+                ) : null}
                 <p>
-                  {t.startDate
-                    ? `${formatDate(t.startDate)}${
-                        t.endDate ? ` → ${formatDate(t.endDate)}` : ""
+                  {t._count.days} day{t._count.days === 1 ? "" : "s"}
+                  {t.participantCount != null
+                    ? ` · ${t.participantCount} participant${
+                        t.participantCount === 1 ? "" : "s"
                       }`
-                    : "Dates not set"}
+                    : ""}
                 </p>
-              ) : null}
-              <p>
-                {t._count.days} day{t._count.days === 1 ? "" : "s"}
-                {t.participantCount != null
-                  ? ` · ${t.participantCount} participant${
-                      t.participantCount === 1 ? "" : "s"
-                    }`
-                  : ""}
+              </CardContent>
+            </LinkCard>
+            {canEdit ? (
+              <p className="px-1 text-sm">
+                <Link
+                  href={`/trips/new?from=${t.id}`}
+                  className="text-muted-foreground link-quiet"
+                >
+                  Duplicate
+                </Link>
               </p>
-              {canEdit ? (
-                <p>
-                  <Link href={`/trips/new?from=${t.id}`} className="link-quiet">
-                    Duplicate
-                  </Link>
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+            ) : null}
+          </div>
         ))}
         {trips.length === 0 ? (
           <p className="text-sm text-muted-foreground">

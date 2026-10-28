@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { CategoryForm } from "./category-form";
@@ -75,21 +76,21 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
               <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={pending || i === 0}
                   onClick={() => move(i, -1)}
                   aria-label={`Move ${c.name} up`}
                 >
-                  ↑
+                  <ArrowUp />
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={pending || i === categories.length - 1}
                   onClick={() => move(i, 1)}
                   aria-label={`Move ${c.name} down`}
                 >
-                  ↓
+                  <ArrowDown />
                 </Button>
                 {/* Built-ins are protected: no edit/delete (only reorder). */}
                 {c.system ? null : (

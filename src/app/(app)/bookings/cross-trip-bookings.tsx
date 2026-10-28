@@ -199,7 +199,7 @@ function VenueCardGroup({
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <Link
                 href={`/locations/${group.locationId}`}
-                className="hover:underline"
+                className="link-quiet"
               >
                 {group.locationName}
               </Link>
@@ -258,7 +258,7 @@ function VenueCardGroup({
             No contact ·{" "}
             <Link
               href={`/locations/${group.locationId}#contacts`}
-              className="underline-offset-2 hover:underline"
+              className="link-quiet"
             >
               Set primary contact
             </Link>
@@ -353,7 +353,7 @@ function TripCell({ entry: { trip, row } }: { entry: VenueTripRow }) {
     <div>
       <Link
         href={`/trips/${trip.id}/booking?venue=${row.locationId}`}
-        className="font-medium hover:underline"
+        className="font-medium link-quiet"
       >
         {trip.name}
       </Link>
@@ -407,7 +407,7 @@ function OtherBookings({
             <p className="text-sm">
               <Link
                 href={`/trips/${trip.id}/booking`}
-                className="font-medium hover:underline"
+                className="font-medium link-quiet"
               >
                 {trip.name}
               </Link>

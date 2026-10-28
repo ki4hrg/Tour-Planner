@@ -133,6 +133,16 @@
   }
 }
 
+/* Keyboard focus for tappable things that are not Button primitives: row
+   expanders, drag grips, filter-chip links, whole-card links. Mirrors the
+   Button's focus-visible ring. */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

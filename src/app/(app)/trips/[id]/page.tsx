@@ -657,7 +657,7 @@ export default async function TripOverviewPage({
                         <li key={e.id}>
                           <Link
                             href={e.href}
-                            className="font-medium hover:underline"
+                            className="font-medium link-quiet"
                           >
                             {e.name}
                           </Link>
@@ -684,7 +684,7 @@ export default async function TripOverviewPage({
                         <li key={l.id}>
                           <Link
                             href={`/locations/${l.id}`}
-                            className="hover:underline"
+                            className="link-quiet"
                           >
                             {l.name}
                           </Link>

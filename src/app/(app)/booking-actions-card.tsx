@@ -149,7 +149,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         )}
         {missingPrice > 0 ? (
           <p className="text-xs text-muted-foreground">
-            <Link href="/bookings" className="hover:underline">
+            <Link href="/bookings" className="link-quiet">
               {missingPrice} without agreed price
             </Link>
           </p>
@@ -175,7 +175,7 @@ function Section({ title, lines }: { title: string; lines: Line[] }) {
             key={l.key}
             className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
-            <Link href={l.href} className="min-w-0 hover:underline">
+            <Link href={l.href} className="min-w-0 link-quiet">
               <span className="font-medium">{l.venue}</span>
               <span className="text-muted-foreground"> — {l.trip.name}</span>
             </Link>

@@ -205,7 +205,7 @@ export function DocumentRow({
             href={documentHref(doc.id, isInlineViewable(doc.contentType))}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 font-medium hover:underline"
+            className="flex items-center gap-2 font-medium link-quiet"
           >
             <FileText className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{doc.title}</span>
@@ -504,7 +504,7 @@ export function DocumentUploadForm({
       />
 
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={submit} disabled={pending}>
+        <Button variant="outline" size="sm" onClick={submit} disabled={pending}>
           <Paperclip className="size-4" />
           {pending ? "Uploading…" : "Upload"}
         </Button>

@@ -48,24 +48,23 @@ export default async function PresentationsPage() {
               key={p.id}
               className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
             >
-              <div className="min-w-0 flex-1">
-                <Link
-                  href={`/presentations/${p.id}`}
-                  className="font-medium hover:underline"
-                >
-                  {p.title}
-                </Link>
+              {/* The row's text block is the link; the badge stays outside it. */}
+              <Link
+                href={`/presentations/${p.id}`}
+                className="block min-w-0 flex-1 rounded-md focus-ring"
+              >
+                <span className="font-medium link-quiet">{p.title}</span>
                 {p.description && (
-                  <div className="truncate text-sm text-muted-foreground">
+                  <span className="block truncate text-sm text-muted-foreground">
                     {p.description}
-                  </div>
+                  </span>
                 )}
                 {p.defaultPresenters.length > 0 && (
-                  <div className="text-xs text-muted-foreground">
+                  <span className="block text-xs text-muted-foreground">
                     {p.defaultPresenters.map((c) => c.name).join(", ")}
-                  </div>
+                  </span>
                 )}
-              </div>
+              </Link>
               <div className="flex gap-2">
                 <Badge variant="outline">{p._count.items} uses</Badge>
               </div>

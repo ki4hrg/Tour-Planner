@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ListChecks, SquareKanban, Table2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
@@ -150,21 +151,23 @@ export function BookingDashboard({
           ["progress", "Progress", ListChecks],
         ] as const
       ).map(([value, label, Icon]) => (
-        <button
+        <Button
           key={value}
           type="button"
+          variant="ghost"
+          size="sm"
           aria-pressed={view === value}
           onClick={() => switchView(value)}
           className={cn(
-            "flex items-center gap-1 rounded px-2 py-1",
+            "h-6 rounded px-2 text-xs",
             view === value
-              ? "bg-muted font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-muted text-foreground"
+              : "font-normal text-muted-foreground",
           )}
         >
           <Icon className="size-3.5" />
           {label}
-        </button>
+        </Button>
       ))}
     </div>
   );

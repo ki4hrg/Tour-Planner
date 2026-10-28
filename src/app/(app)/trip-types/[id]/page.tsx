@@ -14,7 +14,7 @@ import { EditableSection } from "@/components/editable-section";
 import { TripTypeForm } from "../trip-type-form";
 import { updateTripType, deleteTripType } from "../actions";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -47,15 +47,9 @@ export default async function TripTypeDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/trip-types" label="All trip types" />
         <h1 className="text-2xl font-semibold">{tripType.name}</h1>
-        <Link
-          href="/trip-types"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          Trip types
-        </Link>
       </div>
 
       <Card>
@@ -109,7 +103,7 @@ export default async function TripTypeDetailPage({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Templates</CardTitle>
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm">
             <Link href="/trips/new?template=1">New template</Link>
           </Button>
         </CardHeader>
@@ -125,7 +119,7 @@ export default async function TripTypeDetailPage({
                 >
                   <Link
                     href={`/trips/${t.id}/itinerary`}
-                    className="font-medium hover:underline"
+                    className="font-medium link-quiet"
                   >
                     {t.name}
                   </Link>

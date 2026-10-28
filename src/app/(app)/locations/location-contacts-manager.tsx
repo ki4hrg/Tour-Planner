@@ -59,7 +59,7 @@ export function LocationContactsManager({
             {/* The actions drop below the contact when the column is too narrow
                 for both, so the email keeps a readable line. */}
             <div className="min-w-0 flex-1 basis-56">
-              <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">
+              <Link href={`/contacts/${c.id}`} className="font-medium link-quiet">
                 {c.name}
               </Link>
               {isPrimary ? (

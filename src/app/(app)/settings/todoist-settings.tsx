@@ -51,7 +51,7 @@ export function TodoistConnectForm() {
           href="https://app.todoist.com/app/settings/integrations/developer"
           target="_blank"
           rel="noopener noreferrer"
-          className="block w-fit text-xs text-muted-foreground underline hover:text-foreground"
+          className="block w-fit text-xs text-muted-foreground link-quiet hover:text-foreground"
         >
           Get token
         </a>

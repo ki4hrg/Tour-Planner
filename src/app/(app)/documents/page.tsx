@@ -116,7 +116,7 @@ export default async function DocumentsPage({
         <Link
           href={qs({ q: query })}
           className={cn(
-            "rounded-full border px-3 py-1",
+            "rounded-full border px-3 py-1 focus-ring",
             !kindFilter && "bg-muted font-medium",
           )}
         >
@@ -127,7 +127,7 @@ export default async function DocumentsPage({
             key={k}
             href={qs({ kind: k, q: query })}
             className={cn(
-              "rounded-full border px-3 py-1",
+              "rounded-full border px-3 py-1 focus-ring",
               kindFilter === k && "bg-muted font-medium",
             )}
           >
@@ -153,7 +153,7 @@ export default async function DocumentsPage({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <a
                     href={documentHref(doc.id)}
-                    className="font-medium hover:underline"
+                    className="font-medium link-quiet"
                   >
                     {doc.title}
                   </a>

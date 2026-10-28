@@ -228,7 +228,7 @@ function RunHeader({
               {linkVenues ? (
                 <Link
                   href={`/locations/${v.id}`}
-                  className="underline-offset-4 hover:underline"
+                  className="link-quiet"
                 >
                   {breakAfterSlashes(v.name)}
                 </Link>
@@ -386,7 +386,7 @@ function TimelineRow({
           {href ? (
             <Link
               href={href}
-              className="font-medium italic text-muted-foreground underline-offset-4 hover:underline"
+              className="font-medium italic text-muted-foreground link-quiet"
             >
               {breakAfterSlashes(primary)}
             </Link>
@@ -442,7 +442,7 @@ function TimelineRow({
         {href ? (
           <Link
             href={href}
-            className="font-medium underline-offset-4 hover:underline"
+            className="font-medium link-quiet"
             style={
               labelFromCategory && item.category?.color
                 ? { color: item.category.color }

@@ -13,6 +13,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CalendarPlus,
   Ellipsis,
   GripVertical,
@@ -643,7 +645,7 @@ function DayCard({
               onDragEnd={dnd.end}
               // Native drag never fires on touch, so the grip only shows on a
               // wide screen with a fine pointer.
-              className="-ml-2 hidden shrink-0 cursor-grab rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
+              className="-ml-2 hidden shrink-0 cursor-grab rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground active:cursor-grabbing focus-ring pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
               title="Drag to reorder"
               aria-hidden
             >
@@ -716,21 +718,21 @@ function DayCard({
           <div className="hidden shrink-0 items-center gap-1 sm:flex">
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               disabled={pending || index === 0}
               onClick={() => onMove(index, -1)}
               aria-label="Move day up"
             >
-              ↑
+              <ArrowUp />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               disabled={pending || index === total - 1}
               onClick={() => onMove(index, 1)}
               aria-label="Move day down"
             >
-              ↓
+              <ArrowDown />
             </Button>
             <Button
               variant="ghost"
@@ -1046,7 +1048,7 @@ function PlannedLocations({
               onDragEnd={dnd.end}
               title={canEdit ? "Drag to another day" : undefined}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm",
+                "inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm focus-ring",
                 canEdit && "cursor-grab active:cursor-grabbing",
                 dnd.drag?.kind === "planned" && dnd.drag.id === p.id && "opacity-50",
               )}
@@ -1514,7 +1516,7 @@ function ItemRow({
                 }
                 onDragEnd={dnd.end}
                 // Native drag never fires on touch: fine pointers only.
-                className="hidden cursor-grab rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
+                className="hidden cursor-grab rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing focus-ring pointer-coarse:hidden sm:inline-flex sm:pointer-coarse:hidden"
                 title="Drag to move"
                 aria-hidden
               >
@@ -1522,21 +1524,21 @@ function ItemRow({
               </span>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 disabled={pending || index === 0}
                 onClick={() => onMove(index, -1)}
                 aria-label="Move item up"
               >
-                ↑
+                <ArrowUp />
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 disabled={pending || index === total - 1}
                 onClick={() => onMove(index, 1)}
                 aria-label="Move item down"
               >
-                ↓
+                <ArrowDown />
               </Button>
               {otherDays.length > 0 ? (
                 <DropdownMenu>
@@ -1914,16 +1916,18 @@ function ItemFields({
                 <span key={id} className="inline-flex max-w-full flex-col gap-0.5">
                   <span className="inline-flex items-center gap-1 self-start rounded border bg-muted/50 px-2 py-0.5 text-xs">
                     {locationName(id)}
-                    <button
+                    <Button
                       type="button"
-                      className="text-muted-foreground hover:text-destructive"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="-my-1 -mr-1.5 text-muted-foreground hover:text-destructive"
                       aria-label={`Remove ${locationName(id)}`}
                       onClick={() =>
                         setLocationIds((prev) => prev.filter((s) => s !== id))
                       }
                     >
-                      ✕
-                    </button>
+                      <X />
+                    </Button>
                   </span>
                   {limits ? (
                     <span
@@ -1965,7 +1969,12 @@ function ItemFields({
               onChange={(e) => setNewName(e.target.value)}
             />
             <div className="flex gap-2">
-              <Button type="button" size="sm" onClick={handleCreate}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCreate}
+              >
                 Create & add
               </Button>
               <Button
@@ -1979,13 +1988,14 @@ function ItemFields({
             </div>
           </div>
         ) : (
-          <button
+          <Button
             type="button"
-            className="text-xs text-muted-foreground link-quiet"
+            variant="outline"
+            size="sm"
             onClick={() => setCreatingLocation(true)}
           >
             + New location
-          </button>
+          </Button>
         )}
 
         {/* The free-choice block toggle governs the locations above it. */}
@@ -2033,7 +2043,12 @@ function ItemFields({
                   onChange={(e) => setNewTalkTitle(e.target.value)}
                 />
                 <div className="flex gap-2">
-                  <Button type="button" size="sm" onClick={handleCreateTalk}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateTalk}
+                  >
                     Create & select
                   </Button>
                   <Button
@@ -2047,13 +2062,14 @@ function ItemFields({
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 type="button"
-                className="text-xs text-muted-foreground link-quiet"
+                variant="outline"
+                size="sm"
                 onClick={() => setCreatingTalk(true)}
               >
                 + New talk
-              </button>
+              </Button>
             )}
           </div>
 
@@ -2070,16 +2086,18 @@ function ItemFields({
                     className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
                   >
                     {contactName(id)}
-                    <button
+                    <Button
                       type="button"
-                      className="text-muted-foreground hover:text-destructive"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="-my-1 -mr-1.5 text-muted-foreground hover:text-destructive"
                       aria-label={`Remove ${contactName(id)}`}
                       onClick={() =>
                         setPresenterIds((prev) => prev.filter((p) => p !== id))
                       }
                     >
-                      ✕
-                    </button>
+                      <X />
+                    </Button>
                   </span>
                 ))}
               </div>
@@ -2120,6 +2138,7 @@ function ItemFields({
                 <div className="flex gap-2">
                   <Button
                     type="button"
+                    variant="outline"
                     size="sm"
                     onClick={handleCreatePresenter}
                   >
@@ -2136,13 +2155,14 @@ function ItemFields({
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 type="button"
-                className="text-xs text-muted-foreground link-quiet"
+                variant="outline"
+                size="sm"
                 onClick={() => setCreatingPresenter(true)}
               >
                 + New presenter
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -2478,15 +2498,17 @@ function TravelFields({
                   className="w-24"
                 />
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() =>
                   setStops((prev) => prev.filter((x) => x.key !== s.key))
                 }
-                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+                className="text-destructive"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           ))
         )}
@@ -2590,7 +2612,7 @@ function VenueEngagementNoteRow({
     <li className="space-y-1">
       <Link
         href={`/trips/${tripId}/booking?venue=${encodeURIComponent(venueId)}`}
-        className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        className="text-muted-foreground link-quiet hover:text-foreground"
       >
         {via
           ? `${via.name} booking`

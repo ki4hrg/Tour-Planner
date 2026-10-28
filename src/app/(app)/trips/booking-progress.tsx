@@ -104,7 +104,7 @@ function StepChip({
         .join(" · ")}
       onClick={onToggle}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors focus-ring disabled:cursor-default",
         done
           ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[step.status])
           : isNext
@@ -537,7 +537,7 @@ export function ProgressList({
                 <div className="min-w-0">
                   <p className="font-medium [overflow-wrap:anywhere]">
                     {line.href ? (
-                      <Link href={line.href} className="hover:underline">
+                      <Link href={line.href} className="link-quiet">
                         {line.name}
                       </Link>
                     ) : (
