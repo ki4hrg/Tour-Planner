@@ -191,7 +191,7 @@ export function WorkflowControl({
     if (next === state.workflowId) return;
     if (
       state.completions.length > 0 &&
-      !window.confirm("Switching workflow clears the steps ticked so far.")
+      !window.confirm("Switch workflow? Ticked steps will be cleared.")
     ) {
       return;
     }

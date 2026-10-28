@@ -418,7 +418,7 @@ export function ItineraryEditor({
                         {st.from} → <span className="text-foreground">{st.to}</span>
                       </>
                     ) : (
-                      <>{st.from} · stays put (its nights are no longer together)</>
+                      <>{st.from} · stays put (nights split apart)</>
                     )}
                   </p>
                 </li>
@@ -635,7 +635,7 @@ function DayCard({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Arrival & Lincoln"
+              placeholder="e.g. Arrival day"
             />
           </div>
           <div className="space-y-1.5">
@@ -652,7 +652,7 @@ function DayCard({
               rows={2}
               value={participantNotes}
               onChange={(e) => setParticipantNotes(e.target.value)}
-              placeholder="e.g. Theme: The Road to Emmaus · Luke 24:13–35"
+              placeholder="e.g. Theme for the day"
             />
           </div>
           <div className="space-y-1.5">
@@ -785,7 +785,7 @@ function DayCard({
         <div className="border-t p-4">
           {adding === "item" ? (
             <div className="rounded-md border border-dashed p-3">
-              <p className="mb-2 text-sm font-medium">Add an item</p>
+              <p className="mb-2 text-sm font-medium">New item</p>
               <ItemFields
                 categories={categories}
                 locations={locations}
@@ -807,7 +807,7 @@ function DayCard({
             </div>
           ) : adding === "travel" ? (
             <div className="rounded-md border border-dashed p-3">
-              <p className="mb-2 text-sm font-medium">Add travel</p>
+              <p className="mb-2 text-sm font-medium">New travel leg</p>
               <TravelFields
                 categories={categories}
                 locations={locations}
@@ -911,10 +911,10 @@ function PlannedLocations({
                     disabled={pending}
                     onClick={() => run(() => promotePlannedLocation(p.id))}
                     className="rounded px-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
-                    title="Promote to a schedule item"
-                    aria-label={`Promote ${p.name} to a schedule item`}
+                    title="Add to schedule"
+                    aria-label={`Add ${p.name} to schedule`}
                   >
-                    → schedule
+                    Schedule
                   </button>
                   <button
                     type="button"
@@ -937,10 +937,10 @@ function PlannedLocations({
         <div className="flex flex-wrap items-center gap-2">
           <Select value={pick} onValueChange={setPick}>
             <SelectTrigger size="sm" className="w-56">
-              <SelectValue placeholder="Add a location…" />
+              <SelectValue placeholder="Add location…" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>Add a location…</SelectItem>
+              <SelectItem value={NONE}>Add location…</SelectItem>
               {available.map((l) => (
                 <SelectItem key={l.id} value={l.id}>
                   {l.name}
@@ -951,7 +951,7 @@ function PlannedLocations({
           <Input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Note (optional)"
+            placeholder="Note"
             className="h-8 w-40"
           />
           <Button
@@ -1500,10 +1500,7 @@ function ItemFields({
         {selfDescribing ? null : (
           <div className="space-y-1.5">
             <Label className="text-xs">
-              Title{" "}
-              <span className="text-muted-foreground">
-                {locationIds.length === 0 ? "(required)" : "(optional)"}
-              </span>
+              {locationIds.length === 0 ? "Title *" : "Title"}
             </Label>
             <Input
               value={title}
@@ -1614,10 +1611,10 @@ function ItemFields({
 
         <Select value={addLocation} onValueChange={pickLocation}>
           <SelectTrigger size="sm">
-            <SelectValue placeholder="+ Add a location" />
+            <SelectValue placeholder="+ Add location…" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>+ Add a location…</SelectItem>
+            <SelectItem value={NONE}>+ Add location…</SelectItem>
             {availableLocations.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
@@ -1630,7 +1627,7 @@ function ItemFields({
         {creatingLocation ? (
           <div className="space-y-2 rounded-md border border-dashed p-2">
             <Input
-              placeholder="New location name"
+              placeholder="Location name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
@@ -1654,7 +1651,7 @@ function ItemFields({
             className="text-xs text-muted-foreground link-quiet"
             onClick={() => setCreatingLocation(true)}
           >
-            + Create a new location
+            + New location
           </button>
         )}
 
@@ -1722,7 +1719,7 @@ function ItemFields({
                 className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingTalk(true)}
               >
-                + Create a new talk
+                + New talk
               </button>
             )}
           </div>
@@ -1764,10 +1761,10 @@ function ItemFields({
             )}
             <Select value={addPresenter} onValueChange={pickPresenter}>
               <SelectTrigger size="sm">
-                <SelectValue placeholder="+ Add a presenter" />
+                <SelectValue placeholder="+ Add presenter…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>+ Add a presenter…</SelectItem>
+                <SelectItem value={NONE}>+ Add presenter…</SelectItem>
                 {availablePresenters.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
@@ -1783,7 +1780,7 @@ function ItemFields({
                   onChange={(e) => setNewPresenterName(e.target.value)}
                 />
                 <Input
-                  placeholder="Organization (optional)"
+                  placeholder="Organization"
                   value={newPresenterOrg}
                   onChange={(e) => setNewPresenterOrg(e.target.value)}
                 />
@@ -1811,7 +1808,7 @@ function ItemFields({
                 className="text-xs text-muted-foreground link-quiet"
                 onClick={() => setCreatingPresenter(true)}
               >
-                + Create a new presenter
+                + New presenter
               </button>
             )}
           </div>
@@ -1984,7 +1981,7 @@ function TravelFields({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={NONE}>— no catalogued location —</SelectItem>
+          <SelectItem value={NONE}>— free text —</SelectItem>
           {locations.map((l) => (
             <SelectItem key={l.id} value={l.id}>
               {l.name}
@@ -1997,7 +1994,7 @@ function TravelFields({
         <Input
           value={freeText}
           onChange={(e) => setFreeText(e.target.value)}
-          placeholder="e.g. Bristol"
+          placeholder="e.g. Airport"
         />
       ) : null}
     </div>
@@ -2118,7 +2115,7 @@ function TravelFields({
                   <Input
                     value={s.label}
                     onChange={(e) => patchStop(s.key, { label: e.target.value })}
-                    placeholder="e.g. M5 services"
+                    placeholder="e.g. Services"
                   />
                 </div>
               ) : null}
@@ -2437,7 +2434,7 @@ function BookingFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>The whole item</SelectItem>
+              <SelectItem value={NONE}>Whole item</SelectItem>
               {item.sites.map((s) => (
                 <SelectItem key={s.locationId} value={s.locationId}>
                   {s.location.name}
@@ -2478,7 +2475,7 @@ function BookingFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">Booking notes</Label>
+          <Label className="text-xs">Notes</Label>
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
         <div className="sm:col-span-2">

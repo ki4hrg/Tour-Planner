@@ -120,7 +120,7 @@ export function PriceLinesEditor({
     if (!list) return;
     if (
       drafts.some((d) => !isBlank(d)) &&
-      !window.confirm("Replace the price lines with the venue's list prices?")
+      !window.confirm("Replace price lines with the venue's list prices?")
     )
       return;
     onDraftsChange(

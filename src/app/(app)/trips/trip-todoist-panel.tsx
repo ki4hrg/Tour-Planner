@@ -98,15 +98,15 @@ export function TripTodoistPanel({
               placeholder={
                 linkedProjectId
                   ? (linkedName ?? "Linked project")
-                  : "Link a project…"
+                  : "Link project…"
               }
             />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>— no link —</SelectItem>
+            <SelectItem value={NONE}>No link</SelectItem>
             {projects == null ? (
               <SelectItem value="__loading__" disabled>
-                {unreachable ? "Todoist unreachable" : "Loading projects…"}
+                {unreachable ? "Todoist unreachable" : "Loading…"}
               </SelectItem>
             ) : (
               projects.map((p) => (

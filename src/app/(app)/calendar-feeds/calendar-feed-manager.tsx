@@ -185,7 +185,7 @@ function CreateForm({
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <p className="font-medium">New feed</p>
       <div className="space-y-1">
-        <Label htmlFor="feed-label">Label (optional)</Label>
+        <Label htmlFor="feed-label">Label</Label>
         <Input
           id="feed-label"
           value={label}

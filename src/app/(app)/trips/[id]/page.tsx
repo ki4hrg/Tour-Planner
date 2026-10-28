@@ -620,7 +620,7 @@ export default async function TripOverviewPage({
           {wrapUp ? (
             <Card className="border-amber-300 dark:border-amber-800">
               <CardHeader>
-                <CardTitle className="text-base">Wrap up this trip</CardTitle>
+                <CardTitle className="text-base">Wrap-up</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">
@@ -781,7 +781,7 @@ export default async function TripOverviewPage({
               >
                 <TripForm
                   action={updateTrip}
-                  submitLabel="Save changes"
+                  submitLabel="Save"
                   tripTypes={allTripTypes}
                   initial={{
                     id: trip.id,
@@ -822,12 +822,12 @@ export default async function TripOverviewPage({
                     </p>
                   ) : (
                     <p className="text-muted-foreground">
-                      Estimated for {estimateHeadcount}{" "}
-                      {trip.participantCount != null ? "participant" : "capacity place"}
-                      {estimateHeadcount === 1 ? "" : "s"}
-                      {trip.participantCount == null ? " (capacity)" : ""} across{" "}
+                      {trip.participantCount != null
+                        ? `${estimateHeadcount} participant${estimateHeadcount === 1 ? "" : "s"}`
+                        : `Capacity ${estimateHeadcount}`}
+                      {" · "}
                       {locationIds.length} location
-                      {locationIds.length === 1 ? "" : "s"}.
+                      {locationIds.length === 1 ? "" : "s"}
                     </p>
                   )}
                   <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
@@ -904,8 +904,8 @@ export default async function TripOverviewPage({
                         {r.unknown > 0 ? (
                           <dd className="col-span-3 text-xs text-amber-700 dark:text-amber-300">
                             {r.unknown} per-person price
-                            {r.unknown === 1 ? " has" : "s have"} no total: the
-                            trip has no headcount.
+                            {r.unknown === 1 ? " has" : "s have"} no total (no
+                            headcount).
                           </dd>
                         ) : null}
                       </div>

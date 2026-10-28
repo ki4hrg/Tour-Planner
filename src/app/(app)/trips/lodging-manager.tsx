@@ -126,7 +126,7 @@ export function LodgingManager({
           </p>
         ) : adding ? (
           <div className="rounded-md border border-dashed p-3">
-            <p className="mb-2 text-sm font-medium">Add a stay</p>
+            <p className="mb-2 text-sm font-medium">New stay</p>
             {locations.length === 0 ? (
               <p className="mb-2 text-xs text-muted-foreground">
                 No lodging venues.
@@ -454,7 +454,7 @@ function StayFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— pick a location —</SelectItem>
+              <SelectItem value={NONE}>Choose location…</SelectItem>
               {locations.map((loc) => (
                 <SelectItem key={loc.id} value={loc.id}>
                   {loc.name}
@@ -471,7 +471,7 @@ function StayFields({
               <Label className="text-xs">Check-in day *</Label>
               <Select value={checkInDay} onValueChange={setCheckInDay}>
                 <SelectTrigger size="sm">
-                  <SelectValue placeholder="— pick a day —" />
+                  <SelectValue placeholder="Choose day…" />
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: dayCount }, (_, i) => i + 1).map((n) => (
@@ -487,7 +487,7 @@ function StayFields({
               <Label className="text-xs">Check-out day *</Label>
               <Select value={checkOutDay} onValueChange={setCheckOutDay}>
                 <SelectTrigger size="sm">
-                  <SelectValue placeholder="— pick a day —" />
+                  <SelectValue placeholder="Choose day…" />
                 </SelectTrigger>
                 <SelectContent>
                   {/* Check-out is the departure morning: Day 2..N, plus Day N+1
@@ -598,7 +598,7 @@ function StayFields({
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="e.g. Breakfast included, ask for late checkout"
+          placeholder="e.g. Breakfast included"
         />
       </div>
 

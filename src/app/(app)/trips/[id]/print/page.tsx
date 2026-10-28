@@ -101,7 +101,7 @@ export default async function TripPrintPage({
       </header>
 
       {days.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No days scheduled.</p>
+        <p className="text-sm text-muted-foreground">No days.</p>
       ) : (
         days.map((day, i) => {
           const planned = unscheduledLocations(day);

@@ -120,7 +120,7 @@ export function TripForm({
             }}
           >
             <SelectTrigger id="tripTypeId">
-              <SelectValue placeholder="Choose a trip type…" />
+              <SelectValue placeholder="Choose trip type…" />
             </SelectTrigger>
             <SelectContent>
               {tripTypes.map((t) => (

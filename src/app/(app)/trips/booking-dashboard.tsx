@@ -238,7 +238,7 @@ export function BookingDashboard({
                   <TableHead>Venue</TableHead>
                   <TableHead>Window</TableHead>
                   <TableHead>Price</TableHead>
-                  <TableHead>Point of Contact</TableHead>
+                  <TableHead>Point of contact</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>

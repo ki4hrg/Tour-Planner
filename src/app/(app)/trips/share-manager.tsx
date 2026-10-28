@@ -278,7 +278,7 @@ function CreateForm({
             <Label>Host site</Label>
             <Select value={locationId} onValueChange={setLocationId}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Pick a host site…" />
+                <SelectValue placeholder="Choose host site…" />
               </SelectTrigger>
               <SelectContent>
                 {hostSites.map((h) => (
@@ -291,16 +291,16 @@ function CreateForm({
           </div>
         ) : null}
         <div className="space-y-1">
-          <Label htmlFor="share-label">Label (optional)</Label>
+          <Label htmlFor="share-label">Label</Label>
           <Input
             id="share-label"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. For coach driver"
+            placeholder="e.g. Coach driver"
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="share-expiry">Expires (optional)</Label>
+          <Label htmlFor="share-expiry">Expires</Label>
           <Input
             id="share-expiry"
             type="date"

@@ -757,7 +757,7 @@ function PaymentLog({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-muted-foreground">No payments logged.</p>
+        <p className="text-xs text-muted-foreground">No payments.</p>
       )}
       {canEdit ? (
         <div className="flex flex-wrap items-end gap-2">

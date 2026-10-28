@@ -219,7 +219,7 @@ export async function createTrip(
         stays: { select: TEMPLATE_STAYS_SELECT },
       },
     });
-    if (!template) return { error: "Selected template no longer exists." };
+    if (!template) return { error: "Template not found." };
     daysCreate = instantiateDays(template.days, data.startDate);
     // Template schedule wins; where a copied engagement carries none, fall back
     // to the venue's standing terms (GH #86). Both beat an empty schedule.
@@ -606,7 +606,7 @@ export async function promotePlannedLocation(id: string): Promise<FormState> {
 
   const tripId = await tripIdForDay(planned.dayId);
   if (tripId) revalidateTrip(tripId);
-  return { ok: true, message: "Promoted to a schedule item." };
+  return { ok: true, message: "Added to schedule." };
 }
 
 // --- ScheduleItem CRUD + reorder ---
