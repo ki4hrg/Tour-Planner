@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/authz";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { FilterChip } from "@/components/filter-chip";
 import { formatDate } from "@/lib/dates";
 import {
   DOCUMENT_SELECT,
@@ -95,42 +96,35 @@ export default async function DocumentsPage({
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Documents</h1>
 
-      <form className="flex flex-wrap items-center gap-2" action="/documents">
+      <form className="flex max-w-sm gap-2" action="/documents">
         {kindFilter ? (
           <input type="hidden" name="kind" value={kindFilter} />
         ) : null}
         <Input
+          type="search"
           name="q"
           defaultValue={query ?? ""}
           placeholder="Search…"
-          className="max-w-xs"
+          aria-label="Search documents"
+          className="flex-1"
         />
-        <Button type="submit" variant="secondary" size="sm">
+        <Button type="submit" variant="outline">
           Search
         </Button>
       </form>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Link
-          href={qs({ q: query })}
-          className={cn(
-            "rounded-full border px-3 py-1",
-            !kindFilter && "bg-muted font-medium",
-          )}
-        >
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterChip href={qs({ q: query })} active={!kindFilter}>
           All
-        </Link>
+        </FilterChip>
         {DOCUMENT_KINDS.map((k) => (
-          <Link
+          <FilterChip
             key={k}
             href={qs({ kind: k, q: query })}
-            className={cn(
-              "rounded-full border px-3 py-1",
-              kindFilter === k && "bg-muted font-medium",
-            )}
+            active={kindFilter === k}
           >
             {DOCUMENT_KIND_LABELS[k]}
-          </Link>
+          </FilterChip>
         ))}
       </div>
 
@@ -151,7 +145,7 @@ export default async function DocumentsPage({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <a
                     href={documentHref(doc.id)}
-                    className="font-medium hover:underline"
+                    className="font-medium link-quiet"
                   >
                     {doc.title}
                   </a>
@@ -166,9 +160,7 @@ export default async function DocumentsPage({
                   <p className="mt-1 text-muted-foreground">{doc.description}</p>
                 ) : null}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-                    {DOCUMENT_KIND_LABELS[doc.kind]}
-                  </span>
+                  <Badge variant="secondary">{DOCUMENT_KIND_LABELS[doc.kind]}</Badge>
                   <span>{formatFileSize(doc.size)}</span>
                   <span className="truncate">· {doc.filename}</span>
                   <span>
@@ -176,12 +168,9 @@ export default async function DocumentsPage({
                     {formatDate(doc.createdAt.toISOString().slice(0, 10))}
                   </span>
                   {doc.shareAudiences.map((a) => (
-                    <span
-                      key={a}
-                      className="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
-                    >
+                    <Badge key={a} variant="secondary">
                       Shared: {SHARE_AUDIENCE_LABELS[a]}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </li>
@@ -192,7 +181,7 @@ export default async function DocumentsPage({
 
       {documents.length === 200 ? (
         <p className="text-xs text-muted-foreground">
-          Showing the 200 most recent.
+          Showing 200 most recent.
         </p>
       ) : null}
     </div>

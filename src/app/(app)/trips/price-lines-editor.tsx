@@ -1,5 +1,7 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
+import { useId } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +28,6 @@ import {
 // itinerary. Lines mirror the venue's Cost lines, so the total follows the trip
 // headcount (`agreedTotal` in costs.ts).
 
-const NO_HEADCOUNT_CHIP =
-  "rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
 
 // Compact read view: a lone per-group line is just its amount; anything else
 // shows its working — "Admission £12 + Lunch £20 /person × 40 + Group £90 =
@@ -47,17 +47,20 @@ export function AgreedPrice({
   return (
     <>
       <span>{formatPriceBreakdown(lines, currency, headcount)}</span>
-      {unknown ? <span className={NO_HEADCOUNT_CHIP}>no headcount</span> : null}
+      {unknown ? <Badge variant="attention">no headcount</Badge> : null}
     </>
   );
 }
 
-// One editable line's local form state (amount kept as typed).
+// One editable line's local form state (amount kept as typed). `stale` marks
+// a line copied from a list price unconfirmed for 1+ year; it clears once the
+// amount is edited (the planner has then checked it) and never reaches the save.
 export type PriceLineDraft = {
   key: number;
   label: string;
   amount: string;
   unit: PriceLine["unit"];
+  stale?: boolean;
 };
 
 export function draftsFromLines(lines: PriceLine[]): PriceLineDraft[] {
@@ -106,6 +109,7 @@ export function PriceLinesEditor({
   listCosts?: (CostLike & { label: string })[];
   disabled?: boolean;
 }) {
+  const uid = useId();
   const nextKey = () => (drafts[drafts.length - 1]?.key ?? -1) + 1;
   const patch = (key: number, part: Partial<PriceLineDraft>) =>
     onDraftsChange(drafts.map((d) => (d.key === key ? { ...d, ...part } : d)));
@@ -120,7 +124,7 @@ export function PriceLinesEditor({
     if (!list) return;
     if (
       drafts.some((d) => !isBlank(d)) &&
-      !window.confirm("Replace the price lines with the venue's list prices?")
+      !window.confirm("Replace price lines with the venue's list prices?")
     )
       return;
     onDraftsChange(
@@ -129,6 +133,7 @@ export function PriceLinesEditor({
         label: l.label,
         amount: String(l.amount),
         unit: l.unit,
+        stale: l.stale,
       })),
     );
     onCurrencyChange(list.currency);
@@ -141,9 +146,16 @@ export function PriceLinesEditor({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <Label className="text-xs">Agreed price</Label>
+        <Label htmlFor={`${uid}-currency`} className="text-xs">
+          Agreed price
+        </Label>
         <Select value={currency} onValueChange={onCurrencyChange} disabled={disabled}>
-          <SelectTrigger size="sm" className="h-7 w-20" aria-label="Currency">
+          <SelectTrigger
+            id={`${uid}-currency`}
+            size="sm"
+            className="h-7 w-20"
+            aria-label="Currency"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -155,25 +167,29 @@ export function PriceLinesEditor({
           </SelectContent>
         </Select>
         {list ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             disabled={disabled}
             onClick={useListPrice}
-            className="link-quiet ml-auto text-xs text-muted-foreground"
+            className="ml-auto h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
           >
             Use list price
-          </button>
+          </Button>
         ) : null}
       </div>
 
+      {/* Each line wraps on a phone: the label keeps a readable width and the
+          amount, basis and remove controls take the next line. */}
       {drafts.map((d) => (
-        <div key={d.key} className="flex items-center gap-1.5">
+        <div key={d.key} className="flex flex-wrap items-center gap-1.5">
           <Input
             value={d.label}
             onChange={(e) => patch(d.key, { label: e.target.value })}
             placeholder="e.g. Admission"
             aria-label="Line label"
-            className="min-w-0 flex-1"
+            className="min-w-32 flex-1"
             disabled={disabled}
           />
           <Input
@@ -182,11 +198,20 @@ export function PriceLinesEditor({
             step="0.01"
             inputMode="decimal"
             value={d.amount}
-            onChange={(e) => patch(d.key, { amount: e.target.value })}
+            onChange={(e) => patch(d.key, { amount: e.target.value, stale: false })}
             aria-label="Amount"
             className="w-24"
             disabled={disabled}
           />
+          {d.stale ? (
+            <Badge
+              variant="attention"
+              className="shrink-0"
+              title="List price unconfirmed for 1+ year"
+            >
+              stale
+            </Badge>
+          ) : null}
           <Select
             value={d.unit}
             onValueChange={(unit) => patch(d.key, { unit: unit as PriceLine["unit"] })}
@@ -223,7 +248,7 @@ export function PriceLinesEditor({
           disabled={disabled}
           onClick={addLine}
         >
-          Add line
+          + Add line
         </Button>
         {lines.length > 0 ? (
           total != null ? (
@@ -243,7 +268,7 @@ export function PriceLinesEditor({
                 {formatMoney(perPerson, currency)} /person
                 {perGroup ? ` + ${formatMoney(perGroup, currency)}` : ""}
               </span>
-              <span className={NO_HEADCOUNT_CHIP}>no headcount</span>
+              <Badge variant="attention">no headcount</Badge>
             </span>
           )
         ) : null}

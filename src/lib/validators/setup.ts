@@ -9,6 +9,6 @@ export const firstAdminSchema = z
     confirmPassword: z.string(),
   })
   .refine((d) => d.password === d.confirmPassword, {
-    message: "Passwords do not match.",
+    message: "Passwords don't match.",
     path: ["confirmPassword"],
   });

@@ -1,10 +1,12 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { useState, useTransition } from "react";
-import { ChevronRight } from "lucide-react";
-import { toast } from "sonner";
+import { useId, useState } from "react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,11 +22,10 @@ import { ContactChannels } from "@/components/contact-channels";
 import { cn } from "@/lib/utils";
 import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
-import { formatDate } from "@/lib/dates";
+import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
 import { hasAgreedPrice } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
-import type { FormState } from "@/lib/forms";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
   describeCadence,
@@ -50,19 +51,8 @@ import {
 const NONE = "__none__";
 type ContactOption = { id: string; name: string };
 
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
+// Inside a mutation button while its action is in flight.
+const Spinner = () => <Loader2 className="animate-spin" aria-hidden />;
 
 // The window cell: when can this be booked (or is it already done).
 export function WindowCell({ row }: { row: VenueBookingRow }) {
@@ -74,7 +64,7 @@ export function WindowCell({ row }: { row: VenueBookingRow }) {
     return <span className="text-muted-foreground">—</span>;
   if (row.open)
     return (
-      <span className="font-medium text-amber-700 dark:text-amber-300">
+      <span className="font-medium text-emerald-700 dark:text-emerald-300">
         Open now
       </span>
     );
@@ -99,9 +89,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
             currency={row.agreedCurrency}
             headcount={row.headcount}
           />
-          <span className="rounded bg-emerald-100 px-1 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-            agreed
-          </span>
+          <Badge variant="confirmed">agreed</Badge>
         </div>
         <PaymentState row={row} />
       </div>
@@ -110,9 +98,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (row.costs.length === 0)
     return (
       <div className="space-y-0.5">
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          No price
-        </span>
+        <Badge variant="attention">No price</Badge>
         {/* Fixed-amount installments can be overdue without an agreed price. */}
         <PaymentState row={row} />
       </div>
@@ -130,20 +116,14 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
             <span className="text-muted-foreground"> {COST_UNIT_LABELS[c.unit]}</span>
           </span>
           {i === 0 ? (
-            <span
-              className="rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
-              title="Venue list price"
-            >
+            <Badge variant="muted" title="Venue list price">
               list
-            </span>
+            </Badge>
           ) : null}
           {isCostStale(c.confirmedAt) ? (
-            <span
-              className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-              title="Unconfirmed for 1+ year"
-            >
+            <Badge variant="attention" title="Unconfirmed for 1+ year">
               stale
-            </span>
+            </Badge>
           ) : null}
         </div>
       ))}
@@ -157,7 +137,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
 function PaymentState({ row }: { row: VenueBookingRow }) {
   if (row.overdueAmount > 0)
     return (
-      <span className="text-xs font-medium text-red-600 dark:text-red-400">
+      <span className="text-xs font-medium text-destructive">
         {formatMoney(row.overdueAmount, row.agreedCurrency)} overdue
       </span>
     );
@@ -218,6 +198,7 @@ export function VenueDetails({
   documents: SerializedDocument[];
 }) {
   const { pending, run } = useAction();
+  const uid = useId();
 
   const [label, setLabel] = useState(row.label ?? "");
   const [contactId, setContactId] = useState(row.bookedContactId ?? NONE);
@@ -252,12 +233,13 @@ export function VenueDetails({
     );
 
   return (
-    <div className="grid grid-cols-1 gap-4 py-1 md:grid-cols-2">
-      {/* Covered sessions — so a multi-timeslot booking stays visible. */}
-      <div className="min-w-0">
-        <p className="mb-1 text-xs font-medium text-muted-foreground">
-          Covered sessions
-        </p>
+    <div className="grid grid-cols-1 gap-4 py-1 md:grid-cols-[1fr_2fr]">
+      {/* Covered sessions — so a multi-timeslot booking stays visible — plus
+          the venue's standing notes and constraints from its Location record,
+          so what to know before calling sits next to the booking editor. */}
+      <div className="min-w-0 space-y-3">
+        <div>
+        <h4 className="mb-1 text-sm font-medium">Covered sessions</h4>
         {row.sessions.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {row.nightCount ? "Lodging only." : "No sessions."}
@@ -275,7 +257,7 @@ export function VenueDetails({
                       href={`/trips/${tripId}/days/${s.dayId}${
                         s.planned ? "" : `#item-${s.id}`
                       }`}
-                      className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                      className="link-quiet"
                     >
                       {s.label}
                     </Link>
@@ -292,6 +274,23 @@ export function VenueDetails({
             ))}
           </ul>
         )}
+        </div>
+        {row.bookingNotes ? (
+          <div>
+            <h4 className="mb-1 text-sm font-medium">Booking notes</h4>
+            <p className="whitespace-pre-line text-xs text-muted-foreground">
+              {row.bookingNotes}
+            </p>
+          </div>
+        ) : null}
+        {row.scheduleLimitations ? (
+          <div>
+            <h4 className="mb-1 text-sm font-medium">Schedule</h4>
+            <p className="whitespace-pre-line text-xs text-muted-foreground">
+              {row.scheduleLimitations}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* Manage the engagement (other than status, which is one-click above). */}
@@ -299,16 +298,22 @@ export function VenueDetails({
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">Label</Label>
+              <Label htmlFor={`${uid}-label`} className="text-xs">
+                Label
+              </Label>
               <Input
+                id={`${uid}-label`}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="e.g. hall hire"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Confirmation ref</Label>
+              <Label htmlFor={`${uid}-ref`} className="text-xs">
+                Confirmation ref
+              </Label>
               <Input
+                id={`${uid}-ref`}
                 value={confirmationRef}
                 onChange={(e) => setConfirmationRef(e.target.value)}
                 placeholder="e.g. CONF123"
@@ -316,8 +321,11 @@ export function VenueDetails({
             </div>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Booked on</Label>
+            <Label htmlFor={`${uid}-booked-on`} className="text-xs">
+              Booked on
+            </Label>
             <Input
+              id={`${uid}-booked-on`}
               type="date"
               value={bookedOn}
               onChange={(e) => setBookedOn(e.target.value)}
@@ -335,9 +343,11 @@ export function VenueDetails({
             disabled={pending}
           />
           <div className="space-y-1">
-            <Label className="text-xs">Point of contact</Label>
+            <Label htmlFor={`${uid}-contact`} className="text-xs">
+              Point of contact
+            </Label>
             <Select value={contactId} onValueChange={setContactId}>
-              <SelectTrigger size="sm">
+              <SelectTrigger id={`${uid}-contact`} size="sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -351,8 +361,11 @@ export function VenueDetails({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Notes</Label>
+            <Label htmlFor={`${uid}-notes`} className="text-xs">
+              Notes
+            </Label>
             <Textarea
+              id={`${uid}-notes`}
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -360,6 +373,7 @@ export function VenueDetails({
             />
           </div>
           <Button size="sm" disabled={pending} onClick={save}>
+            {pending ? <Spinner /> : null}
             Save booking
           </Button>
         </div>
@@ -381,9 +395,7 @@ export function VenueDetails({
           confirmation. Needs the engagement to exist to attach to. */}
       {row.bookingId && (documents.length > 0 || canEdit) ? (
         <div className="md:col-span-2">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Documents
-          </p>
+          <h4 className="mb-2 text-sm font-medium">Documents</h4>
           <DocumentsPanel
             target="booking"
             targetId={row.bookingId}
@@ -400,7 +412,7 @@ export function VenueDetails({
 
 const INSTALLMENT_STATE_STYLES: Record<ResolvedInstallment["state"], string> = {
   paid: "text-emerald-700 dark:text-emerald-300",
-  overdue: "font-medium text-red-600 dark:text-red-400",
+  overdue: "font-medium text-destructive",
   upcoming: "text-muted-foreground",
   unscheduled: "text-amber-700 dark:text-amber-300",
 };
@@ -449,6 +461,7 @@ function PaymentSchedule({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const uid = useId();
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<InstallmentDraft[]>([]);
 
@@ -492,18 +505,20 @@ function PaymentSchedule({
 
   return (
     <div className="space-y-2 border-t pt-2">
-      <p className="flex items-baseline gap-2 text-xs font-medium text-muted-foreground">
+      <h4 className="flex items-baseline gap-2 text-sm font-medium">
         Payment schedule
         {canEdit && !editing ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="sm"
             onClick={startEditing}
-            className="font-normal underline-offset-2 hover:underline"
+            className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
           >
             {row.schedule.length ? "Edit" : "Add"}
-          </button>
+          </Button>
         ) : null}
-      </p>
+      </h4>
 
       {!editing ? (
         row.schedule.length === 0 ? (
@@ -537,8 +552,11 @@ function PaymentSchedule({
           {drafts.map((d, idx) => (
             <div key={d.key} className="flex flex-wrap items-end gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Label</Label>
+                <Label htmlFor={`${uid}-${d.key}-label`} className="text-xs">
+                  Label
+                </Label>
                 <Input
+                  id={`${uid}-${d.key}-label`}
                   value={d.label}
                   onChange={(e) => patch(d.key, { label: e.target.value })}
                   placeholder={`Installment ${idx + 1}`}
@@ -546,8 +564,11 @@ function PaymentSchedule({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Amount</Label>
+                <Label htmlFor={`${uid}-${d.key}-amount`} className="text-xs">
+                  Amount
+                </Label>
                 <Input
+                  id={`${uid}-${d.key}-amount`}
                   type="number"
                   min="0"
                   step="0.01"
@@ -575,8 +596,11 @@ function PaymentSchedule({
               {d.anchor !== "NONE" ? (
                 <>
                   <div className="space-y-1">
-                    <Label className="text-xs">Offset</Label>
+                    <Label htmlFor={`${uid}-${d.key}-offset`} className="text-xs">
+                      Offset
+                    </Label>
                     <Input
+                      id={`${uid}-${d.key}-offset`}
                       type="number"
                       step="1"
                       inputMode="numeric"
@@ -617,16 +641,18 @@ function PaymentSchedule({
                   <SelectItem value="NONE">no deadline</SelectItem>
                 </SelectContent>
               </Select>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 disabled={pending}
                 onClick={() =>
                   setDrafts((prev) => prev.filter((x) => x.key !== d.key))
                 }
-                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+                className="text-destructive"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           ))}
           <div className="flex flex-wrap items-center gap-2">
@@ -661,6 +687,7 @@ function PaymentSchedule({
               }
               onClick={save}
             >
+              {pending ? <Spinner /> : null}
               Save schedule
             </Button>
             <Button
@@ -691,10 +718,13 @@ function PaymentLog({
 }) {
   const currencyChoices = currencyOptions(currencies, row.agreedCurrency);
   const { pending, run } = useAction();
+  const uid = useId();
 
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(row.agreedCurrency);
-  const [paidOn, setPaidOn] = useState("");
+  // Most payments are logged the day they're made: default to today
+  // (todayUtc isolates "now" in lib — react-hooks/purity).
+  const [paidOn, setPaidOn] = useState(() => toDateInput(todayUtc()));
   const [method, setMethod] = useState("");
   const [note, setNote] = useState("");
 
@@ -710,7 +740,7 @@ function PaymentLog({
         }),
       () => {
         setAmount("");
-        setPaidOn("");
+        setPaidOn(toDateInput(todayUtc()));
         setMethod("");
         setNote("");
       },
@@ -718,15 +748,15 @@ function PaymentLog({
 
   return (
     <div className="space-y-2 border-t pt-2">
-      <p className="text-xs font-medium text-muted-foreground">
+      <h4 className="text-sm font-medium">
         Payments
         {row.agreedTotal != null ? (
-          <span className="ml-2 font-normal">
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
             {formatMoney(row.paidTotal, row.agreedCurrency)} of{" "}
             {formatMoney(row.agreedTotal, row.agreedCurrency)} paid
           </span>
         ) : null}
-      </p>
+      </h4>
       {row.payments.length > 0 ? (
         <ul className="space-y-0.5 text-sm">
           {row.payments.map((p) => (
@@ -744,26 +774,35 @@ function PaymentLog({
                 </span>
               ) : null}
               {canEdit ? (
-                <button
-                  type="button"
+                <ConfirmButton
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-destructive"
                   disabled={pending}
-                  onClick={() => run(() => deletePayment(p.id))}
-                  className="ml-auto text-xs text-destructive underline-offset-2 hover:underline"
+                  pending={pending}
+                  title="Remove payment"
+                  description={`Removes the ${formatMoney(p.amount, p.currency)} payment of ${formatDate(p.paidOn)}.`}
+                  confirmLabel="Remove"
+                  onConfirm={() => run(() => deletePayment(p.id))}
                 >
+                  {pending ? <Spinner /> : null}
                   Remove
-                </button>
+                </ConfirmButton>
               ) : null}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-muted-foreground">No payments logged.</p>
+        <p className="text-xs text-muted-foreground">No payments.</p>
       )}
       {canEdit ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
-            <Label className="text-xs">Amount</Label>
+            <Label htmlFor={`${uid}-amount`} className="text-xs">
+              Amount
+            </Label>
             <Input
+              id={`${uid}-amount`}
               type="number"
               min="0"
               step="0.01"
@@ -774,9 +813,11 @@ function PaymentLog({
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Currency</Label>
+            <Label htmlFor={`${uid}-currency`} className="text-xs">
+              Currency
+            </Label>
             <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger size="sm" className="w-24">
+              <SelectTrigger id={`${uid}-currency`} size="sm" className="w-24">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -789,8 +830,11 @@ function PaymentLog({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Paid on</Label>
+            <Label htmlFor={`${uid}-paid-on`} className="text-xs">
+              Paid on
+            </Label>
             <Input
+              id={`${uid}-paid-on`}
               type="date"
               value={paidOn}
               onChange={(e) => setPaidOn(e.target.value)}
@@ -798,8 +842,11 @@ function PaymentLog({
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Method</Label>
+            <Label htmlFor={`${uid}-method`} className="text-xs">
+              Method
+            </Label>
             <Input
+              id={`${uid}-method`}
               value={method}
               onChange={(e) => setMethod(e.target.value)}
               placeholder="e.g. bank transfer"
@@ -807,8 +854,14 @@ function PaymentLog({
             />
           </div>
           <div className="min-w-32 flex-1 space-y-1">
-            <Label className="text-xs">Note</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            <Label htmlFor={`${uid}-note`} className="text-xs">
+              Note
+            </Label>
+            <Input
+              id={`${uid}-note`}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
           </div>
           <Button
             size="sm"
@@ -816,6 +869,7 @@ function PaymentLog({
             disabled={pending || !amount || !paidOn}
             onClick={add}
           >
+            {pending ? <Spinner /> : null}
             Log payment
           </Button>
         </div>
@@ -861,7 +915,8 @@ export function VenueRow({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="flex items-start gap-1.5 text-left"
+            aria-expanded={open}
+            className="flex items-start gap-1.5 rounded-md text-left focus-ring"
           >
             <ChevronRight
               className={cn(
@@ -968,7 +1023,8 @@ export function VenueCard({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 items-start gap-1.5 text-left"
+          aria-expanded={open}
+          className="flex min-w-0 items-start gap-1.5 rounded-md text-left focus-ring"
         >
           <ChevronRight
             className={cn(
@@ -1063,14 +1119,16 @@ export function ItemRow({
     <>
     <TableRow>
       <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
-        <button
+        <Button
           type="button"
-          className="text-left font-medium hover:underline"
+          variant="ghost"
+          size="sm"
+          className="-ml-2.5 h-auto justify-start py-1 text-left font-medium whitespace-normal"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
         >
           {row.label}
-        </button>
+        </Button>
         <span className="block text-xs text-muted-foreground">
           Day {row.dayIndex}
           {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off
@@ -1146,14 +1204,16 @@ export function ItemCard({
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0">
-          <button
+          <Button
             type="button"
-            className="text-left font-medium hover:underline"
+            variant="ghost"
+            size="sm"
+            className="-ml-2.5 h-auto justify-start py-1 text-left font-medium whitespace-normal"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
           >
             {row.label}
-          </button>
+          </Button>
           <span className="block text-xs text-muted-foreground">
             Day {row.dayIndex}
             {row.date ? ` · ${formatDate(row.date)}` : ""} · one-off

@@ -104,9 +104,9 @@ export function MergeLocationPanel({
             Discards {p.source.name}&rsquo;s payment terms.
           </p>
         ) : null}
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button variant="destructive" disabled={pending} onClick={confirm}>
-            Merge and delete {p.source.name}
+            Merge and delete
           </Button>
           <Button
             variant="outline"
@@ -137,7 +137,7 @@ export function MergeLocationPanel({
                 type="button"
                 disabled={pending}
                 onClick={() => pick(c.id)}
-                className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left hover:bg-muted disabled:opacity-50"
+                className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left hover:bg-muted focus-ring disabled:opacity-50"
               >
                 <span>{c.name}</span>
                 {c.region ? (

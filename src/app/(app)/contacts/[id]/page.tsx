@@ -8,12 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { ContactChannels } from "@/components/contact-channels";
 import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -39,23 +39,17 @@ export default async function ContactDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/contacts" label="All contacts" />
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">{contact.name}</h1>
           <ContactChannels phone={contact.phone} email={contact.email} />
         </div>
-        <Link
-          href="/contacts"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All contacts
-        </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -67,9 +61,25 @@ export default async function ContactDetailPage({
                 <dt className="text-muted-foreground">Role</dt>
                 <dd>{contact.role ?? "—"}</dd>
                 <dt className="text-muted-foreground">Email</dt>
-                <dd>{contact.email ?? "—"}</dd>
+                <dd className="break-all">
+                  {contact.email ? (
+                    <a href={`mailto:${contact.email}`} className="link-quiet">
+                      {contact.email}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
                 <dt className="text-muted-foreground">Phone</dt>
-                <dd>{contact.phone ?? "—"}</dd>
+                <dd>
+                  {contact.phone ? (
+                    <a href={`tel:${contact.phone}`} className="link-quiet">
+                      {contact.phone}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
                 <dt className="text-muted-foreground">Notes</dt>
                 <dd className="whitespace-pre-wrap">{contact.notes ?? "—"}</dd>
               </dl>
@@ -77,7 +87,7 @@ export default async function ContactDetailPage({
           >
             <ContactForm
               action={updateContact}
-              submitLabel="Save changes"
+              submitLabel="Save"
               initial={contact}
             />
           </EditableSection>
@@ -86,7 +96,7 @@ export default async function ContactDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Locations served ({contact.locations.length})
           </CardTitle>
         </CardHeader>
@@ -95,7 +105,7 @@ export default async function ContactDetailPage({
             <ul className="space-y-1">
               {contact.locations.map((l) => (
                 <li key={l.id}>
-                  <Link href={`/locations/${l.id}`} className="hover:underline">
+                  <Link href={`/locations/${l.id}`} className="link-quiet">
                     {l.name}
                   </Link>
                   {l.region ? (
@@ -113,16 +123,22 @@ export default async function ContactDetailPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-destructive">
+            <CardTitle className="text-destructive">
               Danger zone
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={deleteContact}>
+            <form id="delete-contact-form" action={deleteContact}>
               <input type="hidden" name="id" value={contact.id} />
-              <Button type="submit" variant="destructive">
+              <ConfirmButton
+                formId="delete-contact-form"
+                variant="destructive"
+                title="Delete contact"
+                description="Permanently deletes. Links from locations, bookings and notes are removed."
+                confirmLabel="Delete contact"
+              >
                 Delete contact
-              </Button>
+              </ConfirmButton>
             </form>
           </CardContent>
         </Card>

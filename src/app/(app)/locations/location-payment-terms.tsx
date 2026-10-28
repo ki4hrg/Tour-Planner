@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,7 +18,6 @@ import {
   type PaymentAnchor,
   type PaymentOffsetUnit,
 } from "@/lib/payment-schedule";
-import type { FormState } from "@/lib/forms";
 import { setLocationPaymentSchedule } from "./actions";
 
 // A venue's STANDING payment terms (GH #86) — the deposit/balance cadence that
@@ -82,19 +81,9 @@ export function LocationPaymentTerms({
   currency: string;
   canEdit: boolean;
 }) {
-  const [pending, start] = useTransition();
+  const { pending, run } = useAction();
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
 
   const startEditing = () => {
     setDrafts(
@@ -126,18 +115,19 @@ export function LocationPaymentTerms({
 
   return (
     <div className="space-y-2">
-      <p className="flex items-baseline gap-2 text-xs font-medium text-muted-foreground">
+      <h4 className="flex items-center gap-2 text-sm font-medium">
         Standing terms
         {canEdit && !editing ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={startEditing}
-            className="font-normal underline-offset-2 hover:underline"
           >
             {terms.length ? "Edit" : "Add"}
-          </button>
+          </Button>
         ) : null}
-      </p>
+      </h4>
 
       {!editing ? (
         terms.length === 0 ? (
@@ -245,16 +235,18 @@ export function LocationPaymentTerms({
                   <SelectItem value="NONE">no deadline</SelectItem>
                 </SelectContent>
               </Select>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 disabled={pending}
                 onClick={() =>
                   setDrafts((prev) => prev.filter((x) => x.key !== d.key))
                 }
-                className="pb-2 text-xs text-destructive underline-offset-2 hover:underline"
+                className="text-destructive"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           ))}
           <div className="flex flex-wrap items-center gap-2">

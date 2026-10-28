@@ -44,19 +44,19 @@ function ContactRow({
           : "flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
       }
     >
-      <div className="min-w-0">
-        <Link
-          href={`/contacts/${contact.id}`}
-          className="font-medium hover:underline"
-        >
-          {contact.name}
-        </Link>
-        <div className="truncate text-sm text-muted-foreground">
+      {/* The row's text block is the link; the channel buttons and badge
+          stay outside it (nested anchors are invalid HTML). */}
+      <Link
+        href={`/contacts/${contact.id}`}
+        className="block min-w-0 rounded-md focus-ring"
+      >
+        <span className="font-medium link-quiet">{contact.name}</span>
+        <span className="block truncate text-sm text-muted-foreground">
           {[contact.role, contact.organization].filter(Boolean).join(" · ")}
           {contact.email ? ` · ${contact.email}` : ""}
           {contact.phone ? ` · ${contact.phone}` : ""}
-        </div>
-      </div>
+        </span>
+      </Link>
       <div className="flex shrink-0 items-center gap-2">
         <ContactChannels phone={contact.phone} email={contact.email} />
         <Badge variant="outline">{contact._count.locations} locations</Badge>

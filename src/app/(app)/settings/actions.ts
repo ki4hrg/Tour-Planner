@@ -65,7 +65,7 @@ export async function setDefaultTodoistProject(
   });
   if (updated.count === 0) return { error: "Todoist not connected." };
   revalidatePath("/settings");
-  return { ok: true, message: "Default project saved." };
+  return { ok: true, message: "Saved." };
 }
 
 // Project options for pickers elsewhere (trip page panel). null = not

@@ -123,13 +123,33 @@ export const BOOKING_STATUSES = Object.keys(
 ) as BookingStatus[];
 
 // Tailwind classes for a booking-status pill (matches Badge usage).
+// PLANNED is the neutral baseline, so it stays neutral: amber is reserved for
+// "we must act" cues (Your move, stale, no price) and must not also mean
+// "nothing done yet", or the alarm stops reading as one. IN_PROGRESS takes
+// the palette's primary tint rather than an off-palette blue.
 export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
-  PLANNED: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
-  IN_PROGRESS: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200",
+  PLANNED: "bg-secondary text-secondary-foreground",
+  IN_PROGRESS: "bg-primary/10 text-primary dark:bg-primary/20",
   CONFIRMED:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
   NOT_NEEDED: "bg-muted text-muted-foreground",
 };
+
+/** The `<Badge variant>` for a booking status (same palette as BOOKING_STATUS_CLASSES). */
+export function bookingStatusVariant(
+  status: BookingStatus,
+): "planned" | "progress" | "confirmed" | "muted" {
+  switch (status) {
+    case "PLANNED":
+      return "planned";
+    case "IN_PROGRESS":
+      return "progress";
+    case "CONFIRMED":
+      return "confirmed";
+    default:
+      return "muted";
+  }
+}
 
 /**
  * What a booking's pill reads: its workflow stage ("Availability confirmed")
@@ -145,6 +165,15 @@ export function bookingStageText(b: {
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---
 
+// A venue's go-to person as itinerary surfaces show it. `email`/`role` ride
+// along only where the page's query selected them (the staff day view).
+export type PrimaryContactSummary = {
+  name: string;
+  phone: string | null;
+  email?: string | null;
+  role?: string | null;
+};
+
 // mapUrl/primaryContact are only loaded (and serialized) on staff surfaces that
 // need them (the day view); they must never reach the public share page — see
 // redactDaysForShare, which strips them defensively.
@@ -159,7 +188,9 @@ export type SerializedItemLocation = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
+    // Staff day page only: the venue's standing schedule constraints.
+    scheduleLimitations?: string | null;
   };
 };
 
@@ -374,7 +405,8 @@ export type VenueRun = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
+    scheduleLimitations?: string | null;
   }[];
   items: SerializedScheduleItem[];
 };
@@ -427,6 +459,7 @@ export function groupItemsByVenue(items: SerializedScheduleItem[]): VenueRun[] {
       lat: s.location.lat,
       lng: s.location.lng,
       primaryContact: s.location.primaryContact,
+      scheduleLimitations: s.location.scheduleLimitations,
     }));
     if (last && last.venues.length > 0 && sigOf(last.venues) === sigOf(venues)) {
       last.items.push(item);
@@ -487,7 +520,8 @@ type ItemLocationRow = {
     googlePlaceId?: string | null;
     lat?: number | null;
     lng?: number | null;
-    primaryContact?: { name: string; phone: string | null } | null;
+    primaryContact?: PrimaryContactSummary | null;
+    scheduleLimitations?: string | null;
   };
 };
 
@@ -596,6 +630,9 @@ export function serializeScheduleItem(
             : {}),
           ...(s.location.primaryContact !== undefined
             ? { primaryContact: s.location.primaryContact }
+            : {}),
+          ...(s.location.scheduleLimitations !== undefined
+            ? { scheduleLimitations: s.location.scheduleLimitations }
             : {}),
         },
       })),

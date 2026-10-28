@@ -131,6 +131,8 @@ export default async function BookingDashboardPage({
           bookedViaId: true,
           bookable: true,
           bookingOpensLeadDays: true,
+          bookingNotes: true,
+          scheduleLimitations: true,
           defaultWorkflowId: true,
           costs: true,
         },
@@ -179,7 +181,7 @@ export default async function BookingDashboardPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Bookings</CardTitle>
+          <CardTitle>Bookings</CardTitle>
         </CardHeader>
         <CardContent>
           <BookingDashboard

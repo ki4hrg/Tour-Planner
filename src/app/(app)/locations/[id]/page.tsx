@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { serializeCost, isCostStale, formatMoney } from "@/lib/money";
 import {
   agreedTotal,
@@ -19,7 +21,7 @@ import {
   serializePriceLines,
   tripHeadcount,
 } from "@/lib/costs";
-import { bookingStageText } from "@/lib/trips";
+import { bookingStageText, scheduleItemPrimaryLabel } from "@/lib/trips";
 import {
   BOOKING_PROGRESS_SELECT,
   WORKFLOW_STEP_SELECT,
@@ -58,7 +60,7 @@ import { engagementsToFold } from "@/lib/booked-via.server";
 import { NotesThread } from "../../notes/notes-thread";
 import { DocumentRow, DocumentsPanel } from "../../documents/documents-panel";
 import { updateLocation, deleteLocation, unarchiveLocation } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,10 @@ export default async function LocationDetailPage({
 }) {
   const user = await requireUser();
   const canEdit = hasRole(user.role, "PLANNER");
+  // On a phone the contact log is usually written on site, so a new note
+  // starts as IN_PERSON. Client hint (Chromium only; Safari/Firefox never send
+  // it, and fall back to the CALL default).
+  const onMobile = (await headers()).get("sec-ch-ua-mobile") === "?1";
   const { id } = await params;
 
   const location = await prisma.location.findUnique({
@@ -316,11 +322,15 @@ export default async function LocationDetailPage({
     progress: progressView(t.bookings[0] ?? null, engagementWorkflowId),
   }));
 
-  // Visit history: which non-template trips this venue appears in, newest first.
-  // Timed schedule-item stops and rough-plan (time-less) day assignments are
-  // counted separately so an unfirmed plan still shows up here.
-  const tripSelect = {
-    day: { select: { trip: { select: { id: true, name: true, startDate: true } } } },
+  // Visit history: every slot this venue holds on a non-template trip, grouped
+  // by trip (newest first) — each timed schedule-item stop with its day, time
+  // and label, plus rough-plan (time-less) day assignments so an unfirmed plan
+  // still shows up here.
+  const daySelect = {
+    dayIndex: true,
+    date: true,
+    title: true,
+    trip: { select: { id: true, name: true, startDate: true } },
   } as const;
   const [visitRows, plannedRows] = await Promise.all([
     prisma.scheduleItemSite.findMany({
@@ -328,38 +338,79 @@ export default async function LocationDetailPage({
         locationId: id,
         scheduleItem: { day: { trip: { isTemplate: false } } },
       },
-      select: { scheduleItem: { select: tripSelect } },
+      select: {
+        scheduleItem: {
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            notes: true,
+            presentation: { select: { title: true } },
+            category: { select: { name: true } },
+            day: { select: daySelect },
+          },
+        },
+      },
     }),
     prisma.itineraryDayLocation.findMany({
       where: { locationId: id, day: { trip: { isTemplate: false } } },
-      select: tripSelect,
+      select: { day: { select: daySelect } },
     }),
   ]);
+  type VisitSlot = {
+    key: string;
+    dayIndex: number;
+    date: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    // Null for a rough-plan assignment (no item yet).
+    itemId: string | null;
+    label: string | null;
+  };
   const visitMap = new Map<
     string,
-    {
-      id: string;
-      name: string;
-      startDate: Date | null;
-      count: number;
-      planned: number;
-    }
+    { id: string; name: string; startDate: Date | null; slots: VisitSlot[] }
   >();
-  const tally = (
-    t: { id: string; name: string; startDate: Date | null },
-    key: "count" | "planned",
-  ) => {
-    const existing =
-      visitMap.get(t.id) ??
-      { id: t.id, name: t.name, startDate: t.startDate, count: 0, planned: 0 };
-    existing[key] += 1;
+  const tripEntry = (t: { id: string; name: string; startDate: Date | null }) => {
+    const existing = visitMap.get(t.id) ?? { ...t, slots: [] };
     visitMap.set(t.id, existing);
+    return existing;
   };
-  for (const v of visitRows) tally(v.scheduleItem.day.trip, "count");
-  for (const p of plannedRows) tally(p.day.trip, "planned");
-  const visits = [...visitMap.values()].sort(
-    (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
-  );
+  for (const { scheduleItem: item } of visitRows) {
+    tripEntry(item.day.trip).slots.push({
+      key: `item-${item.id}`,
+      dayIndex: item.day.dayIndex,
+      date: item.day.date ? toDateInput(item.day.date) : null,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      itemId: item.id,
+      // The venue is this page's heading, so the slot reads as the session
+      // ("Chapel tour"), not the venue name again.
+      label: scheduleItemPrimaryLabel(item, { venueInHeading: false }).primary,
+    });
+  }
+  for (const { day } of plannedRows) {
+    tripEntry(day.trip).slots.push({
+      key: `planned-${day.trip.id}-${day.dayIndex}`,
+      dayIndex: day.dayIndex,
+      date: day.date ? toDateInput(day.date) : null,
+      startTime: null,
+      endTime: null,
+      itemId: null,
+      label: null,
+    });
+  }
+  const visits = [...visitMap.values()]
+    .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0))
+    .map((t) => ({
+      ...t,
+      slots: t.slots.sort(
+        (a, b) =>
+          a.dayIndex - b.dayIndex ||
+          (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99"),
+      ),
+    }));
 
   // Engagement history (GH #86 part C): the money conversation for this venue in
   // one place — every non-template trip's booking here with its status and
@@ -498,8 +549,9 @@ export default async function LocationDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
+      <div className="space-y-3">
+        <BackLink href="/locations" label="All locations" />
+        <h1 className="text-xl font-semibold text-balance sm:text-2xl">
           {location.name}
           {location.archivedAt ? (
             <Badge variant="outline" className="ml-2 align-middle">
@@ -507,13 +559,6 @@ export default async function LocationDetailPage({
             </Badge>
           ) : null}
         </h1>
-        <Link
-          href="/locations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All locations
-        </Link>
       </div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
@@ -522,7 +567,7 @@ export default async function LocationDetailPage({
         <div className="order-2 min-w-0 space-y-6 lg:col-span-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Notes &amp; contact log</CardTitle>
+          <CardTitle>Notes &amp; contact log</CardTitle>
         </CardHeader>
         <CardContent>
           <NotesThread
@@ -533,6 +578,7 @@ export default async function LocationDetailPage({
             canEdit={canEdit}
             today={toDateInput(todayUtc())}
             todoistDestinationPicker={todoistConnected}
+            defaultMethod={onMobile ? "IN_PERSON" : "CALL"}
           />
         </CardContent>
       </Card>
@@ -540,7 +586,7 @@ export default async function LocationDetailPage({
       {progressLines.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2">
               Booking progress
               {parent ? (
                 <Link
@@ -560,7 +606,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Documents</CardTitle>
+          <CardTitle>Documents</CardTitle>
         </CardHeader>
         <CardContent>
           <DocumentsPanel
@@ -577,7 +623,7 @@ export default async function LocationDetailPage({
       {contractGroups.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Contracts by trip</CardTitle>
+            <CardTitle>Contracts by trip</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {contractGroups.map((g) => (
@@ -585,7 +631,7 @@ export default async function LocationDetailPage({
                 <h4 className="text-sm font-medium">
                   <Link
                     href={bookingDashboardHref(g.tripId, location.id)}
-                    className="hover:underline"
+                    className="link-quiet"
                   >
                     {g.tripName}
                   </Link>{" "}
@@ -612,7 +658,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Visit history</CardTitle>
+          <CardTitle>Visit history</CardTitle>
         </CardHeader>
         <CardContent>
           {visits.length === 0 ? (
@@ -620,26 +666,45 @@ export default async function LocationDetailPage({
               No visits.
             </p>
           ) : (
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-3 text-sm">
               {visits.map((v) => (
-                <li
-                  key={v.id}
-                  className="flex items-baseline justify-between gap-2"
-                >
-                  <Link href={`/trips/${v.id}`} className="hover:underline">
+                <li key={v.id} className="space-y-1">
+                  <Link
+                    href={`/trips/${v.id}`}
+                    className="font-medium link-quiet"
+                  >
                     {v.name}
                   </Link>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {[
-                      v.startDate ? formatDate(v.startDate) : "—",
-                      v.count
-                        ? `${v.count} visit${v.count === 1 ? "" : "s"}`
-                        : null,
-                      v.planned ? `${v.planned} planned` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {v.slots.map((s) => {
+                      const line = [
+                        `Day ${s.dayIndex}`,
+                        s.date ? formatDate(s.date) : null,
+                        s.startTime
+                          ? s.endTime
+                            ? `${s.startTime}–${s.endTime}`
+                            : s.startTime
+                          : null,
+                        s.itemId ? s.label : "planned",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+                      return (
+                        <li key={s.key}>
+                          {s.itemId ? (
+                            <Link
+                              href={`/trips/${v.id}/itinerary#item-${s.itemId}`}
+                              className="link-quiet"
+                            >
+                              {line}
+                            </Link>
+                          ) : (
+                            line
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </li>
               ))}
             </ul>
@@ -650,7 +715,7 @@ export default async function LocationDetailPage({
       {location.bookable && engagements.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Engagement history</CardTitle>
+            <CardTitle>Engagement history</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y text-sm">
@@ -662,7 +727,7 @@ export default async function LocationDetailPage({
                   <span className="min-w-0">
                     <Link
                       href={bookingDashboardHref(e.tripId, location.id)}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {e.tripName}
                     </Link>
@@ -689,7 +754,7 @@ export default async function LocationDetailPage({
                           {formatMoney(e.agreed, e.currency)}
                         </span>{" "}
                         {e.overdueAmount > 0 ? (
-                          <span className="font-medium text-red-600 dark:text-red-400">
+                          <span className="font-medium text-destructive">
                             · {formatMoney(e.overdueAmount, e.currency)} overdue
                           </span>
                         ) : e.outstanding && e.outstanding > 0 ? (
@@ -717,7 +782,7 @@ export default async function LocationDetailPage({
       {currentTrips.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+            <CardTitle className="flex flex-wrap items-baseline gap-x-2">
               Current trips here
               {parent ? (
                 <Link
@@ -742,7 +807,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -759,7 +824,7 @@ export default async function LocationDetailPage({
                       href={mapHref(location)!}
                       target="_blank"
                       rel="noreferrer"
-                      className="ml-2 whitespace-nowrap text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      className="ml-2 whitespace-nowrap text-xs text-muted-foreground link-quiet hover:text-foreground"
                     >
                       Open in Maps
                     </a>
@@ -778,7 +843,7 @@ export default async function LocationDetailPage({
                       href={location.website}
                       target="_blank"
                       rel="noreferrer"
-                      className="hover:underline"
+                      className="link-quiet"
                     >
                       {location.website}
                     </a>
@@ -791,8 +856,12 @@ export default async function LocationDetailPage({
                   {location.description ?? "—"}
                 </dd>
                 <dt className="text-muted-foreground">Schedule</dt>
-                <dd className="col-span-2">
+                <dd className="col-span-2 whitespace-pre-wrap">
                   {location.scheduleLimitations ?? "—"}
+                </dd>
+                <dt className="text-muted-foreground">Booking notes</dt>
+                <dd className="col-span-2 whitespace-pre-wrap">
+                  {location.bookingNotes ?? "—"}
                 </dd>
                 <dt className="text-muted-foreground">Bookable</dt>
                 <dd className="col-span-2">
@@ -825,7 +894,7 @@ export default async function LocationDetailPage({
           >
             <LocationForm
               action={updateLocation}
-              submitLabel="Save changes"
+              submitLabel="Save"
               tripTypes={allTripTypes}
               regions={allRegions}
               placesEnabled={placesEnabled()}
@@ -856,7 +925,7 @@ export default async function LocationDetailPage({
       (parent || location.coveredSites.length > 0 || canEdit) ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
+            <CardTitle>
               {location.coveredSites.length > 0 ? "Covers" : "Booked via"}
             </CardTitle>
           </CardHeader>
@@ -875,7 +944,7 @@ export default async function LocationDetailPage({
 
       <Card id="contacts" className="scroll-mt-20">
         <CardHeader>
-          <CardTitle className="text-base">Contacts</CardTitle>
+          <CardTitle>Contacts</CardTitle>
         </CardHeader>
         <CardContent>
           <LocationContactsManager
@@ -898,7 +967,7 @@ export default async function LocationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Costs</CardTitle>
+          <CardTitle>Costs</CardTitle>
         </CardHeader>
         <CardContent>
           <CostsManager
@@ -913,7 +982,7 @@ export default async function LocationDetailPage({
       {location.bookable && !parent ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Booking workflow</CardTitle>
+            <CardTitle>Booking workflow</CardTitle>
           </CardHeader>
           <CardContent>
             <LocationWorkflowSelect
@@ -928,7 +997,7 @@ export default async function LocationDetailPage({
       {location.bookable && !parent && (paymentTerms.length > 0 || canEdit) ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Payment terms</CardTitle>
+            <CardTitle>Payment terms</CardTitle>
           </CardHeader>
           <CardContent>
             <LocationPaymentTerms
@@ -944,7 +1013,7 @@ export default async function LocationDetailPage({
       {location.hostSite || canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Host site</CardTitle>
+            <CardTitle>Host site</CardTitle>
           </CardHeader>
           <CardContent>
             <HostSitePanel
@@ -961,7 +1030,7 @@ export default async function LocationDetailPage({
       {canEdit ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-destructive">
+            <CardTitle className="text-destructive">
               Danger zone
             </CardTitle>
           </CardHeader>
@@ -974,11 +1043,21 @@ export default async function LocationDetailPage({
                 </Button>
               </form>
             ) : (
-              <form action={deleteLocation}>
+              <form id="delete-location-form" action={deleteLocation}>
                 <input type="hidden" name="id" value={location.id} />
-                <Button type="submit" variant="destructive">
+                <ConfirmButton
+                  formId="delete-location-form"
+                  variant="destructive"
+                  title={referenced ? "Archive location" : "Delete location"}
+                  description={
+                    referenced
+                      ? `Used by ${location._count.scheduleItems} item(s); archives instead of deleting.`
+                      : "Permanently deletes."
+                  }
+                  confirmLabel={referenced ? "Archive location" : "Delete location"}
+                >
                   {referenced ? "Archive location" : "Delete location"}
-                </Button>
+                </ConfirmButton>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {referenced
                     ? `Used by ${location._count.scheduleItems} item(s); archives instead of deleting.`

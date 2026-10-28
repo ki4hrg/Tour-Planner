@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { TemplateChip } from "../template-chip";
+import { BackLink } from "@/components/back-link";
 
 // Field and print views have their own chrome.
 const BARE_SEGMENTS = ["print", "today", "days"];
@@ -42,13 +42,7 @@ export function TripHeader({
 
   return (
     <header className="space-y-3 print:hidden">
-      <Link
-        href="/trips"
-        className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-      >
-        <ChevronLeft className="size-4" />
-        All trips
-      </Link>
+      <BackLink href="/trips" label="All trips" />
       <div className="space-y-1.5">
         <h1 className="text-xl font-semibold text-balance sm:text-2xl">{name}</h1>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -67,7 +61,7 @@ export function TripHeader({
           {!isTemplate ? (
             <Link
               href={`/trips/compare?type=${tripTypeId}`}
-              className="hover:underline sm:ml-auto"
+              className="link-quiet sm:ml-auto"
             >
               Compare years
             </Link>

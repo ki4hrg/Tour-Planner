@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
-import { cn } from "@/lib/utils";
+import { FilterChip } from "@/components/filter-chip";
 import {
   crossTripScope,
   loadCrossTripBookings,
@@ -40,28 +40,23 @@ export default async function CrossTripBookingsPage({
     const s = sp.toString();
     return s ? `/bookings?${s}` : "/bookings";
   };
-  const chip = (active: boolean) =>
-    cn(
-      "rounded-full border px-3 py-1 text-sm",
-      active ? "bg-muted font-medium" : "text-muted-foreground",
-    );
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Bookings</h1>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={qs({ past: includePast })} className={chip(!type)}>
+        <FilterChip href={qs({ past: includePast })} active={!type}>
           All types
-        </Link>
+        </FilterChip>
         {tripTypes.map((tt) => (
-          <Link
+          <FilterChip
             key={tt.id}
             href={qs({ type: tt.id, past: includePast })}
-            className={chip(type === tt.id)}
+            active={type === tt.id}
           >
             {tt.name}
-          </Link>
+          </FilterChip>
         ))}
         <span className="ml-auto">
           <Link

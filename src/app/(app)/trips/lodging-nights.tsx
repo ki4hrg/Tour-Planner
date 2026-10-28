@@ -1,8 +1,9 @@
 import type { BookingStatus } from "@prisma/client";
+import { Badge } from "@/components/ui/badge";
 import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isBookingSecured } from "@/lib/booking";
-import { BOOKING_STATUS_CLASSES, bookingStageText } from "@/lib/trips";
+import { bookingStatusVariant, bookingStageText } from "@/lib/trips";
 
 // Short night label — the year is noise in a strip of consecutive nights.
 const NIGHT_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -47,7 +48,7 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
         <span
           className={cn(
             "font-medium",
-            covered < nights.length && "text-red-700 dark:text-red-400",
+            covered < nights.length && "text-destructive",
           )}
         >
           {covered} of {nights.length} night{nights.length === 1 ? "" : "s"}{" "}
@@ -64,7 +65,7 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
         {nights.map((n) => {
           const body = (
             <>
-              <span className="block text-[11px] text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 {n.label}
               </span>
               {n.venue ? (
@@ -72,25 +73,25 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
                   <span className="block truncate text-xs font-medium">
                     {n.venue}
                   </span>
-                  <span
-                    className={cn(
-                      "mt-1 inline-block rounded-full px-1.5 text-[10px] font-medium",
-                      BOOKING_STATUS_CLASSES[n.status ?? "PLANNED"],
-                    )}
+                  <Badge
+                    variant={bookingStatusVariant(n.status ?? "PLANNED")}
+                    className="mt-1 max-w-full"
                   >
-                    {bookingStageText({
-                      status: n.status ?? "PLANNED",
-                      stageLabel: n.stageLabel,
-                    })}
-                  </span>
+                    <span className="truncate">
+                      {bookingStageText({
+                        status: n.status ?? "PLANNED",
+                        stageLabel: n.stageLabel,
+                      })}
+                    </span>
+                  </Badge>
                   {n.covering > 1 ? (
-                    <span className="block text-[10px] text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground">
                       +{n.covering - 1} overlapping stay
                     </span>
                   ) : null}
                 </>
               ) : (
-                <span className="flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-400">
+                <span className="flex items-center gap-1 text-xs font-medium text-destructive">
                   <Moon className="size-3 shrink-0" />
                   No lodging
                 </span>
@@ -107,7 +108,7 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
                   {body}
                 </a>
               ) : (
-                <div className="h-full rounded-md border border-dashed border-red-300 bg-red-50/60 p-2 dark:border-red-900 dark:bg-red-950/30">
+                <div className="h-full rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-2">
                   {body}
                 </div>
               )}

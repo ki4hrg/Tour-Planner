@@ -1,8 +1,11 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { CategoryForm } from "./category-form";
 import {
   updateCategory,
@@ -54,8 +57,8 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
       <ul className="divide-y rounded-lg border bg-card">
         {categories.map((c, i) => (
           <li key={c.id} className="p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span
                   className="inline-block h-3 w-3 rounded-full border"
                   style={{ backgroundColor: c.color ?? "var(--muted)" }}
@@ -63,9 +66,12 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 />
                 <span className="font-medium">{c.name}</span>
                 {c.system ? (
-                  <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Badge
+                    variant="outline"
+                    className="uppercase tracking-wide text-muted-foreground"
+                  >
                     Built-in
-                  </span>
+                  </Badge>
                 ) : null}
                 <span className="text-xs text-muted-foreground">
                   · {c.itemCount} item{c.itemCount === 1 ? "" : "s"}
@@ -74,21 +80,21 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
               <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={pending || i === 0}
                   onClick={() => move(i, -1)}
                   aria-label={`Move ${c.name} up`}
                 >
-                  ↑
+                  <ArrowUp />
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={pending || i === categories.length - 1}
                   onClick={() => move(i, 1)}
                   aria-label={`Move ${c.name} down`}
                 >
-                  ↓
+                  <ArrowDown />
                 </Button>
                 {/* Built-ins are protected: no edit/delete (only reorder). */}
                 {c.system ? null : (
@@ -102,16 +108,23 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                     >
                       {editingId === c.id ? "Close" : "Edit"}
                     </Button>
-                    <form action={deleteCategory}>
+                    <form id={`delete-category-${c.id}`} action={deleteCategory}>
                       <input type="hidden" name="id" value={c.id} />
-                      <Button
-                        type="submit"
+                      <ConfirmButton
+                        formId={`delete-category-${c.id}`}
                         variant="ghost"
                         size="sm"
                         className="text-destructive"
+                        title={`Delete ${c.name}`}
+                        description={
+                          c.itemCount > 0
+                            ? `${c.itemCount} item${c.itemCount === 1 ? " loses" : "s lose"} the category.`
+                            : "Permanently deletes."
+                        }
+                        confirmLabel="Delete category"
                       >
                         Delete
-                      </Button>
+                      </ConfirmButton>
                     </form>
                   </>
                 )}

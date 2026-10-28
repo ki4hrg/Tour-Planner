@@ -57,7 +57,7 @@ export function ColorField({
           aria-pressed={value === ""}
           onClick={() => setValue("")}
           className={cn(
-            "relative size-7 overflow-hidden rounded-md border bg-background",
+            "relative size-7 overflow-hidden rounded-md border bg-background focus-ring",
             value === "" &&
               "ring-2 ring-ring ring-offset-1 ring-offset-background",
           )}
@@ -76,7 +76,7 @@ export function ColorField({
               onClick={() => setValue(c)}
               style={{ backgroundColor: c }}
               className={cn(
-                "size-7 rounded-md border border-black/10 transition-transform hover:scale-105",
+                "size-7 rounded-md border border-black/10 transition-transform focus-ring hover:scale-105",
                 active &&
                   "ring-2 ring-ring ring-offset-1 ring-offset-background",
               )}

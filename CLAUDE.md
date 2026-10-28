@@ -234,6 +234,62 @@ npm test                          # vitest
   (`globals.css` — a faint underline at rest), never a hover-only underline.
   No "→" as a link marker (an arrow reads as a process/transition — keep it for
   ranges like "Mon → Wed"); back links use a `ChevronLeft` icon, not "←".
+- **Button vs link vs tab**: a control that *navigates* is a `<Link>` (styled
+  `link-quiet`, or `<Button asChild>` in a toolbar); one that *mutates or toggles
+  state* is a `<Button>`; one that *switches a view of the same data* is a tab
+  (`components/ui/tabs.tsx` for client state, the `trip-header` nav pattern for
+  URL segments). Never a raw `<button className="hover:underline">` — text-only
+  actions are `<Button variant="ghost" size="sm">`.
+- **One primary per view**: `variant="default"` (the verdigris fill) is reserved
+  for the single page-level create/submit ("New trip", a form's Save). Inside a
+  Card or row use `outline` (opens/edits/navigates), `ghost` (secondary, Cancel,
+  row-level Edit) or `ghost` + `text-destructive` (row-level Delete/Remove).
+  `destructive` only in a Danger zone. Archive is `outline`, never primary.
+- **Create verbs**: "New <noun>" = page-level primary that navigates to `/new`;
+  "+ Add <noun>" = in-panel `outline`/`sm` that opens an inline form; "Create" =
+  the submit of a create form.
+- **Sizes & touch**: `default` (32px) for standalone forms and page headers,
+  `sm` (28px) inside Cards, rows and toolbars, `xs` never. Icon-only buttons are
+  `size="icon"` with an `aria-label` and a lucide icon — never a text glyph
+  (`↑`, `×`, `✕`). The Button, Checkbox, DropdownMenuItem and ContactChannels
+  primitives grow to ≥40px under `pointer-coarse:`; anything tappable that is not
+  one of those primitives must carry `min-h-10` on narrow screens. Row toolbars
+  with more than two actions collapse into one `DropdownMenu` below `sm:`; drag
+  grips are `pointer-coarse:hidden` (HTML5 drag never fires on touch).
+- **Destructive flow**: every delete that cascades (trip, location, contact,
+  presentation, trip type, stay, document, booking, day, an item with a booking)
+  or revokes access confirms through `ConfirmDialog`/`ConfirmButton`
+  (`src/components/confirm-dialog.tsx`) with one line stating the consequence as
+  a fact ("Deletes its files and notes."). Danger-zone Server-Action forms pass
+  `formId`. A single-row, undoable delete may skip the dialog only if its toast
+  offers Undo. `window.confirm` is not used.
+- **Direct-call actions** go through `useAction()` from `src/lib/use-action.ts`
+  (one copy; it catches a save that never reaches the server and keeps the form
+  open). Every mutation button is `disabled={pending}`; anything over ~300ms
+  shows a `Loader2 animate-spin`. `src/app/(app)/error.tsx` is the backstop.
+- **Status colours**: PLANNED = `secondary` (neutral), IN_PROGRESS = `primary/10`,
+  CONFIRMED = emerald, NOT_NEEDED = muted (`BOOKING_STATUS_CLASSES`). **Amber means
+  "we must act"** ("Next for you", needs-info, stale, no price) and nothing else;
+  positive facts ("Open now", "agreed", "paid") are emerald or plain foreground.
+  One red: overdue money and missing lodging use `text-destructive`, not
+  `red-600`. Brass `accent` is emphasis, never a warning. No off-palette hues
+  (`blue-*`, `sky-*`).
+- **Pills & chips**: every status/kind/audience pill is a `<Badge>`; nothing
+  smaller than `text-xs` — `text-[10px]`/`text-[11px]` are not allowed on text a
+  user must read to act. URL-param filters use one `FilterChip`; in-page view
+  switches use `Tabs`. No per-page copies of the chip classes.
+- **Back link**: `ChevronLeft` + "All <plural>", `text-sm text-muted-foreground
+  link-quiet`, always on its own line above the `<h1>`, never beside it.
+- **List cards**: in a list of entity cards the whole card is the link
+  (`<Link className="block"><Card…>` as `/admin` does); secondary actions sit
+  outside the link. A title-only link on an otherwise inert card is not allowed.
+- **Headings**: `<h1>` = `text-2xl font-semibold` (page); `CardTitle` is already
+  `text-base font-heading` — do not re-add `text-base`; in-card sub-sections are
+  `<h4 className="text-sm font-medium">`, not a muted `<p>`. The display serif
+  applies by element, so a sub-heading that is a `<p>` silently loses it.
+- **Owner line**: the next workflow step reads "Next for you: <step>" /
+  "Next (venue): <step>" (`ACTOR_PREFIX`, `waitingText`) — step labels are
+  past-tense milestones, so "Your move: Menu chosen" read as done.
 - **Authz** (`src/lib/authz.ts`): `requireUser()` / `requireRole(min)` in pages,
   `assertRole(min)` at the top of every mutation, `hasRole(role, min)` for checks.
   VIEWER is read-only.
@@ -286,6 +342,14 @@ npm test                          # vitest
   (DB CHECK `stay_anchor_mode`). Templatizing/instantiating a trip converts between
   them (`templatizeStays`/`instantiateStays` in `src/lib/templates.ts`), mirroring
   how `ItineraryDay.date` derives from `startDate + dayIndex`.
+  **Starting a trip** (`createTrip`, form field `sourceTripId`) copies from a template
+  OR any trip of the same type (incl. archived): a template source keeps the
+  template semantics (venue bookings reset + standing terms, presenters reset); an
+  ordinary source copies days/items/sites/travel/planned locations/presenters and
+  re-anchors stays via `copyStays`, and copies NO bookings, payments, notes or
+  documents. `fitDaysToRange` then pads empty dated days up to `endDate` or moves
+  `endDate` to the last copied day (`describeDayFit` is the toast). "Duplicate" on
+  the trip list/overview is `/trips/new?from=<id>`.
 - **Travel legs (GH #80)**: a `ScheduleItem` with a 1:1 `TravelLeg` extension IS a
   travel span — origin → destination (`fromLocation`/`toLocation` or free-text
   labels), a `TravelMethod`, ordered `TravelStop`s — with the item's

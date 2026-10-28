@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import type { CalendarFeedScope } from "@prisma/client";
 import { toast } from "sonner";
 import { Copy, Check, Trash2, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
+import { useOrigin } from "@/lib/use-origin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -21,23 +23,6 @@ export type SerializedCalendarFeed = {
   enabled: boolean;
 };
 
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (
-    fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>,
-    onOk?: () => void,
-  ) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 function feedPath(token: string): string {
   return `/api/feed/${token}.ics`;
@@ -45,13 +30,11 @@ function feedPath(token: string): string {
 
 // https URL for pasting into Google Calendar ("From URL"); webcal:// for one-tap
 // subscribe on iOS/macOS (and Google honours it too).
-function httpsUrl(token: string): string {
-  if (typeof window === "undefined") return feedPath(token);
-  return `${window.location.origin}${feedPath(token)}`;
+function httpsUrl(token: string, origin: string): string {
+  return `${origin}${feedPath(token)}`;
 }
-function webcalUrl(token: string): string {
-  if (typeof window === "undefined") return feedPath(token);
-  return `webcal://${window.location.host}${feedPath(token)}`;
+function webcalUrl(token: string, host: string): string {
+  return host ? `webcal://${host}${feedPath(token)}` : feedPath(token);
 }
 
 export function CalendarFeedManager({
@@ -93,12 +76,13 @@ function FeedRow({
   canEdit: boolean;
 }) {
   const { pending, run } = useAction();
+  const { origin, host } = useOrigin();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(httpsUrl(feed.token));
+    await navigator.clipboard.writeText(httpsUrl(feed.token, origin));
     setCopied(true);
-    toast.success("Feed URL copied.");
+    toast.success("Copied.");
     setTimeout(() => setCopied(false), 1500);
   };
 
@@ -115,8 +99,8 @@ function FeedRow({
       <div className="mt-2 flex items-center gap-2">
         <Input
           readOnly
-          value={httpsUrl(feed.token)}
-          className="h-8 font-mono text-xs"
+          value={httpsUrl(feed.token, origin)}
+          className="h-8 font-mono text-base md:text-xs"
           onFocus={(e) => e.currentTarget.select()}
         />
         <Button
@@ -130,7 +114,7 @@ function FeedRow({
         </Button>
         {feed.enabled ? (
           <Button asChild size="sm" variant="outline">
-            <a href={webcalUrl(feed.token)}>
+            <a href={webcalUrl(feed.token, host)}>
               <CalendarPlus className="size-4" /> Subscribe
             </a>
           </Button>
@@ -183,14 +167,14 @@ function CreateForm({
 
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
-      <p className="font-medium">New calendar feed</p>
+      <p className="font-medium">New feed</p>
       <div className="space-y-1">
-        <Label htmlFor="feed-label">Label (optional)</Label>
+        <Label htmlFor="feed-label">Label</Label>
         <Input
           id="feed-label"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. Leaders' calendar"
+          placeholder="Leaders' calendar"
         />
       </div>
       <p className="text-xs text-muted-foreground">

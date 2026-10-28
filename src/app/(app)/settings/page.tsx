@@ -65,7 +65,7 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Calendar feed — all trips</CardTitle>
+          <CardTitle>Calendar feed — all trips</CardTitle>
         </CardHeader>
         <CardContent>
           <CalendarFeedManager
@@ -78,7 +78,7 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Todoist</CardTitle>
+          <CardTitle>Todoist</CardTitle>
         </CardHeader>
         <CardContent>
           {auth ? (

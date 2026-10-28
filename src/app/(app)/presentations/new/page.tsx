@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/authz";
 import {
@@ -9,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { PresentationForm } from "../presentation-form";
 import { createPresentation } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +21,13 @@ export default async function NewPresentationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/presentations" label="All presentations" />
         <h1 className="text-2xl font-semibold">New presentation</h1>
-        <Link
-          href="/presentations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All presentations
-        </Link>
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Presentation details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <PresentationForm

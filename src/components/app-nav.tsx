@@ -97,8 +97,12 @@ export function AppNav({
                 <DropdownMenuItem key={link.href} asChild>
                   <Link
                     href={link.href}
+                    aria-current={
+                      isActive(link.href, pathname) ? "page" : undefined
+                    }
                     className={cn(
-                      isActive(link.href, pathname) && "font-medium",
+                      isActive(link.href, pathname) &&
+                        "bg-muted font-medium text-foreground",
                     )}
                   >
                     {link.label}

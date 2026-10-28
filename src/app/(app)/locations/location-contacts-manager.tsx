@@ -54,10 +54,12 @@ export function LocationContactsManager({
           return (
           <div
             key={c.id}
-            className="flex items-center justify-between gap-3 py-2"
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
           >
-            <div className="min-w-0">
-              <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">
+            {/* The actions drop below the contact when the column is too narrow
+                for both, so the email keeps a readable line. */}
+            <div className="min-w-0 flex-1 basis-56">
+              <Link href={`/contacts/${c.id}`} className="font-medium link-quiet">
                 {c.name}
               </Link>
               {isPrimary ? (
@@ -70,14 +72,24 @@ export function LocationContactsManager({
                   ? ` — ${[c.role, c.organization].filter(Boolean).join(", ")}`
                   : ""}
               </span>
-              <ContactChannels
-                phone={c.phone}
-                email={c.email}
-                className="ml-2 align-middle"
-              />
+              {c.phone || c.email ? (
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  {c.phone ? (
+                    <a href={`tel:${c.phone}`} className="link-quiet">
+                      {c.phone}
+                    </a>
+                  ) : null}
+                  {c.email ? (
+                    <a href={`mailto:${c.email}`} className="link-quiet break-all">
+                      {c.email}
+                    </a>
+                  ) : null}
+                  <ContactChannels phone={c.phone} email={c.email} />
+                </div>
+              ) : null}
             </div>
             {canEdit ? (
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 <form action={setPrimaryContact}>
                   <input type="hidden" name="locationId" value={locationId} />
                   <input
@@ -103,7 +115,7 @@ export function LocationContactsManager({
         })}
         {linked.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
-            No contacts linked.
+            No contacts.
           </p>
         ) : null}
       </div>
@@ -133,7 +145,7 @@ export function LocationContactsManager({
               <input type="hidden" name="locationId" value={locationId} />
               <Select name="contactId">
                 <SelectTrigger className="w-64" size="sm">
-                  <SelectValue placeholder="Choose a contact…" />
+                  <SelectValue placeholder="Choose contact…" />
                 </SelectTrigger>
                 <SelectContent>
                   {available.map((c) => (

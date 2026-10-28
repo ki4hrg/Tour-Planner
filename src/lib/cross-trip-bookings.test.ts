@@ -439,7 +439,7 @@ describe("actionItems", () => {
       ["yourMove", "t1:loc-b"],
       ["yourMove", "t1:loc-a"],
     ]);
-    expect(items[1].text).toBe("Your move: Sign agreement · 12d");
+    expect(items[1].text).toBe("Next for you: Sign agreement · 12d");
     expect(
       rowMatchesFilters(g[0].rows[0].row, { ...NO_ATTENTION_FILTERS, yourMove: true }),
     ).toBe(true);

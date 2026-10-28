@@ -111,16 +111,12 @@ export async function BookingActionsCard({ today }: { today: Date }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <CardTitle className="text-base">
+        <CardTitle>
           Bookings needing action
           {total ? (
             <Badge
-              variant="secondary"
-              className={cn(
-                "ml-2 align-middle",
-                overdue.length &&
-                  "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300",
-              )}
+              variant={overdue.length ? "overdue" : "secondary"}
+              className="ml-2 align-middle"
             >
               {total}
             </Badge>
@@ -149,7 +145,7 @@ export async function BookingActionsCard({ today }: { today: Date }) {
         )}
         {missingPrice > 0 ? (
           <p className="text-xs text-muted-foreground">
-            <Link href="/bookings" className="hover:underline">
+            <Link href="/bookings" className="link-quiet">
               {missingPrice} without agreed price
             </Link>
           </p>
@@ -165,24 +161,24 @@ function Section({ title, lines }: { title: string; lines: Line[] }) {
   const more = lines.length - shown.length;
   return (
     <section>
-      <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+      <h4 className="mb-1 text-sm font-medium">
         {title}
-        <span className="ml-1 font-normal">({lines.length})</span>
-      </h3>
+        <span className="ml-1 font-normal text-muted-foreground">({lines.length})</span>
+      </h4>
       <ul className="divide-y">
         {shown.map((l) => (
           <li
             key={l.key}
             className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           >
-            <Link href={l.href} className="min-w-0 hover:underline">
+            <Link href={l.href} className="min-w-0 link-quiet">
               <span className="font-medium">{l.venue}</span>
               <span className="text-muted-foreground"> — {l.trip.name}</span>
             </Link>
             <span
               className={cn(
                 "shrink-0 text-xs",
-                l.tone === "red" && "font-medium text-red-600 dark:text-red-400",
+                l.tone === "red" && "font-medium text-destructive",
                 l.tone === "amber" &&
                   "font-medium text-amber-700 dark:text-amber-300",
                 l.tone === "muted" && "text-muted-foreground",

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { EditableSection } from "@/components/editable-section";
 import { PresentationForm } from "../presentation-form";
 import {
@@ -17,7 +18,7 @@ import {
   deletePresentation,
   unarchivePresentation,
 } from "../actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,8 @@ export default async function PresentationDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <BackLink href="/presentations" label="All presentations" />
         <h1 className="text-2xl font-semibold">
           {presentation.title}
           {presentation.archivedAt ? (
@@ -55,18 +57,11 @@ export default async function PresentationDetailPage({
             </Badge>
           ) : null}
         </h1>
-        <Link
-          href="/presentations"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All presentations
-        </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <EditableSection
@@ -92,7 +87,7 @@ export default async function PresentationDetailPage({
           >
             <PresentationForm
               action={updatePresentation}
-              submitLabel="Save changes"
+              submitLabel="Save"
               initial={{
                 id: presentation.id,
                 title: presentation.title,
@@ -111,7 +106,7 @@ export default async function PresentationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Default presenters ({presentation.defaultPresenters.length})
           </CardTitle>
         </CardHeader>
@@ -122,7 +117,7 @@ export default async function PresentationDetailPage({
                 <li key={c.id}>
                   <Link
                     href={`/contacts/${c.id}`}
-                    className="hover:underline"
+                    className="link-quiet"
                   >
                     {c.name}
                   </Link>
@@ -139,7 +134,7 @@ export default async function PresentationDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Usage</CardTitle>
+          <CardTitle>Usage</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm">
@@ -154,7 +149,7 @@ export default async function PresentationDetailPage({
           {presentation.archivedAt ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Archived</CardTitle>
+                <CardTitle>Archived</CardTitle>
               </CardHeader>
               <CardContent>
                 <form action={unarchivePresentation}>
@@ -168,7 +163,7 @@ export default async function PresentationDetailPage({
           ) : null}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base text-destructive">
+              <CardTitle className="text-destructive">
                 Danger zone
               </CardTitle>
             </CardHeader>
@@ -178,11 +173,27 @@ export default async function PresentationDetailPage({
                   ? `Used by ${presentation._count.items} item(s); archives instead of deleting.`
                   : "Permanently deletes."}
               </p>
-              <form action={deletePresentation}>
+              <form id="delete-presentation-form" action={deletePresentation}>
                 <input type="hidden" name="id" value={presentation.id} />
-                <Button type="submit" variant="destructive">
+                <ConfirmButton
+                  formId="delete-presentation-form"
+                  variant="destructive"
+                  title={
+                    presentation._count.items > 0
+                      ? "Archive presentation"
+                      : "Delete presentation"
+                  }
+                  description={
+                    presentation._count.items > 0
+                      ? `Used by ${presentation._count.items} item(s); archives instead of deleting.`
+                      : "Permanently deletes."
+                  }
+                  confirmLabel={
+                    presentation._count.items > 0 ? "Archive" : "Delete"
+                  }
+                >
                   {presentation._count.items > 0 ? "Archive" : "Delete"}
-                </Button>
+                </ConfirmButton>
               </form>
             </CardContent>
           </Card>

@@ -39,6 +39,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // Undo / Pull forward are tapped on the coach: give them a real
+          // touch target instead of sonner's 24px pill.
+          actionButton: "pointer-coarse:min-h-10 pointer-coarse:px-3",
+          cancelButton: "pointer-coarse:min-h-10 pointer-coarse:px-3",
         },
       }}
       {...props}

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ListChecks, SquareKanban, Table2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -138,35 +138,25 @@ export function BookingDashboard({
   }
 
   const viewToggle = (
-    <div
-      role="group"
-      aria-label="View"
-      className="inline-flex rounded-md border p-0.5 text-xs"
+    <Tabs
+      value={view}
+      onValueChange={(v) => switchView(v as DashboardView)}
     >
-      {(
-        [
-          ["table", "Table", Table2],
-          ["board", "Board", SquareKanban],
-          ["progress", "Progress", ListChecks],
-        ] as const
-      ).map(([value, label, Icon]) => (
-        <button
-          key={value}
-          type="button"
-          aria-pressed={view === value}
-          onClick={() => switchView(value)}
-          className={cn(
-            "flex items-center gap-1 rounded px-2 py-1",
-            view === value
-              ? "bg-muted font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          <Icon className="size-3.5" />
-          {label}
-        </button>
-      ))}
-    </div>
+      <TabsList variant="line" aria-label="View">
+        {(
+          [
+            ["table", "Table", Table2],
+            ["board", "Board", SquareKanban],
+            ["progress", "Progress", ListChecks],
+          ] as const
+        ).map(([value, label, Icon]) => (
+          <TabsTrigger key={value} value={value} className="px-2">
+            <Icon />
+            {label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 
   if (view === "progress") {
@@ -238,7 +228,7 @@ export function BookingDashboard({
                   <TableHead>Venue</TableHead>
                   <TableHead>Window</TableHead>
                   <TableHead>Price</TableHead>
-                  <TableHead>Point of Contact</TableHead>
+                  <TableHead>Point of contact</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>

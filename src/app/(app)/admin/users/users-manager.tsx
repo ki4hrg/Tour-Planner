@@ -55,7 +55,7 @@ function CreateUserForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Add user</CardTitle>
+        <CardTitle>Add user</CardTitle>
       </CardHeader>
       <CardContent>
         <form
@@ -157,12 +157,7 @@ function UserRowItem({
               </SelectContent>
             </Select>
           </div>
-          <Button
-            type="submit"
-            variant="outline"
-            size="sm"
-            disabled={rolePending}
-          >
+          <Button type="submit" size="sm" disabled={rolePending}>
             Save
           </Button>
         </form>
@@ -219,7 +214,7 @@ export function UsersManager({
       <CreateUserForm />
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Users ({users.length})</CardTitle>
+          <CardTitle>Users ({users.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {users.map((u) => (

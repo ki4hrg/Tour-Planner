@@ -1,5 +1,5 @@
 import type { CostUnit } from "@prisma/client";
-import { formatMoney } from "./money";
+import { formatMoney, isCostStale } from "./money";
 
 // Cost rollups are estimates only (plan decision 6) and per-currency — a trip
 // type is single-currency, so no FX conversion. Per-person costs scale with the
@@ -162,9 +162,13 @@ export function formatPriceBreakdown(
   return total != null ? `${parts.join(" + ")} = ${formatMoney(total, currency)}` : parts.join(" + ");
 }
 
+// A list-price line copied into the editor; `stale` flags a catalog price
+// unconfirmed for 1+ year (`isCostStale`) so the copy is checked, not trusted.
+export type ListPriceLine = PriceLine & { stale: boolean };
+
 export type ListPriceLines = {
   currency: string;
-  lines: PriceLine[];
+  lines: ListPriceLine[];
   skipped: number; // venue lines in another currency, left out
 };
 
@@ -173,11 +177,12 @@ export type ListPriceLines = {
  * (label, amount, unit) — no collapsing, so a mixed set keeps following the
  * headcount. A booking has one currency: lines are taken in `preferredCurrency`
  * (the booking's) when the venue lists any in it, else the venue's most-used
- * currency; lines in other currencies are counted in `skipped`. Null when the
- * venue has no list prices.
+ * currency; lines in other currencies are counted in `skipped`. Each line
+ * carries `stale` from the cost's `confirmedAt` (a cost without the field is
+ * not flagged). Null when the venue has no list prices.
  */
 export function listPriceLines(
-  costs: (CostLike & { label: string })[],
+  costs: (CostLike & { label: string; confirmedAt?: Date | string | null })[],
   preferredCurrency?: string | null,
 ): ListPriceLines | null {
   if (costs.length === 0) return null;
@@ -191,6 +196,11 @@ export function listPriceLines(
   }
   const lines = costs
     .filter((c) => c.currency === currency)
-    .map((c) => ({ label: c.label, amount: c.amount, unit: c.unit }));
+    .map((c) => ({
+      label: c.label,
+      amount: c.amount,
+      unit: c.unit,
+      stale: c.confirmedAt !== undefined && isCostStale(c.confirmedAt),
+    }));
   return { currency, lines, skipped: costs.length - lines.length };
 }

@@ -2,7 +2,7 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { BookingStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,8 @@ import {
   type BookingProgressView,
   type WaitingView,
 } from "@/lib/booking-workflow";
-import { BOOKING_STATUS_CLASSES } from "@/lib/trips";
+import { bookingStatusVariant } from "@/lib/trips";
+import { badgeVariants } from "@/components/ui/badge";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import {
   setBookingStatus,
@@ -50,8 +51,8 @@ import { ACTOR_PREFIX, OURS_CHIP_CLASSES, WaitingNote } from "./waiting-note";
 // by label, since the rows may follow different workflows).
 //
 // The pieces are reused elsewhere: `ProgressList` on the Location page (one
-// row per trip engaging that venue), `CompactProgress` ("Your move: …" /
-// "Waiting on venue: …" + the status control) wherever a booking is shown in a
+// row per trip engaging that venue), `CompactProgress` ("Next for you: …" /
+// "Next (venue): …" + the status control) wherever a booking is shown in a
 // single line. Owners (whose move) come from ./waiting-note.
 
 /** The workflow a booking follows — for a not-yet-created engagement, the one its first touch will seed. */
@@ -104,9 +105,9 @@ function StepChip({
         .join(" · ")}
       onClick={onToggle}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:cursor-default",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors focus-ring disabled:cursor-default",
         done
-          ? cn("border-transparent font-medium", BOOKING_STATUS_CLASSES[step.status])
+          ? badgeVariants({ variant: bookingStatusVariant(step.status) })
           : isNext
             ? step.actor === "VENUE"
               ? "border-foreground/30 text-muted-foreground"
@@ -190,7 +191,7 @@ function useDoneSteps(lines: { key: string; progress: BookingProgressView }[]) {
 
 /**
  * Compact single-line progress: the upcoming step as a one-click chip led by
- * its owner ("Your move: Sign agreement", "Waiting on venue: Confirm
+ * its owner ("Next for you: Sign agreement", "Next (venue): Confirm
  * availability · 12d" — clicking ticks it), then the status control (whole
  * ladder in its popover). A venue not engaged yet reads "Next: …". Read-only
  * chip for viewers.
@@ -485,6 +486,7 @@ export function ProgressList({
                 disabled={pending || !label}
                 onClick={() => runBulk(true)}
               >
+                {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
                 Mark done
               </Button>
               <Button
@@ -493,6 +495,7 @@ export function ProgressList({
                 disabled={pending || !label}
                 onClick={() => runBulk(false)}
               >
+                {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
                 Clear
               </Button>
               <Button
@@ -502,6 +505,7 @@ export function ProgressList({
                 disabled={pending}
                 onClick={markNotNeeded}
               >
+                {pending ? <Loader2 className="animate-spin" aria-hidden /> : null}
                 Not needed
               </Button>
             </>
@@ -534,7 +538,7 @@ export function ProgressList({
                 <div className="min-w-0">
                   <p className="font-medium [overflow-wrap:anywhere]">
                     {line.href ? (
-                      <Link href={line.href} className="hover:underline">
+                      <Link href={line.href} className="link-quiet">
                         {line.name}
                       </Link>
                     ) : (

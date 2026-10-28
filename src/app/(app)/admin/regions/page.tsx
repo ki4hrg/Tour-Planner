@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/authz";
 import {
@@ -10,7 +9,7 @@ import {
 import { RegionForm } from "./region-form";
 import { RegionsManager, type RegionRow } from "./regions-manager";
 import { createRegion } from "./actions";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -52,20 +51,14 @@ export default async function RegionsAdminPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="space-y-3">
+        <BackLink href="/admin" label="Admin" />
         <h1 className="text-2xl font-semibold">Regions</h1>
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          Admin
-        </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Add region</CardTitle>
+          <CardTitle>Add region</CardTitle>
         </CardHeader>
         <CardContent>
           <RegionForm

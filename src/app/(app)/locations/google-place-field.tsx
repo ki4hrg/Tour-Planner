@@ -105,11 +105,17 @@ export function GooglePlaceField({
             href={googlePlaceHref(locationName || pickedName, placeId)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground link-quiet hover:text-foreground"
           >
             Open <ExternalLink className="size-3" />
           </a>
-          <Button type="button" variant="ghost" size="sm" onClick={clearPlace}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={picking}
+            onClick={clearPlace}
+          >
             <X className="size-3.5" /> Clear
           </Button>
         </div>
@@ -141,7 +147,7 @@ export function GooglePlaceField({
                   <button
                     type="button"
                     onClick={() => pick(s)}
-                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent"
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent focus-ring"
                   >
                     <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                     <span>
@@ -160,8 +166,7 @@ export function GooglePlaceField({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Google place search isn&apos;t configured (GOOGLE_MAPS_API_KEY); you can
-          still enter coordinates.
+          Google place search is not configured (GOOGLE_MAPS_API_KEY).
         </p>
       )}
 
@@ -181,7 +186,7 @@ export function GooglePlaceField({
             Fill address
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setOfferAddress(null)}>
-            No thanks
+            Dismiss
           </Button>
         </div>
       ) : null}

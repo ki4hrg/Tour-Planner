@@ -218,7 +218,7 @@ export function LocationForm({
             id="scheduleLimitations"
             name="scheduleLimitations"
             rows={2}
-            placeholder="e.g. Open Wed–Sat; groups over 20 need advance notice"
+            placeholder="e.g. Closed Mondays; groups over 20 need notice"
             defaultValue={initial?.scheduleLimitations ?? ""}
           />
         </div>

@@ -17,7 +17,12 @@ export function ContactChannels({
 }) {
   if (!phone && !email) return null;
   return (
-    <span className={cn("inline-flex items-center gap-1", className)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 pointer-coarse:gap-2",
+        className,
+      )}
+    >
       {phone ? (
         <ChannelLink href={`tel:${phone}`} label={`Call ${phone}`}>
           <Phone className="size-3.5" />
@@ -77,7 +82,8 @@ function ChannelLink({
       aria-label={label}
       title={label}
       {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
-      className="inline-flex size-7 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      // 44px-ish targets on touch screens; compact on a pointer device.
+      className="inline-flex size-7 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground pointer-coarse:size-9"
     >
       {children}
     </a>

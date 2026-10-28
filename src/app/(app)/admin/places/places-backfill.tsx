@@ -47,8 +47,8 @@ export function PlacesBackfill({
     return (
       <Card>
         <CardContent className="pt-6 text-sm text-muted-foreground">
-          Google Places isn&apos;t configured. Set <code>GOOGLE_MAPS_API_KEY</code>{" "}
-          (a server key with <em>Places API (New)</em> enabled) and restart.
+          Google Places not configured: set <code>GOOGLE_MAPS_API_KEY</code>{" "}
+          (server key with <em>Places API (New)</em> enabled) and restart.
         </CardContent>
       </Card>
     );
@@ -58,13 +58,11 @@ export function PlacesBackfill({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Place ID refresh</CardTitle>
+          <CardTitle>Place ID refresh</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
           <p className="text-muted-foreground">
-            {linkedCount} linked · {dueCount} due for the yearly refresh. A daily
-            job re-checks IDs older than 12 months; places Google no longer
-            knows are unlinked and listed below for review.
+            {linkedCount} linked · {dueCount} due for refresh.
           </p>
           <Button
             variant="outline"
@@ -79,14 +77,14 @@ export function PlacesBackfill({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Unlinked locations ({locations.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="divide-y p-0">
           {locations.length === 0 ? (
             <p className="px-6 py-4 text-sm text-muted-foreground">
-              Every active location is linked to a Google place.
+              All active locations linked.
             </p>
           ) : (
             locations.map((l) => <BackfillRow key={l.id} row={l} />)
@@ -128,12 +126,12 @@ function BackfillRow({ row }: { row: Row }) {
     <div className="space-y-3 px-6 py-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="text-sm">
-          <a href={`/locations/${row.id}`} className="font-medium hover:underline">
+          <a href={`/locations/${row.id}`} className="font-medium link-quiet">
             {row.name}
           </a>
           {row.needsReview ? (
             <Badge variant="destructive" className="ml-2">
-              Google dropped this place
+              Dropped by Google
             </Badge>
           ) : null}
           <div className="text-xs text-muted-foreground">
@@ -161,7 +159,10 @@ function BackfillRow({ row }: { row: Row }) {
       {candidates ? (
         candidates.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No matches. Link it by hand from the location&apos;s edit form.
+            No matches.{" "}
+            <a href={`/locations/${row.id}`} className="link-quiet">
+              Link by hand
+            </a>
           </p>
         ) : (
           <ul className="space-y-2">
@@ -178,9 +179,9 @@ function BackfillRow({ row }: { row: Row }) {
                       href={googlePlaceHref(c.name ?? row.name, c.placeId)}
                       target="_blank"
                       rel="noreferrer"
-                      className="ml-2 inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground"
+                      className="ml-2 inline-flex items-center gap-0.5 link-quiet hover:text-foreground"
                     >
-                      Check on Maps <ExternalLink className="size-3" />
+                      Open in Maps <ExternalLink className="size-3" />
                     </a>
                   </div>
                 </div>

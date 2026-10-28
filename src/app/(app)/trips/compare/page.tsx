@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
@@ -13,7 +12,7 @@ import {
   type VenueLine,
 } from "../multi-year-grid";
 import { BOOKING_PROGRESS_SELECT } from "@/lib/booking-workflow";
-import { ChevronLeft } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 
 export const dynamic = "force-dynamic";
 
@@ -166,25 +165,19 @@ export default async function CompareYearsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="space-y-3">
+        <BackLink href="/trips" label="All trips" />
         <div>
           <h1 className="text-2xl font-semibold">{tripType.name} — all years</h1>
           <p className="text-sm text-muted-foreground">
             {trips.length} trip{trips.length === 1 ? "" : "s"}
           </p>
         </div>
-        <Link
-          href="/trips"
-          className="inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:underline"
-        >
-          <ChevronLeft className="size-4" />
-          All trips
-        </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             {totalNeedsInfo > 0
               ? `${totalNeedsInfo} booking${totalNeedsInfo === 1 ? "" : "s"} need attention`
               : "Nothing to book"}

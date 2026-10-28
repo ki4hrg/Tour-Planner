@@ -41,14 +41,7 @@ export default async function GooglePlacesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Google places</h1>
-        <p className="text-sm text-muted-foreground">
-          Link locations to their Google Maps place so map links open the exact
-          venue and the WordPress export carries a place ID and coordinates.
-          Candidates are only suggestions; nothing is linked until you accept one.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Google places</h1>
       <PlacesBackfill
         enabled={placesEnabled()}
         linkedCount={linkedCount}

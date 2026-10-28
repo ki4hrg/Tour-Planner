@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Download, FileText, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/dates";
-import type { FormState } from "@/lib/forms";
 import { cn } from "@/lib/utils";
 import {
   defaultKindForTarget,
@@ -40,21 +42,9 @@ import {
 } from "@/lib/validators/document";
 import { deleteDocument, updateDocument, uploadDocument } from "./actions";
 
-// Direct-call action runner: a transition plus a toast on the FormState result.
-// Exported so the trip documents hub runs its uploads the same way.
-export function useDocumentAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
+// The shared direct-call action runner, re-exported under the name the trip
+// documents hub imports so its uploads run the same way.
+export const useDocumentAction = useAction;
 
 /**
  * A reusable, target-agnostic file list — the documents counterpart to
@@ -180,17 +170,9 @@ export function DocumentList({
             canEdit={canEdit}
             pending={pending}
             onEdit={() => setEditingId(doc.id)}
-            onDelete={() => {
-              // Hard delete — there is no archive or undo for a file.
-              if (
-                !window.confirm(
-                  `Delete "${doc.title}"? This can't be undone.`,
-                )
-              ) {
-                return;
-              }
-              run(() => deleteDocument(doc.id));
-            }}
+            // Hard delete — there is no archive or undo for a file; the row
+            // confirms before calling this.
+            onDelete={() => run(() => deleteDocument(doc.id))}
           />
         ),
       )}
@@ -224,7 +206,7 @@ export function DocumentRow({
             href={documentHref(doc.id, isInlineViewable(doc.contentType))}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 font-medium hover:underline"
+            className="flex items-center gap-2 font-medium link-quiet"
           >
             <FileText className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{doc.title}</span>
@@ -235,19 +217,13 @@ export function DocumentRow({
             </p>
           ) : null}
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-              {DOCUMENT_KIND_LABELS[doc.kind]}
-            </span>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 font-medium",
-                staffOnly
-                  ? "border text-muted-foreground"
-                  : "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
-              )}
+            <Badge variant="secondary">{DOCUMENT_KIND_LABELS[doc.kind]}</Badge>
+            <Badge
+              variant={staffOnly ? "outline" : "secondary"}
+              className={cn(staffOnly && "text-muted-foreground")}
             >
               {badge}
-            </span>
+            </Badge>
             <span>{formatFileSize(doc.size)}</span>
             <span className="truncate">· {doc.filename}</span>
             <span>
@@ -266,26 +242,32 @@ export function DocumentRow({
         </a>
       </div>
       {canEdit && (onEdit || onDelete) ? (
-        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center gap-1">
           {onEdit ? (
-            <button
+            <Button
               type="button"
-              className="hover:underline"
+              variant="ghost"
+              size="sm"
               onClick={onEdit}
               disabled={pending}
             >
               Edit
-            </button>
+            </Button>
           ) : null}
           {onDelete ? (
-            <button
-              type="button"
-              className="text-destructive hover:underline"
-              onClick={onDelete}
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
               disabled={pending}
+              pending={pending}
+              title={`Delete ${doc.title}`}
+              description="Permanently deletes the file."
+              confirmLabel="Delete file"
+              onConfirm={onDelete}
             >
               Delete
-            </button>
+            </ConfirmButton>
           ) : null}
         </div>
       ) : null}
@@ -517,7 +499,7 @@ export function DocumentUploadForm({
       />
 
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={submit} disabled={pending}>
+        <Button variant="outline" size="sm" onClick={submit} disabled={pending}>
           <Paperclip className="size-4" />
           {pending ? "Uploading…" : "Upload"}
         </Button>

@@ -97,10 +97,10 @@ export function RegionForm({
           <Label htmlFor="parentId">Parent region</Label>
           <Select value={parentId} onValueChange={setParentId}>
             <SelectTrigger id="parentId" className="w-full">
-              <SelectValue placeholder="— none (top level) —" />
+              <SelectValue placeholder="None (top level)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NO_PARENT}>— none (top level) —</SelectItem>
+              <SelectItem value={NO_PARENT}>None (top level)</SelectItem>
               {parentChoices.map((o) => (
                 <SelectItem key={o.id} value={o.id}>
                   {o.label}
@@ -114,10 +114,10 @@ export function RegionForm({
           <input type="hidden" name="dialCode" value={dialCode} />
           <Select value={dialCode} onValueChange={setDialCode}>
             <SelectTrigger id="dialCode" className="w-full">
-              <SelectValue placeholder="— none —" />
+              <SelectValue placeholder="None" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— none —</SelectItem>
+              <SelectItem value="">None</SelectItem>
               {codeOptions.map((c) => (
                 <SelectItem key={c.code} value={c.code}>
                   {c.label}

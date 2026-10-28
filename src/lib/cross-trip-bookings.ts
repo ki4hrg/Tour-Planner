@@ -114,9 +114,11 @@ export function isYourMove(row: {
   );
 }
 
-/** "Your move: Sign agreement · 12d" / "Waiting on venue: Confirm availability · 3d". */
+/** "Next for you: Sign agreement · 12d" / "Next (venue): Confirm availability · 3d".
+ *  Same prefixes as `ACTOR_PREFIX` in trips/waiting-note.tsx: the step label is
+ *  the NEXT milestone, so "Your move: Menu chosen" read as already done. */
 export function waitingText(w: NonNullable<VenueBookingRow["waiting"]>): string {
-  const who = w.actor === "US" ? "Your move" : "Waiting on venue";
+  const who = w.actor === "US" ? "Next for you" : "Next (venue)";
   return `${who}: ${w.stepLabel}${w.days ? ` · ${w.days}d` : ""}`;
 }
 

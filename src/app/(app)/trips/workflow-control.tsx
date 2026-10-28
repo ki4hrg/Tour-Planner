@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useId, useOptimistic, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -27,7 +28,7 @@ import {
   type BookingProgressView,
 } from "@/lib/booking-workflow";
 import {
-  BOOKING_STATUS_CLASSES,
+  bookingStatusVariant,
   BOOKING_STATUS_LABELS,
   bookingStageText,
 } from "@/lib/trips";
@@ -57,16 +58,13 @@ export function BookingStagePill({
   className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-block rounded-full px-2 py-0.5 text-xs font-medium",
-        BOOKING_STATUS_CLASSES[status],
-        className,
-      )}
+    <Badge
+      variant={bookingStatusVariant(status)}
+      className={className}
       title={stageOn ? `Since ${formatDate(stageOn)}` : undefined}
     >
       {bookingStageText({ status, stageLabel })}
-    </span>
+    </Badge>
   );
 }
 
@@ -191,7 +189,7 @@ export function WorkflowControl({
     if (next === state.workflowId) return;
     if (
       state.completions.length > 0 &&
-      !window.confirm("Switching workflow clears the steps ticked so far.")
+      !window.confirm("Switch workflow? Ticked steps will be cleared.")
     ) {
       return;
     }

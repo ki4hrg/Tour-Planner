@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useTransition } from "react";
+import { useActionState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,20 +23,6 @@ import {
 
 const NONE = "__none__";
 
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
-
 export type ProjectOption = { id: string; name: string };
 
 export function TodoistConnectForm() {
@@ -52,7 +39,7 @@ export function TodoistConnectForm() {
   return (
     <form action={formAction} className="space-y-3">
       <div className="space-y-1.5">
-        <Label htmlFor="token">Todoist API token</Label>
+        <Label htmlFor="token">API token</Label>
         <Input
           id="token"
           name="token"
@@ -64,7 +51,7 @@ export function TodoistConnectForm() {
           href="https://app.todoist.com/app/settings/integrations/developer"
           target="_blank"
           rel="noopener noreferrer"
-          className="block w-fit text-xs text-muted-foreground underline hover:text-foreground"
+          className="block w-fit text-xs text-muted-foreground link-quiet hover:text-foreground"
         >
           Get token
         </a>
@@ -103,7 +90,7 @@ export function TodoistManager({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>— Inbox —</SelectItem>
+        <SelectItem value={NONE}>Inbox</SelectItem>
         {(projects ?? []).map((p) => (
           <SelectItem key={p.id} value={p.id}>
             {p.name}
@@ -146,7 +133,7 @@ export function TodoistManager({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs">Per-trip-type projects</Label>
+        <Label className="text-xs">Projects by trip type</Label>
         <ul className="space-y-2">
           {tripTypes.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-3">

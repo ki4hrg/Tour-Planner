@@ -50,3 +50,10 @@ export const tripSchema = z
   );
 
 export type TripInput = z.infer<typeof tripSchema>;
+
+// "Start from" on the create form: a template OR an ordinary (incl. archived)
+// trip of the same type whose itinerary seeds the new one. Empty = blank.
+export const sourceTripIdSchema = z.preprocess(
+  (v) => (v === "" || v == null ? undefined : v),
+  z.string().trim().min(1).optional(),
+);

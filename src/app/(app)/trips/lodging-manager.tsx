@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,21 +40,6 @@ export type SuggestedStaySpan = Pick<
   SerializedStay,
   "checkIn" | "checkOut" | "checkInDayIndex" | "checkOutDayIndex"
 >;
-
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ error?: string; message?: string; ok?: boolean }>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 export function LodgingManager({
   tripId,
@@ -120,13 +106,13 @@ export function LodgingManager({
         isTemplate && dayCount === 0 ? (
           <p className="text-sm text-muted-foreground">
             No days.{" "}
-            <Link href={`/trips/${tripId}/itinerary`} className="underline">
+            <Link href={`/trips/${tripId}/itinerary`} className="link-quiet">
               Add days
             </Link>
           </p>
         ) : adding ? (
           <div className="rounded-md border border-dashed p-3">
-            <p className="mb-2 text-sm font-medium">Add a stay</p>
+            <p className="mb-2 text-sm font-medium">New stay</p>
             {locations.length === 0 ? (
               <p className="mb-2 text-xs text-muted-foreground">
                 No lodging venues.
@@ -290,16 +276,18 @@ function StayRow({
                   Booking
                 </Link>
                 {canEdit || documents.length > 0 ? (
-                  <button
+                  <Button
                     type="button"
-                    className="text-xs text-muted-foreground link-quiet"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet"
                     onClick={() => setShowFiles((v) => !v)}
                     aria-expanded={showFiles}
                   >
                     {documents.length > 0
                       ? `Files (${documents.length})`
                       : "Files"}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -313,22 +301,19 @@ function StayRow({
                 >
                   Edit
                 </Button>
-                <Button
+                <ConfirmButton
                   variant="ghost"
                   size="sm"
                   className="text-destructive"
                   disabled={pending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Delete stay at ${stay.location.name}? Deletes its files and notes.`,
-                      )
-                    )
-                      run(() => deleteStay(stay.id));
-                  }}
+                  pending={pending}
+                  title={`Delete stay at ${stay.location.name}`}
+                  description="Deletes its files and notes."
+                  confirmLabel="Delete stay"
+                  onConfirm={() => run(() => deleteStay(stay.id))}
                 >
                   Delete
-                </Button>
+                </ConfirmButton>
               </div>
             ) : null}
           </div>
@@ -454,7 +439,7 @@ function StayFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>— pick a location —</SelectItem>
+              <SelectItem value={NONE}>Choose location…</SelectItem>
               {locations.map((loc) => (
                 <SelectItem key={loc.id} value={loc.id}>
                   {loc.name}
@@ -471,7 +456,7 @@ function StayFields({
               <Label className="text-xs">Check-in day *</Label>
               <Select value={checkInDay} onValueChange={setCheckInDay}>
                 <SelectTrigger size="sm">
-                  <SelectValue placeholder="— pick a day —" />
+                  <SelectValue placeholder="Choose day…" />
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: dayCount }, (_, i) => i + 1).map((n) => (
@@ -487,7 +472,7 @@ function StayFields({
               <Label className="text-xs">Check-out day *</Label>
               <Select value={checkOutDay} onValueChange={setCheckOutDay}>
                 <SelectTrigger size="sm">
-                  <SelectValue placeholder="— pick a day —" />
+                  <SelectValue placeholder="Choose day…" />
                 </SelectTrigger>
                 <SelectContent>
                   {/* Check-out is the departure morning: Day 2..N, plus Day N+1
@@ -598,7 +583,7 @@ function StayFields({
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="e.g. Breakfast included, ask for late checkout"
+          placeholder="e.g. Breakfast included"
         />
       </div>
 

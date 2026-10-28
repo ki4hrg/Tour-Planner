@@ -175,21 +175,21 @@ export function TripDocumentsHubView({
 
       {empty.length > 0 ? (
         <div className="space-y-1 border-t pt-3">
-          <p className="text-xs font-medium text-muted-foreground">
-            No files
-          </p>
+          <h4 className="text-sm font-medium">No files</h4>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {empty.map((g) => (
               <li key={g.key}>
                 {canEdit ? (
-                  <button
+                  <Button
                     type="button"
-                    className="hover:text-foreground hover:underline"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet hover:text-foreground"
                     onClick={() => uploadTo(g.attachValue)}
                     title={`Upload to ${g.heading}`}
                   >
                     {g.heading}
-                  </button>
+                  </Button>
                 ) : (
                   g.heading
                 )}
@@ -211,7 +211,7 @@ export function TripDocumentsHubView({
             {library.map((v) => (
               <section key={v.locationId} className="space-y-2">
                 <h4 className="text-sm font-medium">
-                  <Link href={v.href} className="hover:underline">
+                  <Link href={v.href} className="link-quiet">
                     {v.name}
                   </Link>{" "}
                   <span className="font-normal text-muted-foreground">
@@ -250,7 +250,7 @@ function GroupHeading({
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h4 className="text-sm font-medium">
         {group.href ? (
-          <Link href={group.href} className="hover:underline">
+          <Link href={group.href} className="link-quiet">
             {group.heading}
           </Link>
         ) : (
@@ -262,13 +262,15 @@ function GroupHeading({
         </span>
       </h4>
       {canEdit ? (
-        <button
+        <Button
           type="button"
-          className="text-xs text-muted-foreground hover:text-foreground link-quiet"
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs font-normal text-muted-foreground link-quiet hover:text-foreground"
           onClick={onUpload}
         >
           Upload here
-        </button>
+        </Button>
       ) : null}
     </div>
   );

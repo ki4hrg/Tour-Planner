@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FilterChip } from "@/components/filter-chip";
 import { formatDate, isOngoing, todayUtc } from "@/lib/dates";
 import { noteTarget } from "@/lib/notes";
 import { reconcileTodoistFollowUps } from "@/lib/todoist-sync";
@@ -187,7 +188,7 @@ export default async function Home({
       {ongoing.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
+            <CardTitle>
               Happening now
               <Badge variant="secondary" className="ml-2 align-middle">
                 {ongoing.length}
@@ -201,7 +202,7 @@ export default async function Home({
                   <div className="min-w-0">
                     <Link
                       href={`/trips/${t.id}`}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {t.name}
                     </Link>
@@ -251,7 +252,7 @@ export default async function Home({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
+          <CardTitle>
             Follow-ups due
             {followUps.length ? (
               <Badge variant="secondary" className="ml-2 align-middle">
@@ -259,25 +260,13 @@ export default async function Home({
               </Badge>
             ) : null}
           </CardTitle>
-          <div className="flex gap-1 text-xs">
-            <Link
-              href="/"
-              className={cn(
-                "rounded-full border px-2.5 py-0.5",
-                !onlyMine ? "bg-muted font-medium" : "text-muted-foreground",
-              )}
-            >
+          <div className="flex gap-1">
+            <FilterChip href="/" active={!onlyMine}>
               Everyone
-            </Link>
-            <Link
-              href="/?followups=mine"
-              className={cn(
-                "rounded-full border px-2.5 py-0.5",
-                onlyMine ? "bg-muted font-medium" : "text-muted-foreground",
-              )}
-            >
-              Only mine
-            </Link>
+            </FilterChip>
+            <FilterChip href="/?followups=mine" active={onlyMine}>
+              Mine
+            </FilterChip>
           </div>
         </CardHeader>
         <CardContent className="text-sm">
@@ -295,7 +284,7 @@ export default async function Home({
                   <span className="min-w-0">
                     <Link
                       href={f.target.href}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {f.target.label}
                     </Link>
@@ -308,7 +297,7 @@ export default async function Home({
                     className={cn(
                       "shrink-0 text-xs",
                       f.overdue
-                        ? "font-medium text-red-600 dark:text-red-400"
+                        ? "font-medium text-destructive"
                         : "text-muted-foreground",
                     )}
                   >
@@ -325,7 +314,7 @@ export default async function Home({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Upcoming trips</CardTitle>
+          <CardTitle>Upcoming trips</CardTitle>
           <Button asChild size="sm" variant="outline">
             <Link href="/trips">All trips</Link>
           </Button>
@@ -338,7 +327,7 @@ export default async function Home({
               ) : (
                 <>
                   No upcoming trips.{" "}
-                  <Link href="/trips/new" className="underline">
+                  <Link href="/trips/new" className="link-quiet">
                     New trip
                   </Link>
                 </>
@@ -354,7 +343,7 @@ export default async function Home({
                   <span className="min-w-0">
                     <Link
                       href={`/trips/${t.id}`}
-                      className="font-medium hover:underline"
+                      className="font-medium link-quiet"
                     >
                       {t.name}
                     </Link>

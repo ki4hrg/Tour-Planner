@@ -1,9 +1,11 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -75,7 +77,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">New API key</CardTitle>
+        <CardTitle>New API key</CardTitle>
       </CardHeader>
       <CardContent>
         {state.key ? (
@@ -90,11 +92,11 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
                 type="button"
                 onClick={copyToClipboard}
                 aria-label="Copy key"
-                className="flex w-full items-start gap-2 text-left font-mono text-sm break-all bg-white border rounded p-2 hover:bg-amber-100"
+                className="flex w-full items-start gap-2 text-left font-mono text-sm break-all bg-white border rounded p-2 hover:bg-amber-100 focus-ring"
               >
                 <span className="min-w-0 flex-1">{state.key}</span>
                 {copiedKey ? (
-                  <Check className="size-4 shrink-0 text-green-700" />
+                  <Check className="size-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
                 ) : (
                   <Copy className="size-4 shrink-0 text-muted-foreground" />
                 )}
@@ -116,10 +118,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="key-tripTypes">
-                Trip types{" "}
-                <span className="text-muted-foreground">(none = all)</span>
-              </Label>
+              <Label htmlFor="key-tripTypes">Limit to trip types</Label>
               <div className="flex flex-wrap gap-2">
                 {tripTypes.map((tt) => (
                   <label key={tt.id} className="flex items-center gap-2 cursor-pointer">
@@ -136,7 +135,7 @@ function CreateApiKeyForm({ tripTypes }: { tripTypes: TripType[] }) {
             </div>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={pending}>
-                {pending ? "Creating…" : "Create API key"}
+                {pending ? "Creating…" : "Create key"}
               </Button>
             </div>
           </form>
@@ -155,16 +154,20 @@ function RevokeKeyButton({ keyId }: { keyId: string }) {
   useToastEffect(state);
 
   return (
-    <form action={action} className="inline">
+    <form id={`revoke-key-${keyId}`} action={action} className="inline">
       <input type="hidden" name="keyId" value={keyId} />
-      <Button
-        type="submit"
+      <ConfirmButton
+        formId={`revoke-key-${keyId}`}
         variant="destructive"
         size="sm"
         disabled={pending}
+        pending={pending}
+        title="Revoke key"
+        description="Requests with this key fail immediately."
+        confirmLabel="Revoke"
       >
         {pending ? "Revoking…" : "Revoke"}
-      </Button>
+      </ConfirmButton>
     </form>
   );
 }
@@ -179,7 +182,7 @@ export function ApiKeysManager({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Keys</CardTitle>
+          <CardTitle>Keys</CardTitle>
         </CardHeader>
         <CardContent>
           {keys.length === 0 ? (
@@ -225,9 +228,9 @@ export function ApiKeysManager({
                       </TableCell>
                       <TableCell className="text-sm">
                         {key.revokedAt ? (
-                          <span className="text-red-600 font-medium">Revoked</span>
+                          <Badge variant="muted">Revoked</Badge>
                         ) : (
-                          <span className="text-green-600 font-medium">Active</span>
+                          <Badge variant="confirmed">Active</Badge>
                         )}
                       </TableCell>
                       <TableCell>

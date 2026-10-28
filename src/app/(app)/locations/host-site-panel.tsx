@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAction } from "@/lib/use-action";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { FormState } from "@/lib/forms";
 import { markAsHostSite, updateHostSite, unmarkHostSite } from "./actions";
 
 type HostSiteData = {
@@ -17,22 +16,6 @@ type HostSiteData = {
   staffNotes: string | null;
   logisticsNotes: string | null;
 };
-
-// Run a FormState-returning action, surfacing the result as a toast (no effects —
-// this codebase forbids setState inside useEffect).
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
-}
 
 export function HostSitePanel({
   locationId,
@@ -121,7 +104,7 @@ export function HostSitePanel({
             rows={3}
             value={logisticsNotes}
             onChange={(e) => setLogisticsNotes(e.target.value)}
-            placeholder="Gate code 1234; coach parks on Mill Lane"
+            placeholder="e.g. Gate codes, coach parking"
           />
         </div>
 

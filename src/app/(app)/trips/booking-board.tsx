@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { BookingStatus } from "@prisma/client";
@@ -9,13 +10,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { isBookingSecured } from "@/lib/booking";
 import {
   BOOKING_STATUSES,
   BOOKING_STATUS_LABELS,
-  BOOKING_STATUS_CLASSES,
+  bookingStatusVariant,
 } from "@/lib/trips";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
 import type { SerializedDocument } from "@/lib/documents";
@@ -286,14 +288,9 @@ export function BookingBoard({
               }}
             >
               <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    BOOKING_STATUS_CLASSES[col.status],
-                  )}
-                >
+                <Badge variant={bookingStatusVariant(col.status)}>
                   {col.label}
-                </span>
+                </Badge>
                 <span className="text-xs text-muted-foreground">{column.length}</span>
               </header>
               <ol className="min-h-24 flex-1 space-y-2 p-2">
@@ -428,7 +425,7 @@ function BoardCardView({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        "space-y-1.5 rounded-md border bg-background p-2.5 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "space-y-1.5 rounded-md border bg-background p-2.5 text-sm shadow-xs focus-ring",
         canEdit && "cursor-grab active:cursor-grabbing",
         dragging && "opacity-50",
         venue?.needsInfo && "border-amber-300 dark:border-amber-800",
@@ -436,13 +433,15 @@ function BoardCardView({
         focused && "ring-2 ring-primary/40",
       )}
     >
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={onOpen}
-        className="block w-full text-left font-medium hover:underline"
+        className="-mx-1 h-auto w-[calc(100%+0.5rem)] justify-start px-1 py-0.5 text-left font-medium whitespace-normal"
       >
         {venue ? venue.locationName : card.row.label}
-      </button>
+      </Button>
 
       {venue ? (
         <>

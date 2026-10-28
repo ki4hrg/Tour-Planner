@@ -157,6 +157,40 @@ export function shiftDayItems(
   return shiftRun(items, deltaMinutes, fromOrder);
 }
 
+/** The hole a removed item leaves, and the item that would be pulled into it. */
+export interface RemovalGap {
+  /** The first timed item ordered after the removed one. */
+  nextId: string;
+  /** Minutes the next item would move earlier to start where the removed one did. */
+  minutes: number;
+}
+
+/**
+ * "Site closed, move on": after an item is dropped, the next timed item after it
+ * in the day's order and how far earlier it would start to begin where the removed
+ * item did (`nextStart − removedStart`). The pull itself is
+ * `shiftDayItems(items, −minutes, next.order)`, which carries everything after it
+ * along and stops at the next fixed-time anchor beyond. Null when there is
+ * nothing to pull: the removed item is untimed, no timed item follows, the next
+ * one already starts no later, or the next one is itself a fixed-time anchor
+ * (the gap before an anchor never closes).
+ */
+export function gapAfterRemoval(
+  items: DayScheduleItem[],
+  removedId: string,
+): RemovalGap | null {
+  const removed = items.find((it) => it.id === removedId);
+  const removedStart = removed?.startTime ? timeToMinutes(removed.startTime) : null;
+  if (!removed || removedStart === null) return null;
+  const next = [...items]
+    .sort((a, b) => a.order - b.order)
+    .find((it) => it.order > removed.order && it.startTime != null);
+  const nextStart = next?.startTime ? timeToMinutes(next.startTime) : null;
+  if (!next || nextStart === null || next.fixedTime) return null;
+  const minutes = nextStart - removedStart;
+  return minutes > 0 ? { nextId: next.id, minutes } : null;
+}
+
 /**
  * Fixed-time items that, once `shifts` are applied, overlap the movable item
  * just before them in the day's order — the ripple ran into the anchor. Returns
@@ -181,6 +215,58 @@ export function fixedTimeOverlaps(
     if (effectiveEndMinutes(prevStart, prev.endTime) > timeToMinutes(anchor.startTime!)!) {
       hits.push(anchor.id);
     }
+  }
+  return hits;
+}
+
+/** Pluralise a count: "1 item", "3 items". */
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/**
+ * The one-line fact a ripple produced, for the save toast: "4 later items moved
+ * 30 min later" — null when nothing moved. The delta is read off the first
+ * shifted item (every shift in a ripple shares one delta; a clamped item at the
+ * day's edge is the exception, so the first unclamped one is preferred).
+ */
+export function describeShifts(
+  items: DayScheduleItem[],
+  shifts: TimeShift[],
+): string | null {
+  if (shifts.length === 0) return null;
+  const before = new Map(items.map((it) => [it.id, it]));
+  let delta: number | null = null;
+  for (const s of shifts) {
+    const old = before.get(s.id)?.startTime;
+    if (!old || !s.startTime) continue;
+    const d = timeToMinutes(s.startTime)! - timeToMinutes(old)!;
+    if (d === 0) continue;
+    delta = d;
+    const end = s.endTime ? timeToMinutes(s.endTime) : null;
+    // Prefer a shift that wasn't clamped at 00:00 / 23:59.
+    if (end !== MAX_OF_DAY && timeToMinutes(s.startTime) !== MIN_OF_DAY) break;
+  }
+  if (delta === null) return null;
+  const abs = Math.abs(delta);
+  const span =
+    abs % 60 === 0 ? `${abs / 60} h` : abs >= 60 ? `${Math.floor(abs / 60)} h ${abs % 60} min` : `${abs} min`;
+  return `${plural(shifts.length, "later item")} moved ${span} ${delta > 0 ? "later" : "earlier"}.`;
+}
+
+/**
+ * Items whose start falls before the previous timed item's trailing edge (its
+ * end, or its start for a point item) in the day's order — two things booked
+ * into one slot. Untimed items neither overlap nor break the chain. The ids
+ * returned are the LATER item of each colliding pair, so a row can carry the
+ * marker next to its own time.
+ */
+export function overlappingItemIds(items: DayScheduleItem[]): Set<string> {
+  const hits = new Set<string>();
+  let prevEnd: number | null = null;
+  for (const it of [...items].sort((a, b) => a.order - b.order)) {
+    const start = it.startTime ? timeToMinutes(it.startTime) : null;
+    if (start === null) continue;
+    if (prevEnd !== null && start < prevEnd) hits.add(it.id);
+    prevEnd = effectiveEndMinutes(start, it.endTime);
   }
   return hits;
 }
