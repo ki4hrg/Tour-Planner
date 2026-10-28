@@ -9,7 +9,9 @@ import {
   formatSession,
   formatTripDates,
   groupRowsByVenue,
+  isYourMove,
   rowMatchesFilters,
+  waitingText,
   rowNeedsAttention,
   type TripRef,
   type VenueMeta,
@@ -20,6 +22,9 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     kind: "venue",
     locationId: "loc-a",
     locationName: "Epworth Rectory",
+    regionName: null,
+    visitType: "Visit",
+    firstDayIndex: null,
     bookable: true,
     bookingId: null,
     status: "PLANNED",
@@ -40,10 +45,13 @@ function row(over: Partial<VenueBookingRow> = {}): VenueBookingRow {
     contactPhone: null,
     contactEmail: null,
     sessions: [],
+    stays: [],
     nightCount: 0,
     costs: [],
     bookedOn: null,
     priceLines: [{ label: "Agreed price", amount: 100, unit: "PER_GROUP" }],
+    effectiveLines: [{ label: "Agreed price", amount: 100, unit: "PER_GROUP" }],
+    priceSource: "agreed",
     agreedCurrency: "GBP",
     agreedTotal: 100,
     headcount: null,
@@ -409,6 +417,8 @@ describe("actionItems", () => {
       actor,
       since: "2026-10-01",
       days,
+      dueOn: null,
+      due: true,
     });
     const g = groupRowsByVenue(
       [
@@ -459,5 +469,25 @@ describe("actionItems", () => {
     );
     expect(items[3].text).toBe("No price agreed");
     expect(items[0].href).toBe("/trips/t2/booking?venue=loc-a");
+  });
+});
+
+describe("isYourMove with step due dates", () => {
+  const wait = (due: boolean) => ({
+    stepId: "s",
+    stepLabel: "Finalized",
+    actor: "US" as const,
+    since: "2026-10-01",
+    days: 26,
+    dueOn: "2028-05-10",
+    due,
+  });
+  it("is not our move while the step's due date is still ahead", () => {
+    expect(isYourMove(row({ bookingId: "b", waiting: wait(false) }))).toBe(false);
+    expect(isYourMove(row({ bookingId: "b", waiting: wait(true) }))).toBe(true);
+  });
+  it("waitingText says when a not-yet-due step comes up", () => {
+    expect(waitingText(wait(false))).toBe("Next for you: Finalized · from Wed, 10 May 2028");
+    expect(waitingText(wait(true))).toBe("Next for you: Finalized · 26d");
   });
 });

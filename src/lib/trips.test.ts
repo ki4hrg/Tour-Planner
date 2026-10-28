@@ -338,7 +338,7 @@ describe("summarizeDayLodging", () => {
       },
     ];
     expect(summarizeDayLodging(days, stays)).toEqual({
-      day6: { locationName: "Sarum College" },
+      day6: { locationName: "Sarum College", locationId: null },
     });
   });
 

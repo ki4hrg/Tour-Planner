@@ -49,6 +49,7 @@ export function TimelineGroups({
   renderVenueExtra,
   itemLinkBase,
   showGaps = false,
+  overnightHref,
 }: {
   items: SerializedScheduleItem[];
   showBookings?: boolean;
@@ -74,6 +75,9 @@ export function TimelineGroups({
   // Enabled for planner surfaces (trip overview, itinerary editor, day view);
   // disabled for public/print surfaces.
   showGaps?: boolean;
+  // Where the overnight venue links (the trip's booking row for it); beats
+  // `linkVenues`' location-page link when set.
+  overnightHref?: string | null;
 }) {
   const runs = groupItemsByVenue(items);
   // Each gap is anchored to the timed item it follows, so the "· X min free"
@@ -116,7 +120,11 @@ export function TimelineGroups({
         </div>
       ))}
       {lodging ? (
-        <OvernightLine lodging={lodging} linkVenue={linkVenues} />
+        <OvernightLine
+          lodging={lodging}
+          linkVenue={linkVenues}
+          href={overnightHref}
+        />
       ) : null}
     </div>
   );
@@ -172,21 +180,24 @@ function GapLine({ gap }: { gap: { durationMinutes: number } }) {
 export function OvernightLine({
   lodging,
   linkVenue = false,
+  href,
 }: {
   lodging: OvernightLodging;
   // Link the venue name to its location page (needs `lodging.locationId`).
   linkVenue?: boolean;
+  // An explicit destination (the venue's booking row) that wins over the
+  // location-page link.
+  href?: string | null;
 }) {
+  const to =
+    href ?? (linkVenue && lodging.locationId ? `/locations/${lodging.locationId}` : null);
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <Moon className="size-3.5 shrink-0" />
       <span>
         Overnight ·{" "}
-        {linkVenue && lodging.locationId ? (
-          <Link
-            href={`/locations/${lodging.locationId}`}
-            className="font-medium text-foreground link-quiet"
-          >
+        {to ? (
+          <Link href={to} className="font-medium text-foreground link-quiet">
             {lodging.locationName}
           </Link>
         ) : (

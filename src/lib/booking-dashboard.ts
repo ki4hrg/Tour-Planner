@@ -22,7 +22,9 @@ import {
 } from "./money";
 import {
   agreedTotal as resolveAgreedTotal,
+  effectiveCosts,
   hasAgreedPrice,
+  listPriceLines,
   serializePriceLines,
   type PriceLine,
 } from "./costs";
@@ -58,10 +60,36 @@ export type CoveredSession = {
   planned?: boolean;
 };
 
+// A stay covered by a venue's engagement (lodging there), as the row lists it.
+export type CoveredStay = {
+  id: string | null;
+  checkIn: string | null; // "yyyy-mm-dd" (dated trip)
+  checkOut: string | null;
+  checkInDayIndex: number | null; // date-less template
+  checkOutDayIndex: number | null;
+  nights: number;
+  // Named when the stay is at a site booked via this venue.
+  siteName: string | null;
+};
+
+// Where a row's price comes from: the engagement's own agreed lines, the
+// venue's list price (the default until one is agreed), or nothing.
+export type PriceSource = "agreed" | "venue" | null;
+
+// What kind of engagement a venue row mostly is — the Bookings tab groups by
+// it. Lodging wins over sessions; sessions take their most common category.
+export type VisitType = "Lodging" | "Planned" | string;
+
 export type VenueBookingRow = {
   kind: "venue";
   locationId: string;
   locationName: string;
+  // The venue's region (catalog), for grouping; null when unset / not loaded.
+  regionName: string | null;
+  visitType: VisitType;
+  // The first itinerary day the venue is used on (sessions or lodging);
+  // null when nothing is scheduled.
+  firstDayIndex: number | null;
   bookable: boolean; // false = walk-by stop; never booked, no status control
   bookingId: string | null; // null until the engagement is first created
   status: BookingStatus;
@@ -84,16 +112,23 @@ export type VenueBookingRow = {
   bookingNotes?: string | null;
   scheduleLimitations?: string | null;
   sessions: CoveredSession[];
+  stays: CoveredStay[];
   nightCount: number;
+  // The venue's list prices in force for this trip (its Cost catalog, the
+  // lines valid on the trip's start date — `effectiveCosts`).
   costs: SerializedCost[];
   bookedOn: string | null; // planner-set booking date (anchors BOOKING installments)
-  // The engagement's negotiated price + payment log. `priceLines` are the
-  // itemized agreed price (per-person / per-group, like the venue's Cost
-  // lines); the balance, settled state and schedule run off `agreedTotal`
-  // (per-person sum × headcount + per-group sum; null with no lines, or
-  // per-person lines and no headcount). `unpaidBalance` is null until that
-  // total is known; `settled` means payments cover it.
+  // The engagement's price. `priceLines` are the itemized AGREED price (the
+  // per-trip override; empty until one is agreed). `effectiveLines` is what
+  // the engagement is priced at: the agreed lines, else the venue's list
+  // price (`priceSource` says which). The balance, settled state and schedule
+  // run off `agreedTotal` — the effective lines' total: per-person sum ×
+  // headcount + per-group sum; null with no lines, or per-person lines and no
+  // headcount. `unpaidBalance` is null until that total is known; `settled`
+  // means payments cover it.
   priceLines: PriceLine[];
+  effectiveLines: PriceLine[];
+  priceSource: PriceSource;
   agreedCurrency: string;
   agreedTotal: number | null;
   headcount: number | null; // trip participants ?? capacity
@@ -175,7 +210,11 @@ type ProgressInput = {
   createdAt?: Date | null;
 };
 
-const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
+const toProgress = (
+  b: ProgressInput | null,
+  locationDefault: string | null | undefined,
+  tripStartDate: Date | null | undefined,
+) =>
   progressView(
     b && {
       status: b.status,
@@ -187,6 +226,7 @@ const toProgress = (b: ProgressInput | null, locationDefault?: string | null) =>
       createdAt: b.createdAt,
     },
     locationDefault,
+    tripStartDate,
   );
 
 type DayInput = {
@@ -226,6 +266,7 @@ type EngagementInput = ProgressInput & {
 // checkIn/checkOut are null on a date-less template stay (day-relative anchors);
 // such a stay adds 0 nights and no dates to the engagement below.
 type StayInput = {
+  id?: string;
   locationId: string;
   checkIn: Date | null;
   checkOut: Date | null;
@@ -236,6 +277,8 @@ type StayInput = {
 type LocationInput = {
   id: string;
   name: string;
+  // The venue's region, for grouping (optional: not every caller loads it).
+  region?: { name: string } | null;
   // Booked via a parent venue; the parent must be in `locations` too (load
   // with `withBookedViaParentsWhere`) or the site keeps its own row.
   bookedViaId?: string | null;
@@ -259,15 +302,38 @@ export type DashboardData = {
   // Multiplies PER_PERSON agreed-price lines (`tripHeadcount(trip)`);
   // null/absent leaves a per-person total unknown.
   headcount?: number | null;
+  // The trip's default currency — what a venue with no engagement yet (and
+  // so no stored currency) prices in. Absent = USD.
+  defaultCurrency?: string;
   // The workflow catalog (WORKFLOW_STEP_SELECT steps) — resolves each row's
   // `waiting`; absent leaves it null.
   workflows?: { id: string; steps: WorkflowStepLike[] }[];
 };
 
+// Lodging beats everything; otherwise the most common session category
+// ("Visit", "Meal", "Talk"…); a venue with only rough-plan days is "Planned".
+function visitTypeOf(v: {
+  nights: number;
+  categories: string[];
+  sessions: CoveredSession[];
+}): VisitType {
+  if (v.nights > 0) return "Lodging";
+  if (v.categories.length > 0) {
+    const counts = new Map<string, number>();
+    for (const c of v.categories) counts.set(c, (counts.get(c) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+  }
+  if (v.sessions.length > 0 && v.sessions.every((s) => s.planned)) return "Planned";
+  return "Visit";
+}
+
 type VenueAccum = {
   sessions: CoveredSession[];
+  stays: CoveredStay[];
   dates: Date[];
   nights: number;
+  // Category names of the covered timed sessions, for the visit type.
+  categories: string[];
   // `${dayIndex}:${siteId}` already covered by a timed session, and item ids
   // already listed (a block visiting parent + child counts once).
   siteDays: Set<string>;
@@ -316,8 +382,10 @@ export function buildDashboardRows(data: DashboardData): {
     if (!v) {
       v = {
         sessions: [],
+        stays: [],
         dates: [],
         nights: 0,
+        categories: [],
         siteDays: new Set(),
         itemIds: new Set(),
       };
@@ -343,6 +411,7 @@ export function buildDashboardRows(data: DashboardData): {
         v.siteDays.add(`${day.dayIndex}:${site.locationId}`);
         if (v.itemIds.has(item.id)) continue;
         v.itemIds.add(item.id);
+        if (item.category) v.categories.push(item.category.name);
         v.sessions.push({
           id: item.id,
           dayId: day.id ?? null,
@@ -356,7 +425,7 @@ export function buildDashboardRows(data: DashboardData): {
       }
       // Site-less / one-off item bookings stay their own rows.
       for (const b of item.bookings) {
-        const progress = toProgress(b);
+        const progress = toProgress(b, null, data.tripStartDate);
         const priceLines = serializePriceLines(b.priceLines ?? []);
         itemRows.push({
           kind: "item",
@@ -370,7 +439,7 @@ export function buildDashboardRows(data: DashboardData): {
           dayIndex: day.dayIndex,
           date: day.date ? toDateInput(day.date) : null,
           priceLines,
-          agreedCurrency: b.agreedCurrency ?? "USD",
+          agreedCurrency: b.agreedCurrency ?? data.defaultCurrency ?? "USD",
           agreedTotal: resolveAgreedTotal(priceLines, data.headcount ?? null),
           headcount: data.headcount ?? null,
         });
@@ -400,9 +469,23 @@ export function buildDashboardRows(data: DashboardData): {
 
   // Stays: lodging at a location folds into that venue's engagement.
   for (const stay of data.stays) {
-    const v = ensure(venueOf(stay.locationId));
-    v.nights += stayNights(stay);
+    const venueId = venueOf(stay.locationId);
+    const v = ensure(venueId);
+    const nights = stayNights(stay);
+    v.nights += nights;
     if (stay.checkIn) v.dates.push(stay.checkIn);
+    v.stays.push({
+      id: stay.id ?? null,
+      checkIn: stay.checkIn ? toDateInput(stay.checkIn) : null,
+      checkOut: stay.checkOut ? toDateInput(stay.checkOut) : null,
+      checkInDayIndex: stay.checkInDayIndex ?? null,
+      checkOutDayIndex: stay.checkOutDayIndex ?? null,
+      nights,
+      siteName:
+        stay.locationId === venueId
+          ? null
+          : (locById.get(stay.locationId)?.name ?? null),
+    });
   }
 
   // Engagements with no remaining itinerary/lodging coverage still surface.
@@ -415,12 +498,28 @@ export function buildDashboardRows(data: DashboardData): {
     const loc = locById.get(locationId);
     const eng = engByLoc.get(locationId) ?? null;
     const bookable = loc?.bookable ?? true;
-    const costs = (loc?.costs ?? []).map(serializeCost);
-    // The agreed price settles the "what does this cost" question outright; only
-    // without one does the (possibly stale) catalog price leave the row "missing".
+    // The venue's list prices in force for this trip's start (today when the
+    // trip has no dates yet).
+    const liveCosts = effectiveCosts(loc?.costs ?? [], data.tripStartDate ?? today);
+    const costs = liveCosts.map(serializeCost);
+    // The agreed price (the per-trip override) wins; until one is agreed the
+    // venue's list price IS the engagement's price — the estimate, balance and
+    // schedule all run off it. Only without either is the row "missing".
     const priceLines = serializePriceLines(eng?.priceLines ?? []);
     const headcount = data.headcount ?? null;
-    const agreedTotal = resolveAgreedTotal(priceLines, headcount);
+    const storedCurrency = eng?.agreedCurrency ?? data.defaultCurrency ?? "USD";
+    const listPrice = hasAgreedPrice(priceLines)
+      ? null
+      : listPriceLines(costs, storedCurrency);
+    const priceSource: PriceSource = hasAgreedPrice(priceLines)
+      ? "agreed"
+      : listPrice
+        ? "venue"
+        : null;
+    const effectiveLines = priceSource === "venue" ? listPrice!.lines : priceLines;
+    const agreedCurrency =
+      priceSource === "venue" ? listPrice!.currency : storedCurrency;
+    const agreedTotal = resolveAgreedTotal(effectiveLines, headcount);
     const payments = (eng?.payments ?? []).map(serializePayment);
     const paidTotal = payments.reduce((sum, p) => sum + p.amount, 0);
     const unpaidBalance =
@@ -438,8 +537,8 @@ export function buildDashboardRows(data: DashboardData): {
     const { overdueAmount, nextDue } = scheduleAttention(schedule);
     const isMissingCost =
       !hasAgreedPrice(priceLines) &&
-      ((loc?.costs.length ?? 0) === 0 ||
-        (loc?.costs.every((c) => isCostStale(c.confirmedAt)) ?? true));
+      (liveCosts.length === 0 ||
+        liveCosts.every((c) => isCostStale(c.confirmedAt)));
     // A planned (untimed) visit is a rough plan, not missing information.
     const isMissingTime = v.sessions.some(
       (s) => !s.planned && !s.startTime && !s.endTime,
@@ -448,7 +547,7 @@ export function buildDashboardRows(data: DashboardData): {
     const earliest = earliestCoveredDate(v.dates);
     const win = bookingWindow(earliest, loc?.bookingOpensLeadDays ?? null);
     const status: BookingStatus = eng?.status ?? "PLANNED";
-    const progress = toProgress(eng, loc?.defaultWorkflowId);
+    const progress = toProgress(eng, loc?.defaultWorkflowId, data.tripStartDate);
     // Not-bookable sites and ones deliberately marked "not needed" never need attention.
     const inPlay = bookable && status !== "NOT_NEEDED";
 
@@ -457,11 +556,29 @@ export function buildDashboardRows(data: DashboardData): {
         a.dayIndex - b.dayIndex ||
         (a.startTime ?? "").localeCompare(b.startTime ?? ""),
     );
+    v.stays.sort((a, b) =>
+      (a.checkIn ?? "").localeCompare(b.checkIn ?? "") ||
+      (a.checkInDayIndex ?? 0) - (b.checkInDayIndex ?? 0),
+    );
+    const firstDayIndex = [
+      ...v.sessions.map((s) => s.dayIndex),
+      ...v.stays.flatMap((s) => (s.checkInDayIndex != null ? [s.checkInDayIndex] : [])),
+      ...v.stays.flatMap((s) => {
+        // A dated stay's first night → the day index it starts on.
+        const day = s.checkIn
+          ? data.days.find((d) => d.date && toDateInput(d.date) === s.checkIn)
+          : undefined;
+        return day ? [day.dayIndex] : [];
+      }),
+    ].reduce<number | null>((m, n) => (m == null || n < m ? n : m), null);
 
     venueRows.push({
       kind: "venue",
       locationId,
       locationName: loc?.name ?? "Unknown location",
+      regionName: loc?.region?.name ?? null,
+      visitType: visitTypeOf(v),
+      firstDayIndex,
       bookable,
       bookingId: eng?.id ?? null,
       status,
@@ -478,10 +595,13 @@ export function buildDashboardRows(data: DashboardData): {
       scheduleLimitations: loc?.scheduleLimitations?.trim() || null,
       bookedOn: eng?.bookedOn ? toDateInput(eng.bookedOn) : null,
       sessions: v.sessions,
+      stays: v.stays,
       nightCount: v.nights,
       costs,
       priceLines,
-      agreedCurrency: eng?.agreedCurrency ?? "USD",
+      effectiveLines,
+      priceSource,
+      agreedCurrency,
       agreedTotal,
       headcount,
       payments,

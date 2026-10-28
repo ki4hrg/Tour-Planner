@@ -182,6 +182,7 @@ export type LocationMergePreview = {
   notes: number;
   documents: number;
   costs: number;
+  events: number;
   contacts: number;
   travelReferences: number;
   shareLinks: number;
@@ -333,6 +334,7 @@ export async function previewLocationMerge(
     notes,
     documents,
     costs,
+    events,
     travelFrom,
     travelTo,
     travelStops,
@@ -354,6 +356,7 @@ export async function previewLocationMerge(
     prisma.note.count({ where: s }),
     prisma.document.count({ where: s }),
     prisma.cost.count({ where: s }),
+    prisma.locationEvent.count({ where: s }),
     prisma.travelLeg.count({ where: { fromLocationId: sourceId } }),
     prisma.travelLeg.count({ where: { toLocationId: sourceId } }),
     prisma.travelStop.count({ where: s }),
@@ -374,6 +377,7 @@ export async function previewLocationMerge(
     notes,
     documents,
     costs,
+    events,
     contacts: source.contacts.filter((c) => !targetContactIds.has(c.id)).length,
     travelReferences: travelFrom + travelTo + travelStops + primaryDays,
     shareLinks,
@@ -440,6 +444,7 @@ export async function mergeLocations(
     await tx.note.updateMany({ ...fromSource, ...toTarget });
     await tx.document.updateMany({ ...fromSource, ...toTarget });
     await tx.cost.updateMany({ ...fromSource, ...toTarget });
+    await tx.locationEvent.updateMany({ ...fromSource, ...toTarget });
     await tx.shareLink.updateMany({ ...fromSource, ...toTarget });
     await tx.travelStop.updateMany({ ...fromSource, ...toTarget });
     await tx.travelLeg.updateMany({

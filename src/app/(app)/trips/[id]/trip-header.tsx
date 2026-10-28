@@ -38,6 +38,12 @@ export function TripHeader({
     { href: base, label: "Overview", active: segment === "" },
     { href: `${base}/itinerary`, label: "Itinerary", active: segment === "itinerary" },
     { href: `${base}/booking`, label: "Bookings", active: segment === "booking" },
+    { href: `${base}/finance`, label: "Finance", active: segment === "finance" },
+    {
+      href: `${base}/documents`,
+      label: "Documents",
+      active: segment === "documents",
+    },
   ];
 
   return (

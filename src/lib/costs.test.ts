@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   agreedTotal,
+  effectiveCosts,
   formatPriceBreakdown,
   hasAgreedPrice,
   listPriceLines,
@@ -195,5 +196,40 @@ describe("listPriceLines", () => {
       ["Guide", true],
       ["Parking", false],
     ]);
+  });
+});
+
+describe("effectiveCosts (active dates)", () => {
+  const on = new Date("2027-07-12T00:00:00.000Z");
+  const line = (label: string, v: { validFrom?: string | null; validTo?: string | null }) => ({
+    label,
+    amount: 1,
+    currency: "GBP",
+    unit: "PER_PERSON" as const,
+    ...v,
+  });
+
+  it("keeps undated lines and those whose window covers the date", () => {
+    const costs = [
+      line("always", {}),
+      line("current", { validTo: "2027-12-31" }),
+      line("next year", { validFrom: "2028-01-01" }),
+      line("expired", { validTo: "2026-12-31" }),
+      line("window", { validFrom: "2027-07-12", validTo: "2027-07-12" }),
+    ];
+    expect(effectiveCosts(costs, on).map((c) => c.label)).toEqual([
+      "always",
+      "current",
+      "window",
+    ]);
+  });
+
+  it("accepts Date bounds too", () => {
+    expect(
+      effectiveCosts(
+        [{ ...line("d", {}), validFrom: new Date("2027-08-01T00:00:00.000Z") }],
+        on,
+      ),
+    ).toEqual([]);
   });
 });

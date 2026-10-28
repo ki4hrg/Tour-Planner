@@ -211,7 +211,7 @@ export function documentTarget(doc: DocumentTargetRow): {
     };
   }
   if (doc.trip) {
-    return { label: doc.trip.name, href: `/trips/${doc.trip.id}` };
+    return { label: doc.trip.name, href: `/trips/${doc.trip.id}/documents` };
   }
   if (doc.stay) {
     return {

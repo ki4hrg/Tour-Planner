@@ -4,9 +4,10 @@ import type { CostUnit } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
-import { parseDateInput } from "@/lib/dates";
+import { parseDateInput, toDateInput } from "@/lib/dates";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import { zodErrorMessage } from "@/lib/forms";
+import { locationEventSchema } from "@/lib/validators/location-event";
 import {
   MergeError,
   mergeLocations,
@@ -85,7 +86,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Get Location Details",
       description:
-        "Get full details of a location including contacts, costs, host site capabilities, booking notes, and schedule limitations. bookedVia is the parent venue whose single engagement covers this site (its bookings live on the parent — see add-booking); coveredSites lists the sites booked via this one. Useful before creating a booking or adding a location to an itinerary.",
+        "Get full details of a location including contacts, costs (each with its active dates validFrom/validTo), standing events (events: recurring fixtures at the venue such as 'Evensong 17:00' — to put one on a day, call add-schedule-item with its title, startTime/endTime, categoryId and fixedTime: true), host site capabilities, booking notes, and schedule limitations. bookedVia is the parent venue whose single engagement covers this site (its bookings live on the parent — see add-booking); coveredSites lists the sites booked via this one. Useful before creating a booking or adding a location to an itinerary.",
       inputSchema: { locationId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -117,6 +118,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 currency: true,
                 unit: true,
                 confirmedAt: true,
+                validFrom: true,
+                validTo: true,
                 notes: true,
               },
             },
@@ -131,6 +134,20 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
                 anchor: true,
                 offsetValue: true,
                 offsetUnit: true,
+              },
+            },
+            // Standing events here (Evensong 17:00) — add-schedule-item with
+            // these times (+ fixedTime) puts one on a day.
+            events: {
+              orderBy: [{ startTime: "asc" }, { title: "asc" }],
+              select: {
+                id: true,
+                title: true,
+                startTime: true,
+                endTime: true,
+                categoryId: true,
+                category: { select: { name: true } },
+                notes: true,
               },
             },
             hostSite: true,
@@ -157,6 +174,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             ...c,
             amount: Number(c.amount),
             confirmedAt: c.confirmedAt?.toISOString() ?? null,
+            validFrom: toDateInput(c.validFrom) || null,
+            validTo: toDateInput(c.validTo) || null,
           })),
           defaultPaymentSchedule: location.defaultPaymentSchedule.map((t) => ({
             ...t,
@@ -819,7 +838,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Location Cost",
       description:
-        "Add a price line to a location (e.g. an entry fee or guide fee). Requires locationId, a label, and an amount. unit is PER_PERSON (default) or PER_GROUP. confirmedAt (YYYY-MM-DD) records when the price was last verified — stale pricing surfaces in the UI. Use get-location to see existing costs.",
+        "Add a price line to a location (e.g. an entry fee or guide fee). Requires locationId, a label, and an amount. unit is PER_PERSON (default) or PER_GROUP. confirmedAt (YYYY-MM-DD) records when the price was last verified — stale pricing surfaces in the UI. validFrom / validTo (YYYY-MM-DD, either optional) are the line's active dates: a trip is priced by the lines valid on its start date, so a known future price change is a second line with a validFrom (and a validTo on the current one). The venue's price list is the default price of every engagement there until a booking gets its own agreed priceLines (add-booking / update-booking). Use get-location to see existing costs.",
       inputSchema: {
         locationId: z.string(),
         label: z.string(),
@@ -827,6 +846,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         currency: z.string().optional(),
         unit: z.string().optional(),
         confirmedAt: z.string().optional(),
+        validFrom: z.string().optional(),
+        validTo: z.string().optional(),
         notes: z.string().optional(),
       },
       annotations: {
@@ -836,7 +857,17 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         openWorldHint: false,
       },
     },
-    async ({ locationId, label, amount, currency, unit, confirmedAt, notes }) => {
+    async ({
+      locationId,
+      label,
+      amount,
+      currency,
+      unit,
+      confirmedAt,
+      validFrom,
+      validTo,
+      notes,
+    }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
           content: [
@@ -858,6 +889,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
             currency: currency || "USD",
             unit: (unit as CostUnit) || "PER_PERSON",
             confirmedAt: confirmedAt ? parseDateInput(confirmedAt) : null,
+            validFrom: validFrom ? parseDateInput(validFrom) : null,
+            validTo: validTo ? parseDateInput(validTo) : null,
             notes: notes || null,
           },
         });
@@ -885,7 +918,7 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Location Cost",
       description:
-        "Update a location price line. Only include fields you want to change. Common use: refresh the amount and set confirmedAt (YYYY-MM-DD) to today to clear a stale-price flag. unit is PER_PERSON or PER_GROUP. Use get-location to find the cost id.",
+        "Update a location price line. Only include fields you want to change. Common use: refresh the amount and set confirmedAt (YYYY-MM-DD) to today to clear a stale-price flag. unit is PER_PERSON or PER_GROUP. validFrom / validTo (YYYY-MM-DD; pass an empty string to clear) bound the line's active dates. Use get-location to find the cost id.",
       inputSchema: {
         costId: z.string(),
         label: z.string().optional(),
@@ -893,6 +926,8 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         currency: z.string().optional(),
         unit: z.string().optional(),
         confirmedAt: z.string().optional(),
+        validFrom: z.string().optional(),
+        validTo: z.string().optional(),
         notes: z.string().optional(),
       },
       annotations: {
@@ -902,7 +937,17 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         openWorldHint: false,
       },
     },
-    async ({ costId, label, amount, currency, unit, confirmedAt, notes }) => {
+    async ({
+      costId,
+      label,
+      amount,
+      currency,
+      unit,
+      confirmedAt,
+      validFrom,
+      validTo,
+      notes,
+    }) => {
       if (!hasRole(user.role, "PLANNER")) {
         return {
           content: [
@@ -923,6 +968,10 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
         if (unit !== undefined) data.unit = unit as CostUnit;
         if (confirmedAt !== undefined)
           data.confirmedAt = confirmedAt ? parseDateInput(confirmedAt) : null;
+        if (validFrom !== undefined)
+          data.validFrom = validFrom ? parseDateInput(validFrom) : null;
+        if (validTo !== undefined)
+          data.validTo = validTo ? parseDateInput(validTo) : null;
         if (notes !== undefined) data.notes = notes || null;
 
         await prisma.cost.update({ where: { id: costId }, data });
@@ -934,6 +983,183 @@ export function registerLocationTools(server: McpServer, user: SessionUser) {
               text: JSON.stringify({ success: true, id: costId }, null, 2),
             },
           ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── add-location-event (PLANNER+) ──────────────────────────────────────
+  server.registerTool(
+    "add-location-event",
+    {
+      title: "Add Location Event",
+      description:
+        "Add a standing event to a location — a fixture that happens there at a set time regardless of the trip (e.g. 'Evensong' at 17:00 at a cathedral, a daily guided tour at 11:00). Requires locationId, a title and startTime (HH:MM, 24-hour); endTime (HH:MM), categoryId (from list-schedule-categories) and notes are optional. Planners add one to a day in one click from the itinerary item form; over MCP, add-schedule-item with the event's times and fixedTime: true does the same. Use get-location to see a venue's events.",
+      inputSchema: {
+        locationId: z.string(),
+        title: z.string(),
+        startTime: z.string(),
+        endTime: z.string().optional(),
+        categoryId: z.string().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ locationId, title, startTime, endTime, categoryId, notes }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [{ type: "text" as const, text: "Error: Requires PLANNER role or above" }],
+          isError: true,
+        };
+      }
+      const parsed = locationEventSchema.safeParse({
+        title,
+        startTime,
+        endTime,
+        categoryId,
+        notes,
+      });
+      if (!parsed.success) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${zodErrorMessage(parsed.error)}` }],
+          isError: true,
+        };
+      }
+      try {
+        const event = await prisma.locationEvent.create({
+          data: {
+            locationId,
+            title: parsed.data.title,
+            startTime: parsed.data.startTime,
+            endTime: parsed.data.endTime ?? null,
+            categoryId: parsed.data.categoryId ?? null,
+            notes: parsed.data.notes || null,
+          },
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ id: event.id }, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── update-location-event (PLANNER+) ───────────────────────────────────
+  server.registerTool(
+    "update-location-event",
+    {
+      title: "Update Location Event",
+      description:
+        "Update a location's standing event (eventId from get-location's events). Only include fields you want to change: title, startTime / endTime (HH:MM; pass endTime as an empty string to clear it), categoryId (empty string clears), notes. Schedule items already added from the event are not touched.",
+      inputSchema: {
+        eventId: z.string(),
+        title: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        categoryId: z.string().optional(),
+        notes: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ eventId, title, startTime, endTime, categoryId, notes }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [{ type: "text" as const, text: "Error: Requires PLANNER role or above" }],
+          isError: true,
+        };
+      }
+      try {
+        const current = await prisma.locationEvent.findUnique({ where: { id: eventId } });
+        if (!current) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Event not found" }],
+            isError: true,
+          };
+        }
+        // Validate the merged result so a partial update can't leave the
+        // event with an end before its start.
+        const parsed = locationEventSchema.safeParse({
+          title: title ?? current.title,
+          startTime: startTime ?? current.startTime,
+          endTime: endTime ?? current.endTime ?? "",
+          categoryId: categoryId ?? current.categoryId ?? "",
+          notes: notes ?? current.notes ?? "",
+        });
+        if (!parsed.success) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${zodErrorMessage(parsed.error)}` }],
+            isError: true,
+          };
+        }
+        await prisma.locationEvent.update({
+          where: { id: eventId },
+          data: {
+            title: parsed.data.title,
+            startTime: parsed.data.startTime,
+            endTime: parsed.data.endTime ?? null,
+            categoryId: parsed.data.categoryId ?? null,
+            notes: parsed.data.notes || null,
+          },
+        });
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify({ success: true, id: eventId }, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── delete-location-event (PLANNER+) ───────────────────────────────────
+  server.registerTool(
+    "delete-location-event",
+    {
+      title: "Delete Location Event",
+      description:
+        "Remove a location's standing event (eventId from get-location's events). Schedule items already added from it stay on their days.",
+      inputSchema: { eventId: z.string() },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ eventId }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [{ type: "text" as const, text: "Error: Requires PLANNER role or above" }],
+          isError: true,
+        };
+      }
+      try {
+        await prisma.locationEvent.delete({ where: { id: eventId } });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: true }, null, 2) }],
         };
       } catch (err) {
         return {

@@ -19,6 +19,7 @@ import {
   type SerializedCost,
 } from "@/lib/money";
 import type { FormState } from "@/lib/forms";
+import { formatDate } from "@/lib/dates";
 import { addCost, updateCost, deleteCost } from "./actions";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
@@ -114,6 +115,20 @@ function CostFields({
           defaultValue={initial?.confirmedAt?.slice(0, 10) ?? ""}
         />
       </div>
+      {/* Active dates: a future price change is a second line with a
+          valid-from; each trip is priced by the lines valid on its start. */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Valid from</Label>
+        <Input
+          name="validFrom"
+          type="date"
+          defaultValue={initial?.validFrom ?? ""}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Valid to</Label>
+        <Input name="validTo" type="date" defaultValue={initial?.validTo ?? ""} />
+      </div>
       <div className="col-span-2 space-y-1.5">
         <Label className="text-xs">Notes</Label>
         <Input name="notes" defaultValue={initial?.notes ?? ""} />
@@ -177,7 +192,16 @@ function CostRow({
           {cost.confirmedAt
             ? `Confirmed ${cost.confirmedAt.slice(0, 10)}`
             : "Price not confirmed"}
-          {cost.stale ? " · ⚠ stale" : ""}
+          {cost.stale ? " · stale" : ""}
+          {cost.validFrom || cost.validTo
+            ? ` · ${
+                cost.validFrom && cost.validTo
+                  ? `${formatDate(cost.validFrom)} – ${formatDate(cost.validTo)}`
+                  : cost.validFrom
+                    ? `from ${formatDate(cost.validFrom)}`
+                    : `until ${formatDate(cost.validTo)}`
+              }`
+            : ""}
           {cost.notes ? ` · ${cost.notes}` : ""}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { tripDefaultCurrencyFor } from "@/lib/trip-mutations";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { toDateInput, parseDateInput } from "@/lib/dates";
@@ -210,7 +211,7 @@ export function registerStayTools(server: McpServer, user: SessionUser) {
           departureTime: departureTime || null,
           headcount: headcount ?? null,
           costPerPersonPerNight: costPerPersonPerNight ?? null,
-          currency: currency || "USD",
+          currency: currency || (await tripDefaultCurrencyFor({ tripId })),
           priority: priority ?? 0,
           notes: notes || null,
         },

@@ -36,11 +36,12 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-55 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+58 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
 `create-trip` (P), `update-trip` (P, a `startDate` change redates days + shifts dated stays in a txn).
+Both writes take `currencies` + `defaultCurrency` (one of them; what new stays/bookings start in).
 
 **itinerary.ts** — `list-schedule-categories` (V, resolves `categoryId`),
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
@@ -58,25 +59,28 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
+incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting, `dueOn`/`due` (step due offsets) — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
 engagement — a booked-via child resolves to its parent's (returns `engagementLocationId`) —
 refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedCurrency` + `priceLines`
 `[{label, amount, unit}]`, which REPLACES the set — omitted = untouched),
 `update-booking` (P, incl. `bookedOn` + `priceLines`; status goes through the workflow rules),
-`list-booking-workflows` (V, resolves `workflowId`/`stepId`; each step's `actor`), `set-booking-step` (P, tick/untick
+`list-booking-workflows` (V, resolves `workflowId`/`stepId`; each step's `actor` + due offset), `set-booking-step` (P, tick/untick
 one step, back-datable), `set-booking-workflow` (P, switch workflow; clears ticked steps),
 `list-payments` (V, the payment log +
 outstanding balance), `add-payment` (P, logs a payment against the booking's agreed price).
 
-**locations.ts** — `search-locations` (V), `get-location` (V, incl. costs, standing
-payment terms, host site + Google place link, `bookedVia` + `coveredSites`), `list-regions` (V, resolves `regionId`), `list-trip-types`
+**locations.ts** — `search-locations` (V), `get-location` (V, incl. costs with their
+active dates, standing `events`, standing payment terms, host site + Google place link,
+`bookedVia` + `coveredSites`), `list-regions` (V, resolves `regionId`), `list-trip-types`
 (V, resolves `tripTypeId`), `create-location` (P), `update-location` (P; both take
 `googlePlaceId` + `lat`/`lng`, the coords both-or-neither, and `bookedViaId` — null clears;
 on update, gaining a parent folds the site's own engagements into the parent's, reported as `movedBookings`),
 `set-host-site` (P, upserts capability flags or `remove`s host-site status),
 `set-primary-contact` (P, links the contact + marks it primary, or clears the
-designation), `add-location-cost` (P), `update-location-cost` (P),
+designation), `add-location-cost` (P), `update-location-cost` (P; both take
+`validFrom`/`validTo` active dates), `add-location-event` (P), `update-location-event` (P),
+`delete-location-event` (P) — standing venue events, see Location events below —
 `set-location-payment-schedule` (P, REPLACE the venue's standing terms that seed new
 engagements — GH #86), `merge-locations` (P, destructive: folds a duplicate into the
 kept location + deletes it; `dryRun` previews — see Location merge below).
@@ -303,6 +307,59 @@ npm test                          # vitest
   it reaches a Client Component — anything passed as props rides along in the RSC
   payload (view-source visible) even if not rendered. See `redactDaysForShare`
   (`src/lib/share.ts`).
+- **Trip tabs** (`trips/[id]/trip-header.tsx`): Overview · Itinerary · Bookings ·
+  Finance (`/finance`) · Documents (`/documents`, the `TripDocumentsHub`). The
+  overview keeps the itinerary panel (every venue mention links to its booking
+  row via `bookingDashboardHref`, with `VenueEngagementStatus` beside timed stops
+  and rough-plan locations — the page wraps the panel in a
+  `VenueEngagementsProvider`), Lodging, Details and one **Finance** card.
+- **Finance (`src/lib/trip-finance.ts`, pure + unit-tested; `trip-finance.server.ts`
+  loads)**: `buildTripFinance` answers two questions per currency — the ESTIMATE
+  (what the trip will likely cost, by source: a venue engagement with an agreed
+  price counts at that total and drops its list price + stays; otherwise the venue's
+  list price in force for the trip's start (`effectiveCosts`) × headcount, each stay
+  at its nightly rate, and site-less item bookings at their agreed price; NOT_NEEDED
+  venues count nothing) and the COMMITMENTS (every booking with an agreed price or a
+  payment: balance, schedule, overdue/next due). `FinanceCard` on the overview shows
+  the roll-up; the Finance tab (`trips/[id]/finance`) shows every line with its
+  source and a link, the commitments table and what is unpriced.
+- **Trip default currency**: `Trip.defaultCurrency` (one of `currencies`, validator
+  + MCP enforced; the form's "default" radio) is what a NEW stay, booking or price
+  line starts in — `tripDefaultCurrency(trip)` / `tripDefaultCurrencyFor(target)`
+  (`src/lib/trip-mutations.ts`) at every create point (web + MCP), and the pickers'
+  initial value (`TripPricingContext`, `LodgingManager`, `buildDashboardRows`'
+  `defaultCurrency`). Never fall back to a bare `"USD"` on a trip-scoped write.
+- **Venue price is the default price**: an engagement with no agreed `priceLines`
+  is priced at the venue's list price — `buildDashboardRows` sets `priceSource`
+  (`agreed` | `venue` | null) and `effectiveLines`, and `agreedTotal` (balance,
+  settled, schedule %) runs off the effective lines. The dashboard shows a venue
+  price with a plain "Venue price" caption (never a pill — it read as a status);
+  "agreed" stays an emerald pill. `Cost.validFrom`/`validTo` (DB CHECK
+  `cost_validity_order`) are a line's active dates: `effectiveCosts(costs, on)`
+  keeps the lines whose window covers the trip's start date (today when undated),
+  so a known future price change is a second dated line beside the current one.
+  Edited on the Location page's cost form + the MCP cost tools.
+- **Workflow step due offsets**: `BookingWorkflowStep.dueOffsetValue`/`dueOffsetUnit`
+  (DAY/WEEK/MONTH BEFORE trip start; both or neither — DB CHECK
+  `booking_workflow_step_due`; set per step at `/admin/workflows`). `stepDueDate` /
+  `waitingOn(..., tripStartDate)` carry `dueOn`; `waitingView` adds `dueOn` + `due`.
+  A step that is not due yet is nobody's move: `isYourMove` requires `due`, the
+  owner line / `CompactProgress` chip / step strip read muted "Next for you: Finalized
+  · from 12 Mar 2027" instead of amber. `BookingProgressView.tripStartDate` feeds
+  the client controls — every `progressView(...)` call passes the trip's start.
+- **Bookings tab table**: rows arrive in booking-window order (default); the
+  Sort (window / venue / first visit) and Group (none / visit type / region)
+  selects live in the URL (`?sort=`, `?group=`). `VenueBookingRow.visitType`
+  ("Lodging" when the engagement covers nights, else the most common session
+  category, "Planned" for rough-plan-only), `regionName` and `firstDayIndex` come
+  from the builder; the expanded row lists the covered `stays` beside the sessions.
+- **Location events (`LocationEvent`)**: a venue's standing fixtures ("Evensong
+  17:00") — title, `startTime`/`endTime` ("HH:MM"), optional category + notes.
+  Managed on the Location page (`location-events-manager.tsx`, direct-call
+  actions) and over MCP; the itinerary item form offers a chosen venue's events as
+  one-click buttons that fill title, times and category and set `fixedTime`.
+  Deleting an event never touches items already added from it; `mergeLocations`
+  repoints them.
 - **Routing**: authenticated pages live under `src/app/(app)/` (shell = `AppNav` +
   `requireUser` layout). Public routes: `/login`, `/setup`, `/share/[token]`,
   `/api/{auth,oauth,well-known}`, `/mcp`, `/api/feed/[token].ics`,

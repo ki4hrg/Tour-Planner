@@ -66,6 +66,7 @@ export function MergeLocationPanel({
       [p.notes, "note"],
       [p.documents, "document"],
       [p.costs, "cost"],
+      [p.events, "venue event"],
       [p.contacts, "new contact link"],
       [p.travelReferences, "travel / day reference"],
       [p.shareLinks, "host-site share link"],

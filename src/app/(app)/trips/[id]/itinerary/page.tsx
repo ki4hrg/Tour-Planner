@@ -88,6 +88,17 @@ export default async function ItineraryPage({
       hostSite: { select: { logisticsNotes: true } },
       primaryContact: { select: { name: true, phone: true, email: true } },
       tripTypes: { where: { id: trip.tripType.id }, select: { id: true } },
+      // Standing events here — the item form adds one in a click.
+      events: {
+        orderBy: [{ startTime: "asc" }, { title: "asc" }],
+        select: {
+          id: true,
+          title: true,
+          startTime: true,
+          endTime: true,
+          categoryId: true,
+        },
+      },
     },
   });
   // Payments per item booking (site-less items only carry bookings).
@@ -147,6 +158,7 @@ export default async function ItineraryPage({
             name: l.name,
             region: l.region?.name ?? null,
             tagged: l.tripTypes.length > 0,
+            events: l.events,
             scheduleLimitations: l.scheduleLimitations,
             logisticsNotes: l.hostSite?.logisticsNotes ?? null,
             primaryContact: l.primaryContact,
@@ -156,6 +168,7 @@ export default async function ItineraryPage({
           presentations={presentations}
           headcount={tripHeadcount(trip)}
           currencies={trip.currencies}
+          defaultCurrency={trip.defaultCurrency}
           cities={cities}
         />
       </VenueEngagementsProvider>

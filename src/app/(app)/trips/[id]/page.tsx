@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { notFound } from "next/navigation";
-import { TriangleAlert } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
 import {
@@ -29,9 +27,7 @@ import { progressView, type BookingProgressView } from "@/lib/booking-workflow";
 import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
 import {
   agreedTotal,
-  hasAgreedPrice,
   PRICE_LINES_SELECT,
-  rollUpCosts,
   serializePriceLines,
   tripHeadcount,
 } from "@/lib/costs";
@@ -39,13 +35,8 @@ import {
   DOCUMENT_SELECT,
   serializeDocument,
 } from "@/lib/documents";
-import { estimateLodging, lodgingCoverage } from "@/lib/stays";
+import { lodgingCoverage } from "@/lib/stays";
 import { formatMoney, isCostStale } from "@/lib/money";
-import {
-  resolveSchedule,
-  scheduleAttention,
-  serializeInstallment,
-} from "@/lib/payment-schedule";
 import { EditableSection } from "@/components/editable-section";
 import { TripForm } from "../trip-form";
 import { LodgingManager, type SuggestedStaySpan } from "../lodging-manager";
@@ -54,7 +45,10 @@ import { ItineraryOverview } from "../itinerary-overview";
 import { ShareManager } from "../share-manager";
 import { CalendarFeedManager } from "../../calendar-feeds/calendar-feed-manager";
 import { TripTodoistPanel } from "../trip-todoist-panel";
-import { TripDocumentsHub } from "../../documents/trip-documents-hub";
+import { FinanceCard } from "../finance-card";
+import { loadTripFinance } from "@/lib/trip-finance.server";
+import { VenueEngagementsProvider } from "../venue-engagements";
+import { loadVenueEngagements } from "@/lib/venue-engagements";
 import {
   updateTrip,
   deleteTrip,
@@ -219,61 +213,12 @@ export default async function TripOverviewPage({
     progressByLocation[s.locationId] = progressView(
       eng ?? null,
       s.location.bookedVia?.defaultWorkflowId ?? s.location.defaultWorkflowId,
+      trip.startDate,
     );
   }
   const bookingByLocation = bookingsByLocation(
     engagementBookings.map(serializeBooking),
   );
-  // Lodging in the estimate: a lodging venue whose engagement has an agreed
-  // total counts at that total (it is the contract, and covers every stay and
-  // session there); otherwise each stay counts at its nightly rate, priced for
-  // the trip headcount when the stay has no headcount of its own.
-  const agreedByLocation = new Map<string, { total: number; currency: string }>();
-  for (const b of engagementBookings) {
-    if (!b.locationId || b.status === "NOT_NEEDED") continue;
-    const total = agreedTotal(
-      serializePriceLines(b.priceLines),
-      estimateHeadcount,
-    );
-    if (total != null)
-      agreedByLocation.set(b.locationId, { total, currency: b.agreedCurrency });
-  }
-  const lodgingEstimate = estimateLodging(
-    stays.map((s) => ({
-      // Priced by the engagement that covers it (a parent's agreed total
-      // covers lodging at its child sites).
-      locationId: engagementVenue(s.locationId),
-      checkIn: s.checkIn,
-      checkOut: s.checkOut,
-      checkInDayIndex: s.checkInDayIndex,
-      checkOutDayIndex: s.checkOutDayIndex,
-      headcount: s.headcount,
-      costPerPersonPerNight:
-        s.costPerPersonPerNight == null
-          ? null
-          : Number(s.costPerPersonPerNight),
-      currency: s.currency,
-    })),
-    agreedByLocation,
-    estimateHeadcount,
-  );
-  const stayRollups = lodgingEstimate.byCurrency;
-  // A venue priced by its agreed total drops its catalog costs — the agreed
-  // total already covers the whole engagement.
-  const allCosts = costLocations
-    .filter(
-      (l) => !lodgingEstimate.agreedLocationIds.has(engagementVenue(l.id)),
-    )
-    .flatMap((s) => s.costs);
-  const rollups = rollUpCosts(
-    allCosts.map((c) => ({
-      amount: Number(c.amount),
-      currency: c.currency,
-      unit: c.unit,
-    })),
-    estimateHeadcount,
-  );
-  const hasStaleCost = allCosts.some((c) => isCostStale(c.confirmedAt));
 
   // Night-by-night lodging coverage for the Lodging card, plus the first run of
   // uncovered nights so "+ Add stay" can pre-fill it.
@@ -317,107 +262,14 @@ export default async function TripOverviewPage({
       };
     }
   }
-  const lodgingByCurrency = new Map(stayRollups.map((r) => [r.currency, r.total]));
-  // Unified per-currency estimate = visited-location costs + lodging.
-  const estimate = [
-    ...new Set([
-      ...rollups.map((r) => r.currency),
-      ...stayRollups.map((r) => r.currency),
-    ]),
-  ]
-    .sort()
-    .map((currency) => {
-      const cost = rollups.find((r) => r.currency === currency) ?? null;
-      const lodging = lodgingByCurrency.get(currency) ?? 0;
-      return { currency, cost, lodging, total: (cost?.total ?? 0) + lodging };
-    });
-
-  // Money panel (GH #86): actual committed spend across this trip's venue
-  // engagements — agreed / paid / outstanding per currency — plus the overdue
-  // or next-due installment, so a payment problem is visible from the trip page
-  // without opening the booking dashboard. Templates have no dates, so their
-  // installments never resolve — the panel is dated-trip only.
-  // `unknown` counts per-person price lines with no headcount to multiply: their
-  // total (and so their balance) is unknown, which the panel says outright.
-  const moneyByCurrency = new Map<
-    string,
-    { agreed: number; paid: number; outstanding: number; unknown: number }
-  >();
-  const moneyAttention: {
-    venue: string;
-    // Deep link to this engagement's row on the booking dashboard.
-    href: string;
-    currency: string;
-    amount: number;
-    dueDate: string;
-    overdue: boolean;
-  }[] = [];
-  const moneyToday = todayUtc();
-  for (const b of engagementBookings) {
-    const lines = serializePriceLines(b.priceLines);
-    const priced = hasAgreedPrice(lines);
-    const agreed = agreedTotal(lines, estimateHeadcount);
-    const paid = b.payments.reduce((s, p) => s + Number(p.amount), 0);
-    if (priced || paid > 0) {
-      const row = moneyByCurrency.get(b.agreedCurrency) ?? {
-        agreed: 0,
-        paid: 0,
-        outstanding: 0,
-        unknown: 0,
-      };
-      if (priced && agreed == null) row.unknown++;
-      row.agreed += agreed ?? 0;
-      row.paid += paid;
-      row.outstanding += agreed != null ? Math.max(0, agreed - paid) : 0;
-      moneyByCurrency.set(b.agreedCurrency, row);
-    }
-    const resolved = resolveSchedule(
-      b.paymentSchedule.map(serializeInstallment),
-      {
-        agreedTotal: agreed,
-        paidTotal: paid,
-        tripStartDate: trip.startDate,
-        bookingDate: b.bookedOn ?? b.createdAt,
-        today: moneyToday,
-      },
-    );
-    const venue = b.location?.name ?? b.label ?? "Booking";
-    const href = venueBookingHref(id, b.locationId);
-    for (const inst of resolved) {
-      if (inst.state === "overdue" && inst.outstanding && inst.dueDate) {
-        moneyAttention.push({
-          venue,
-          href,
-          currency: b.agreedCurrency,
-          amount: inst.outstanding,
-          dueDate: inst.dueDate,
-          overdue: true,
-        });
-      }
-    }
-    const { nextDue } = scheduleAttention(resolved);
-    if (nextDue?.dueDate && nextDue.outstanding) {
-      moneyAttention.push({
-        venue,
-        href,
-        currency: b.agreedCurrency,
-        amount: nextDue.outstanding,
-        dueDate: nextDue.dueDate,
-        overdue: false,
-      });
-    }
-  }
-  const moneyRows = [...moneyByCurrency.entries()]
-    .map(([currency, v]) => ({ currency, ...v }))
-    .sort((a, b) => a.currency.localeCompare(b.currency));
-  // Overdue first, then soonest due.
-  moneyAttention.sort(
-    (a, b) =>
-      Number(b.overdue) - Number(a.overdue) || a.dueDate.localeCompare(b.dueDate),
-  );
-  const overdueCount = moneyAttention.filter((a) => a.overdue).length;
-  const showMoney =
-    !trip.isTemplate && (moneyRows.length > 0 || moneyAttention.length > 0);
+  // Estimate + commitments for the Finance card (breakdown on the Finance tab).
+  const finance = await loadTripFinance(trip);
+  const headcountLabel =
+    estimateHeadcount == null
+      ? null
+      : trip.participantCount != null
+        ? `${estimateHeadcount} participant${estimateHeadcount === 1 ? "" : "s"}`
+        : `Capacity ${estimateHeadcount}`;
 
   // For the Lodging manager (PLANNER edits inline). Only host sites flagged as
   // providing lodging can be picked for a stay.
@@ -558,6 +410,13 @@ export default async function TripOverviewPage({
         })
       : [];
 
+  // Each venue's (trip, location) engagement, shown beside every venue the
+  // itinerary panel names — timed stops and rough-plan locations alike.
+  const engagements = await loadVenueEngagements(trip.id, [
+    ...locationIds,
+    ...trip.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
+  ]);
+
   return (
     <div className="space-y-6">
 
@@ -565,16 +424,22 @@ export default async function TripOverviewPage({
         {/* The trip's working surface — itinerary, where everyone sleeps, and
             its paperwork. Right 2/3 on desktop, first on mobile. */}
         <div className="min-w-0 space-y-6 lg:order-2 lg:col-span-2">
-          <ItineraryOverview
+          <VenueEngagementsProvider
             tripId={trip.id}
             canEdit={canEdit}
-            days={trip.days.map(serializeDay)}
-            lodgingByDay={summarizeDayLodging(trip.days, stays)}
-            cityByDay={Object.fromEntries(
-              trip.days.map((d) => [d.id, d.cityRegion?.name ?? null]),
-            )}
-            currentDayId={currentDayId}
-          />
+            engagements={engagements}
+          >
+            <ItineraryOverview
+              tripId={trip.id}
+              canEdit={canEdit}
+              days={trip.days.map(serializeDay)}
+              lodgingByDay={summarizeDayLodging(trip.days, stays)}
+              cityByDay={Object.fromEntries(
+                trip.days.map((d) => [d.id, d.cityRegion?.name ?? null]),
+              )}
+              currentDayId={currentDayId}
+            />
+          </VenueEngagementsProvider>
 
           <Card id="lodging">
             <CardHeader>
@@ -588,6 +453,7 @@ export default async function TripOverviewPage({
                 isTemplate={trip.isTemplate}
                 dayCount={trip.days.length}
                 currencies={trip.currencies}
+                defaultCurrency={trip.defaultCurrency}
                 locations={lodgingLocations.map((l) => ({
                   id: l.id,
                   name: l.name,
@@ -607,14 +473,6 @@ export default async function TripOverviewPage({
             </CardContent>
           </Card>
 
-          <Card id="documents">
-            <CardHeader>
-              <CardTitle>Documents</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TripDocumentsHub tripId={trip.id} canEdit={canEdit} />
-            </CardContent>
-          </Card>
         </div>
 
         {/* Trip meta — left 1/3 on desktop, after the working surface on mobile. */}
@@ -763,7 +621,15 @@ export default async function TripOverviewPage({
                     <dd className="col-span-2">{trip.capacity ?? "—"}</dd>
                     <dt className="text-muted-foreground">Currencies</dt>
                     <dd className="col-span-2">
-                      {trip.currencies.length ? trip.currencies.join(", ") : "—"}
+                      {trip.currencies.length
+                        ? trip.currencies
+                            .map((c) =>
+                              c === trip.defaultCurrency && trip.currencies.length > 1
+                                ? `${c} (default)`
+                                : c,
+                            )
+                            .join(", ")
+                        : "—"}
                     </dd>
                     {!trip.isTemplate ? (
                       <>
@@ -798,6 +664,7 @@ export default async function TripOverviewPage({
                     participantCount: trip.participantCount,
                     status: trip.status,
                     currencies: trip.currencies,
+                    defaultCurrency: trip.defaultCurrency,
                     notes: trip.notes,
                     isTemplate: trip.isTemplate,
                   }}
@@ -806,152 +673,12 @@ export default async function TripOverviewPage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Cost estimate</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {estimate.length === 0 ? (
-                <p className="text-muted-foreground">
-                  No costs.
-                </p>
-              ) : (
-                <>
-                  {estimateHeadcount == null ? (
-                    <p className="text-muted-foreground">
-                      Per-group costs only (no {trip.isTemplate ? "capacity" : "headcount"}).
-                    </p>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      {trip.participantCount != null
-                        ? `${estimateHeadcount} participant${estimateHeadcount === 1 ? "" : "s"}`
-                        : `Capacity ${estimateHeadcount}`}
-                      {" · "}
-                      {locationIds.length} location
-                      {locationIds.length === 1 ? "" : "s"}
-                    </p>
-                  )}
-                  <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
-                    {estimate.map((e) => (
-                      <div key={e.currency} className="contents">
-                        <dt className="font-medium">{e.currency}</dt>
-                        <dd className="text-muted-foreground">
-                          {e.cost
-                            ? `${formatMoney(e.cost.perPersonPerHead, e.currency)}/person × ${e.cost.participantCount}${
-                                e.cost.perGroup > 0
-                                  ? ` + ${formatMoney(e.cost.perGroup, e.currency)} group`
-                                  : ""
-                              }`
-                            : "—"}
-                          {e.lodging > 0
-                            ? ` + ${formatMoney(e.lodging, e.currency)} lodging`
-                            : ""}
-                        </dd>
-                        <dd className="text-right font-medium">
-                          {formatMoney(e.total, e.currency)}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {hasStaleCost ? (
-                    <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
-                      <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-                      Includes stale or unconfirmed prices.
-                    </p>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {showMoney ? (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2">
-                  Money
-                  {overdueCount > 0 ? (
-                    <Badge variant="overdue">{overdueCount} overdue</Badge>
-                  ) : null}
-                </CardTitle>
-                <Link
-                  href={`/trips/${trip.id}/booking`}
-                  className="text-xs text-muted-foreground link-quiet"
-                >
-                  Bookings
-                </Link>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {moneyRows.length > 0 ? (
-                  <dl className="space-y-1">
-                    {moneyRows.map((r) => (
-                      <div
-                        key={r.currency}
-                        className="grid grid-cols-3 items-baseline gap-x-3"
-                      >
-                        <dt className="font-medium">{r.currency}</dt>
-                        <dd className="text-muted-foreground">
-                          {formatMoney(r.paid, r.currency)} paid of{" "}
-                          {formatMoney(r.agreed, r.currency)}
-                        </dd>
-                        <dd className="text-right font-medium">
-                          {r.outstanding > 0
-                            ? `${formatMoney(r.outstanding, r.currency)} left`
-                            : r.unknown > 0
-                              ? "—"
-                              : "settled"}
-                        </dd>
-                        {r.unknown > 0 ? (
-                          <dd className="col-span-3 text-xs text-amber-700 dark:text-amber-300">
-                            {r.unknown} per-person price
-                            {r.unknown === 1 ? " has" : "s have"} no total (no
-                            headcount).
-                          </dd>
-                        ) : null}
-                      </div>
-                    ))}
-                  </dl>
-                ) : (
-                  <p className="text-muted-foreground">
-                    No agreed prices.
-                  </p>
-                )}
-
-                {moneyAttention.length > 0 ? (
-                  <div className="border-t pt-2">
-                    {overdueCount > 0 ? (
-                      <h4 className="mb-1 text-sm font-medium text-destructive">
-                        {overdueCount} payment{overdueCount === 1 ? "" : "s"} overdue
-                      </h4>
-                    ) : (
-                      <h4 className="mb-1 text-sm font-medium">Next due</h4>
-                    )}
-                    <ul className="space-y-0.5">
-                      {moneyAttention.slice(0, 3).map((a, i) => (
-                        <li key={`${a.venue}-${a.dueDate}-${i}`}>
-                          <div
-                            className={
-                              a.overdue
-                                ? "font-medium text-destructive"
-                                : "font-medium text-amber-700 dark:text-amber-300"
-                            }
-                          >
-                            {formatMoney(a.amount, a.currency)}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            <Link href={a.href} className="link-quiet">
-                              {a.venue}
-                            </Link>{" "}
-                            · {a.overdue ? "was due" : "due"}{" "}
-                            {formatDate(a.dueDate)}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
+          <FinanceCard
+            tripId={trip.id}
+            finance={finance}
+            isTemplate={trip.isTemplate}
+            headcountLabel={headcountLabel}
+          />
 
           {todoistConnected ? (
             <Card>

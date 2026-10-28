@@ -23,6 +23,7 @@ const TRIP_SELECT = {
   startDate: true,
   participantCount: true,
   capacity: true,
+  defaultCurrency: true,
   days: {
     orderBy: { dayIndex: "asc" as const },
     select: {
@@ -141,6 +142,7 @@ export default async function CompareYearsPage({
       locations,
       tripStartDate: t.startDate,
       headcount: tripHeadcount(t),
+      defaultCurrency: t.defaultCurrency,
     });
     for (const row of venueRows) {
       let line = venueMap.get(row.locationId);

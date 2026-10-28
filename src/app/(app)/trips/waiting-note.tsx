@@ -31,7 +31,10 @@ export function WaitingNote({
   className?: string;
 }) {
   if (!waiting) return null;
-  const ours = waiting.actor === "US";
+  // Ours AND due reads as the to-do it is; a step with a future due date is
+  // just information until then, so it stays muted and says when.
+  const ours = waiting.actor === "US" && waiting.due;
+  const notYet = !waiting.due && waiting.dueOn;
   return (
     <span
       className={cn(
@@ -41,10 +44,20 @@ export function WaitingNote({
           : "text-muted-foreground",
         className,
       )}
-      title={waiting.since ? `Since ${formatDate(waiting.since)}` : undefined}
+      title={
+        notYet
+          ? `Due ${formatDate(waiting.dueOn)}`
+          : waiting.since
+            ? `Since ${formatDate(waiting.since)}`
+            : undefined
+      }
     >
       {ACTOR_PREFIX[waiting.actor]}: {waiting.stepLabel}
-      {waiting.days ? ` · ${waiting.days}d` : ""}
+      {notYet
+        ? ` · from ${formatDate(waiting.dueOn)}`
+        : waiting.days
+          ? ` · ${waiting.days}d`
+          : ""}
     </span>
   );
 }

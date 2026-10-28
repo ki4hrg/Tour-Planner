@@ -54,6 +54,7 @@ export type TripInitial = {
   participantCount: number | null;
   status: string;
   currencies: string[];
+  defaultCurrency?: string | null;
   notes: string | null;
   isTemplate: boolean;
 };
@@ -105,6 +106,15 @@ export function TripForm({
       ?.defaultCurrency;
     return def ? [def] : [];
   });
+  // The one new stays / bookings / price lines start in — always a member of
+  // the set above (unticking it hands the default to the first remaining).
+  const [defaultCurrency, setDefaultCurrency] = useState<string>(
+    () => initial?.defaultCurrency ?? initial?.currencies?.[0] ?? "",
+  );
+  const setCurrencySet = (next: string[]) => {
+    setCurrencies(next);
+    if (!next.includes(defaultCurrency)) setDefaultCurrency(next[0] ?? "");
+  };
   // Offer the curated list plus any stored code outside it (legacy data).
   const currencyChoices = [
     ...CURRENCIES,
@@ -151,7 +161,10 @@ export function TripForm({
               // On create, seed the currency set from the type's default.
               if (!initial?.id) {
                 const def = tripTypes.find((t) => t.id === v)?.defaultCurrency;
-                if (def) setCurrencies([def]);
+                if (def) {
+                  setCurrencies([def]);
+                  setDefaultCurrency(def);
+                }
               }
             }}
           >
@@ -296,22 +309,44 @@ export function TripForm({
           {currencies.map((c) => (
             <input key={c} type="hidden" name="currencies" value={c} />
           ))}
-          <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
-            {currencyChoices.map((c) => (
-              <label key={c} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={currencies.includes(c)}
-                  onCheckedChange={(v) =>
-                    setCurrencies((prev) =>
-                      v === true
-                        ? [...prev, c]
-                        : prev.filter((x) => x !== c),
-                    )
-                  }
-                />
-                {c}
-              </label>
-            ))}
+          <input
+            type="hidden"
+            name="defaultCurrency"
+            value={defaultCurrency || currencies[0] || ""}
+          />
+          <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1">
+            {currencyChoices.map((c) => {
+              const on = currencies.includes(c);
+              return (
+                <span key={c} className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={on}
+                      onCheckedChange={(v) =>
+                        setCurrencySet(
+                          v === true
+                            ? [...currencies, c]
+                            : currencies.filter((x) => x !== c),
+                        )
+                      }
+                    />
+                    {c}
+                  </label>
+                  {on ? (
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <input
+                        type="radio"
+                        name="defaultCurrencyPick"
+                        className="accent-primary"
+                        checked={(defaultCurrency || currencies[0]) === c}
+                        onChange={() => setDefaultCurrency(c)}
+                      />
+                      default
+                    </label>
+                  ) : null}
+                </span>
+              );
+            })}
           </div>
         </div>
 

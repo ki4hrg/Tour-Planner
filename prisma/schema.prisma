@@ -246,6 +246,7 @@ model Location {
   bookedVia              Location?                     @relation("LocationBookedVia", fields: [bookedViaId], references: [id], onDelete: SetNull)
   bookedViaId            String?
   coveredSites           Location[]                    @relation("LocationBookedVia") // child sites booked through this one
+  events                 LocationEvent[] // standing events here (Evensong 17:00)
   createdAt              DateTime                      @default(now())
   updatedAt              DateTime                      @updatedAt
 
@@ -280,6 +281,12 @@ model Cost {
   currency    String    @default("USD")
   unit        CostUnit  @default(PER_PERSON)
   confirmedAt DateTime? // price last verified; surfaces stale pricing
+  // Active dates: the line applies to a trip whose start date falls inside
+  // [validFrom, validTo] (either bound open; undated = always). A known future
+  // price change is a second dated line beside the current one — see
+  // `effectiveCosts` in src/lib/costs.ts. DB CHECK cost_validity_order.
+  validFrom   DateTime? @db.Date
+  validTo     DateTime? @db.Date
   notes       String?
 }
 
@@ -298,6 +305,9 @@ model Trip {
   // pickers offer these instead of free text (GH #11); seeded from the trip
   // type's defaultCurrency.
   currencies       String[]          @default([])
+  // The currency new stays, bookings and price lines on this trip start in;
+  // one of `currencies` (validator-enforced). Seeded from the trip type.
+  defaultCurrency  String            @default("USD")
   notes            String?
   createdBy        User?             @relation("CreatedTrips", fields: [createdById], references: [id])
   createdById      String?
@@ -367,15 +377,37 @@ model ItineraryDayLocation {
 // A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).
 // Admin-managed alongside trip types; drives the itinerary label/marker.
 model ScheduleItemCategory {
-  id        String         @id @default(cuid())
-  name      String         @unique
-  color     String? // hex; tints the route-line marker
-  sortOrder Int            @default(0)
+  id             String          @id @default(cuid())
+  name           String          @unique
+  color          String? // hex; tints the route-line marker
+  sortOrder      Int             @default(0)
   // Built-in, self-describing kinds (Free time, Break): protected from
   // edit/delete and special-cased in the item form (times + notes only).
-  system    Boolean        @default(false)
-  items     ScheduleItem[]
-  createdAt DateTime       @default(now())
+  system         Boolean         @default(false)
+  items          ScheduleItem[]
+  locationEvents LocationEvent[]
+  createdAt      DateTime        @default(now())
+}
+
+// A standing event at a venue — "Evensong, 17:00" at a cathedral, a daily
+// tour at 11:00 — that a planner adds to a day in one click: the item form
+// offers a chosen venue's events, and picking one fills the title, times and
+// category and marks the time fixed (the group doesn't control it).
+model LocationEvent {
+  id         String                @id @default(cuid())
+  location   Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId String
+  title      String
+  startTime  String // "HH:MM"
+  endTime    String? // "HH:MM"
+  category   ScheduleItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId String?
+  notes      String?
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([locationId])
+  @@index([categoryId])
 }
 
 // A timed line in a day's itinerary. Booking state lives on related Booking
@@ -546,16 +578,22 @@ model BookingWorkflow {
 // booking_workflow_step_status); a booking's status is the furthest any of its
 // completed steps reaches.
 model BookingWorkflowStep {
-  id          String                  @id @default(cuid())
-  workflow    BookingWorkflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  workflowId  String
-  label       String
-  sortOrder   Int                     @default(0)
-  status      BookingStatus           @default(IN_PROGRESS)
-  actor       StepActor               @default(US) // who completes this step
-  completions BookingStepCompletion[]
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  id             String                  @id @default(cuid())
+  workflow       BookingWorkflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId     String
+  label          String
+  sortOrder      Int                     @default(0)
+  status         BookingStatus           @default(IN_PROGRESS)
+  actor          StepActor               @default(US) // who completes this step
+  // When the step falls due: this many units BEFORE the trip's start date
+  // (both set or neither — DB CHECK booking_workflow_step_due). Until then an
+  // upcoming step is not yet anyone's move ("Finalized" two years out is not
+  // a to-do); unset = due as soon as it's next. See `stepDueDate`.
+  dueOffsetValue Int?
+  dueOffsetUnit  PaymentOffsetUnit?
+  completions    BookingStepCompletion[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   @@index([workflowId])
 }

@@ -225,7 +225,7 @@ describe("documentTarget", () => {
   it("points trip documents at the trip page and stays at their anchor", () => {
     expect(
       documentTarget({ ...empty, trip: { id: "t3", name: "Wesley 2029" } }),
-    ).toEqual({ label: "Wesley 2029", href: "/trips/t3" });
+    ).toEqual({ label: "Wesley 2029", href: "/trips/t3/documents" });
     expect(
       documentTarget({
         ...empty,
