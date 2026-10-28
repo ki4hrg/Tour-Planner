@@ -18,6 +18,8 @@ import {
   type ScheduleInstallmentInput,
 } from "./payment-schedule";
 import { toDateInput } from "./dates";
+import { isBookingOff } from "./booking";
+import { BOOKING_STATUS_LABELS } from "./trips";
 
 // A trip's finances in one pure pass — what the overview's Finance card and the
 // Finance tab both read. Two questions, kept apart:
@@ -208,10 +210,34 @@ export function buildTripFinance(input: FinanceInput): TripFinance {
     const priced = hasAgreedPrice(b.priceLines);
     const total = agreedTotal(b.priceLines, headcount);
     const paid = round2(b.payments.reduce((s, p) => s + p, 0));
-    if (isVenue && total != null && b.status !== "NOT_NEEDED") {
+    const off = isBookingOff(b.status);
+    if (isVenue && total != null && !off) {
       agreedByVenue.set(b.locationId!, { total, currency: b.agreedCurrency });
     }
     if (!priced && paid === 0) continue;
+    // Cancelled / not needed: nothing more is owed. What was already paid is
+    // the whole cost (a non-refundable deposit), so it stays on record.
+    if (off) {
+      if (paid === 0) continue;
+      commitments.push({
+        key: `${isVenue ? "v" : "i"}:${b.id}`,
+        kind: isVenue ? "venue" : "item",
+        name,
+        href,
+        status: b.status,
+        stageLabel: b.stageLabel,
+        currency: b.agreedCurrency,
+        priceLines: b.priceLines,
+        agreedTotal: paid,
+        paid,
+        outstanding: 0,
+        settled: true,
+        schedule: [],
+        overdueAmount: 0,
+        nextDue: null,
+      });
+      continue;
+    }
     const schedule = resolveSchedule(b.paymentSchedule, {
       agreedTotal: total,
       paidTotal: paid,
@@ -274,14 +300,34 @@ export function buildTripFinance(input: FinanceInput): TripFinance {
   // --- Estimate ------------------------------------------------------------
   const lines: EstimateLine[] = [];
   const unpriced: TripFinance["unpriced"] = [];
+  // Venues whose engagement is cancelled / not needed: their list prices and
+  // stays drop out.
   const notNeeded = new Set(
     input.bookings
-      .filter((b) => b.locationId && b.status === "NOT_NEEDED")
+      .filter((b) => b.locationId && isBookingOff(b.status))
       .map((b) => b.locationId!),
   );
-  // Agreed engagements, one line each (venue or site-less item).
+  // Agreed engagements, one line each (venue or site-less item). An
+  // off-ladder booking counts only what was already paid on it.
   for (const b of input.bookings) {
-    if (b.status === "NOT_NEEDED") continue;
+    if (isBookingOff(b.status)) {
+      const paid = round2(b.payments.reduce((s, p) => s + p, 0));
+      if (paid === 0) continue;
+      const isVenue = b.locationId != null;
+      lines.push({
+        key: `agreed:${b.id}`,
+        kind: isVenue ? "venue" : "item",
+        name: isVenue ? nameOf(b.locationId!) : (b.label ?? "Booking"),
+        href: isVenue ? venueHref(b.locationId!) : itemHref(b),
+        currency: b.agreedCurrency,
+        amount: paid,
+        source: "agreed",
+        detail: `${BOOKING_STATUS_LABELS[b.status]} · paid ${formatMoney(paid, b.agreedCurrency)}`,
+        stale: false,
+        unknown: false,
+      });
+      continue;
+    }
     const total = agreedTotal(b.priceLines, headcount);
     const isVenue = b.locationId != null;
     if (!hasAgreedPrice(b.priceLines)) continue;

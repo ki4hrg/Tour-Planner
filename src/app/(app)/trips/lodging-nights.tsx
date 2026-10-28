@@ -3,7 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isBookingSecured } from "@/lib/booking";
-import { bookingStatusVariant, bookingStageText } from "@/lib/trips";
+import {
+  BOOKING_STATUS_LABELS,
+  bookingStatusVariant,
+  bookingSubstatus,
+} from "@/lib/trips";
 
 // Short night label — the year is noise in a strip of consecutive nights.
 const NIGHT_FMT = new Intl.DateTimeFormat("en-GB", {
@@ -74,16 +78,16 @@ export function LodgingNights({ nights }: { nights: NightCell[] }) {
                     {n.venue}
                   </span>
                   <Badge
-                    variant={bookingStatusVariant(n.status ?? "PLANNED")}
+                    variant={bookingStatusVariant(n.status ?? "PENDING")}
                     className="mt-1 max-w-full"
                   >
-                    <span className="truncate">
-                      {bookingStageText({
-                        status: n.status ?? "PLANNED",
-                        stageLabel: n.stageLabel,
-                      })}
-                    </span>
+                    {BOOKING_STATUS_LABELS[n.status ?? "PENDING"]}
                   </Badge>
+                  {bookingSubstatus({ status: n.status ?? "PENDING", stageLabel: n.stageLabel }) ? (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {bookingSubstatus({ status: n.status ?? "PENDING", stageLabel: n.stageLabel })}
+                    </span>
+                  ) : null}
                   {n.covering > 1 ? (
                     <span className="block text-xs text-muted-foreground">
                       +{n.covering - 1} overlapping stay

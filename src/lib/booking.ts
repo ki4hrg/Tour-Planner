@@ -77,12 +77,23 @@ export function earliestCoveredDate(dates: (Date | null | undefined)[]): Date | 
 
 /**
  * Whether a booking is "locked in" — a reservation actually secured, so the
- * planner no longer needs to chase it (a workflow step that reaches CONFIRMED,
- * or a hand-set CONFIRMED). Used to gate attention filters and "Booked" labels
- * across the dashboards.
+ * planner no longer needs to chase it (a workflow step that reaches CONFIRMED
+ * or FINALIZED, or the same set by hand). Used to gate attention filters and
+ * "Booked" labels across the dashboards.
  */
 export function isBookingSecured(status: BookingStatus): boolean {
-  return status === "CONFIRMED";
+  return status === "CONFIRMED" || status === "FINALIZED";
+}
+
+/** The statuses that sit off the ladder — manual overrides workflow steps never clear. */
+export const OFF_LADDER_STATUSES = ["CANCELLED", "NOT_NEEDED"] as const satisfies readonly BookingStatus[];
+
+/**
+ * Cancelled or not needed: out of play. Never actionable, never counted in
+ * the estimate, never owed; a workflow's steps leave the status alone.
+ */
+export function isBookingOff(status: BookingStatus): boolean {
+  return status === "CANCELLED" || status === "NOT_NEEDED";
 }
 
 /**
@@ -102,7 +113,8 @@ export function bookingNeedsInfo(args: {
 }): boolean {
   const { status, windowOpen, hasRef, isMissingCost, isMissingTime, paymentOverdue } =
     args;
-  if (windowOpen && status !== "NOT_NEEDED" && !isBookingSecured(status))
+  if (isBookingOff(status)) return false;
+  if (windowOpen && !isBookingSecured(status))
     return true;
   if (isBookingSecured(status) && !hasRef) return true;
   return isMissingCost || isMissingTime || paymentOverdue;

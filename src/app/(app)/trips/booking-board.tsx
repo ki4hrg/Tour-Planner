@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { isBookingSecured } from "@/lib/booking";
+import { isBookingOff, isBookingSecured } from "@/lib/booking";
 import {
   BOOKING_STATUSES,
   BOOKING_STATUS_LABELS,
@@ -59,19 +59,20 @@ const cardDomId = (key: string) => `board-${key.replace(":", "-")}`;
 
 // Kanban view of the booking dashboard: a card per bookable venue engagement or
 // site-less item booking. Two layouts:
-// - "Status": one column per coarse status. Dragging sets the status of a
-//   booking without a workflow; a workflow booking only moves in and out of
-//   "Not needed" this way (its steps own the rest).
+// - "Status": one column per master status, whatever workflow a card follows
+//   (its stage reads on the card). Dragging sets the status of a booking
+//   without a workflow; a workflow booking only moves in and out of
+//   "Cancelled" / "Not needed" this way (its steps own the rest).
 // - one workflow: a column per step of that workflow (a card sits under the
-//   latest step it has done), plus "Not started" and "Not needed". Dragging to
-//   a step column ticks that step and clears later ones. Cards on other
-//   workflows are hidden.
+//   latest step it has done), plus "Not started", "Cancelled" and "Not
+//   needed". Dragging to a step column ticks that step and clears later ones.
+//   Cards on other workflows are hidden.
 // The status control on each card does the same on touch and keyboard. Moves
 // show immediately and settle when the revalidated rows arrive.
 const STATUS_VIEW = "__status__";
 
 type Column = {
-  key: string; // "status:<S>" | "step:<id>" | "start" | "skip"
+  key: string; // "status:<S>" | "step:<id>" | "start" | "off:<S>"
   label: string;
   status: BookingStatus; // colours the header pill
 };
@@ -148,13 +149,17 @@ export function BookingBoard({
 
   const columns: Column[] = workflow
     ? [
-        { key: "start", label: "Not started", status: "PLANNED" },
+        { key: "start", label: "Not started", status: "PENDING" },
         ...workflow.steps.map((s) => ({
           key: `step:${s.id}`,
           label: s.label,
           status: s.status,
         })),
-        { key: "skip", label: BOOKING_STATUS_LABELS.NOT_NEEDED, status: "NOT_NEEDED" },
+        ...(["CANCELLED", "NOT_NEEDED"] as const).map((s) => ({
+          key: `off:${s}`,
+          label: BOOKING_STATUS_LABELS[s],
+          status: s,
+        })),
       ]
     : BOOKING_STATUSES.map((s) => ({
         key: `status:${s}`,
@@ -165,7 +170,7 @@ export function BookingBoard({
   const columnOf = (card: BoardCard): string => {
     const st = states.get(card.key) ?? { status: card.row.status, completions: [] };
     if (!workflow) return `status:${st.status}`;
-    if (st.status === "NOT_NEEDED") return "skip";
+    if (isBookingOff(st.status)) return `off:${st.status}`;
     // The latest step done, in workflow order.
     const done = new Set(st.completions);
     const last = [...workflow.steps].reverse().find((s) => done.has(s.id));
@@ -182,32 +187,38 @@ export function BookingBoard({
     const target = targetOf(card);
     let next: CardState;
     let call: () => Promise<FormState>;
-    if (columnKey === "skip" || columnKey === "status:NOT_NEEDED") {
-      next = { ...prev, status: "NOT_NEEDED" };
-      call = () => setBookingStatusFor(target, "NOT_NEEDED");
+    const offTo = columnKey.startsWith("off:")
+      ? (columnKey.slice(4) as BookingStatus)
+      : columnKey === "status:CANCELLED" || columnKey === "status:NOT_NEEDED"
+        ? (columnKey.slice(7) as BookingStatus)
+        : null;
+    if (offTo) {
+      next = { ...prev, status: offTo };
+      call = () => setBookingStatusFor(target, offTo);
     } else if (workflow && (columnKey === "start" || columnKey.startsWith("step:"))) {
       const stepId = columnKey === "start" ? null : columnKey.slice(5);
       const at = stepId ? workflow.steps.findIndex((s) => s.id === stepId) : -1;
       // Reaching a stage means every step up to it is done.
       next = {
-        status: "PLANNED", // re-derived from the steps on the server
+        status: "PENDING", // re-derived from the steps on the server
         completions: workflow.steps.slice(0, at + 1).map((s) => s.id),
       };
       const reached = workflow.steps
         .filter((s) => next.completions.includes(s.id))
         .reduce<BookingStatus>(
           (acc, s) => (BOOKING_STATUS_RANK[s.status] > BOOKING_STATUS_RANK[acc] ? s.status : acc),
-          "PLANNED",
+          "PENDING",
         );
       next.status = reached;
       call = () => setBookingStageAction(target, stepId);
     } else {
       const status = columnKey.slice(7) as BookingStatus;
-      if (workflowOf(card) && prev.status !== "NOT_NEEDED") {
+      if (workflowOf(card) && !isBookingOff(prev.status)) {
         toast.error("Set by workflow steps.");
         return;
       }
-      // Leaving "Not needed" on a workflow booking re-derives from its steps.
+      // Leaving "Cancelled" / "Not needed" on a workflow booking re-derives
+      // from its steps.
       next = { ...prev, status };
       call = () => setBookingStatusFor(target, status);
     }
@@ -454,7 +465,7 @@ function BoardCardView({
             <PriceCell row={venue} />
           </div>
           {/* Only the unbooked care when the window opens. */}
-          {status !== "NOT_NEEDED" && !isBookingSecured(status) ? (
+          {!isBookingOff(status) && !isBookingSecured(status) ? (
             <div className="text-xs">
               <WindowCell row={{ ...venue, status }} />
             </div>

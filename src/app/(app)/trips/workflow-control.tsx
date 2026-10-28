@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { BookingStatusPill } from "@/components/booking-status-pill";
 import { useId, useOptimistic, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -28,10 +28,11 @@ import {
   type BookingProgressView,
 } from "@/lib/booking-workflow";
 import {
-  bookingStatusVariant,
+  BOOKING_STATUS_FLOW,
   BOOKING_STATUS_LABELS,
   bookingStageText,
 } from "@/lib/trips";
+import { isBookingOff } from "@/lib/booking";
 import type { FormState } from "@/lib/forms";
 import {
   setBookingStatus,
@@ -45,28 +46,8 @@ const NONE = "__none__";
 
 type ProgressState = Omit<BookingProgressView, "exists" | "locationDefaultWorkflowId">;
 
-/** Read-only pill: the stage (or coarse status) coloured by coarse status. */
-export function BookingStagePill({
-  status,
-  stageLabel,
-  stageOn,
-  className,
-}: {
-  status: BookingStatus;
-  stageLabel?: string | null;
-  stageOn?: string | null;
-  className?: string;
-}) {
-  return (
-    <Badge
-      variant={bookingStatusVariant(status)}
-      className={className}
-      title={stageOn ? `Since ${formatDate(stageOn)}` : undefined}
-    >
-      {bookingStageText({ status, stageLabel })}
-    </Badge>
-  );
-}
+/** Read-only status: the master status pill, then its workflow stage. */
+export const BookingStagePill = BookingStatusPill;
 
 // "· 12d" — how long a booking has sat at its current stage while still being
 // chased (underway, not yet secured).
@@ -199,7 +180,7 @@ export function WorkflowControl({
         completions: [],
         stageLabel: null,
         stageOn: null,
-        ...(next && state.status !== "NOT_NEEDED" ? { status: "PLANNED" } : {}),
+        ...(next && !isBookingOff(state.status) ? { status: "PENDING" } : {}),
       },
       () => setBookingWorkflowAction(target, next),
     );
@@ -207,7 +188,7 @@ export function WorkflowControl({
 
   const doneOn = new Map(state.completions.map((c) => [c.stepId, c.completedOn]));
   const gate = stepGate(workflow?.steps ?? [], new Set(doneOn.keys()));
-  const notNeeded = state.status === "NOT_NEEDED";
+  const off = isBookingOff(state.status);
 
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -261,7 +242,8 @@ export function WorkflowControl({
                         htmlFor={id}
                         className={cn(
                           "flex-1 text-sm font-normal",
-                          s.status === "CONFIRMED" && "font-medium",
+                          (s.status === "CONFIRMED" || s.status === "FINALIZED") &&
+                            "font-medium",
                           on == null && locked && "text-muted-foreground",
                         )}
                       >
@@ -288,15 +270,15 @@ export function WorkflowControl({
             )
           ) : (
             <Select
-              value={notNeeded ? "PLANNED" : state.status}
+              value={off ? "PENDING" : state.status}
               onValueChange={(v) => setStatus(v as BookingStatus)}
-              disabled={pending || notNeeded}
+              disabled={pending || off}
             >
               <SelectTrigger size="sm" className="w-full" aria-label="Status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(["PLANNED", "IN_PROGRESS", "CONFIRMED"] as const).map((s) => (
+                {BOOKING_STATUS_FLOW.map((s) => (
                   <SelectItem key={s} value={s}>
                     {BOOKING_STATUS_LABELS[s]}
                   </SelectItem>
@@ -305,16 +287,22 @@ export function WorkflowControl({
             </Select>
           )}
 
-          <div className="flex items-center gap-2 border-t pt-2">
-            <Checkbox
-              id={`${uid}-not-needed`}
-              checked={notNeeded}
-              disabled={pending}
-              onCheckedChange={(v) => setStatus(v === true ? "NOT_NEEDED" : "PLANNED")}
-            />
-            <Label htmlFor={`${uid}-not-needed`} className="text-sm font-normal">
-              Not needed
-            </Label>
+          {/* The off-ladder overrides: either one, or neither (back in play —
+              a workflow booking re-derives its status from its steps). */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-2">
+            {(["CANCELLED", "NOT_NEEDED"] as const).map((s) => (
+              <div key={s} className="flex items-center gap-2">
+                <Checkbox
+                  id={`${uid}-${s}`}
+                  checked={state.status === s}
+                  disabled={pending}
+                  onCheckedChange={(v) => setStatus(v === true ? s : "PENDING")}
+                />
+                <Label htmlFor={`${uid}-${s}`} className="text-sm font-normal">
+                  {BOOKING_STATUS_LABELS[s]}
+                </Label>
+              </div>
+            ))}
           </div>
         </PopoverContent>
       </Popover>

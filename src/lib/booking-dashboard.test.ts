@@ -36,7 +36,7 @@ describe("buildDashboardRows — planned visits + workflow progress", () => {
     // Not engaged yet: the control previews the venue's default workflow.
     expect(row.progress).toMatchObject({
       exists: false,
-      status: "PLANNED",
+      status: "PENDING",
       locationDefaultWorkflowId: "wf-agreement",
     });
   });

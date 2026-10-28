@@ -151,7 +151,7 @@ export type InstantiatedVenueBooking = {
 
 /**
  * Deep-copy a trip/template's venue-engagement bookings into trip-level create-data.
- * Status is reset to PLANNED (the workflow is kept, its step progress is not) and
+ * Status is reset to PENDING (the workflow is kept, its step progress is not) and
  * the instance actuals (contact, confirmationRef, agreed price) are dropped — same reset policy as item bookings. The payment
  * schedule is kept (fixed installment amounts included; the planner adjusts those
  * if the next negotiation differs). Rows without a location are skipped
@@ -183,7 +183,7 @@ export function instantiateVenueBookings(
     locationId: venueId,
     label: b.label,
     notes: b.notes,
-    status: "PLANNED" as BookingStatus,
+    status: "PENDING" as BookingStatus,
     workflowId: b.workflowId ?? null,
     ...(b.paymentSchedule?.length
       ? {
@@ -211,7 +211,7 @@ export function instantiateVenueBookings(
  * - location links are carried over (re-ordered 0..n).
  * - rough-plan day locations (GH #9) carry over verbatim (re-ordered 0..n) as
  *   reusable planning intent, like schedule-item sites.
- * - bookings are carried over as planning intent but RESET: status → PLANNED
+ * - bookings are carried over as planning intent but RESET: status → PENDING
  *   (workflow kept, step progress dropped) and the instance-specific actuals (bookedContact, confirmationRef) are
  *   dropped by omission. Reusable text (label, notes) is kept.
  *
@@ -219,7 +219,7 @@ export function instantiateVenueBookings(
  * not propagate to trips already instantiated from it.
  */
 export type InstantiateOptions = {
-  // Copy item bookings (reset to PLANNED) as planning intent. Default true —
+  // Copy item bookings (reset to PENDING) as planning intent. Default true —
   // the template path. Duplicating a past trip passes false: last year's
   // coach booking is not this year's plan.
   bookings?: boolean;
@@ -284,7 +284,7 @@ export function instantiateDays(
                         locationId: b.locationId,
                         label: b.label,
                         notes: b.notes,
-                        status: "PLANNED" as BookingStatus,
+                        status: "PENDING" as BookingStatus,
                         workflowId: b.workflowId ?? null,
                       })),
                     },

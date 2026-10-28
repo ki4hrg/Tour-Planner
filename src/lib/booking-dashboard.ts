@@ -6,7 +6,12 @@ import type {
   TravelMethod,
 } from "@prisma/client";
 import { toDateInput, todayUtc } from "./dates";
-import { bookingWindow, bookingNeedsInfo, earliestCoveredDate } from "./booking";
+import {
+  bookingWindow,
+  bookingNeedsInfo,
+  earliestCoveredDate,
+  isBookingOff,
+} from "./booking";
 import {
   resolveSchedule,
   scheduleAttention,
@@ -546,10 +551,10 @@ export function buildDashboardRows(data: DashboardData): {
 
     const earliest = earliestCoveredDate(v.dates);
     const win = bookingWindow(earliest, loc?.bookingOpensLeadDays ?? null);
-    const status: BookingStatus = eng?.status ?? "PLANNED";
+    const status: BookingStatus = eng?.status ?? "PENDING";
     const progress = toProgress(eng, loc?.defaultWorkflowId, data.tripStartDate);
-    // Not-bookable sites and ones deliberately marked "not needed" never need attention.
-    const inPlay = bookable && status !== "NOT_NEEDED";
+    // Not-bookable sites and cancelled / not-needed engagements never need attention.
+    const inPlay = bookable && !isBookingOff(status);
 
     v.sessions.sort(
       (a, b) =>

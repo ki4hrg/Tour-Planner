@@ -149,11 +149,11 @@ describe("instantiateDays", () => {
     expect("presenters" in firstItem).toBe(false);
   });
 
-  it("resets bookings to PLANNED and keeps reusable text", () => {
+  it("resets bookings to PENDING and keeps reusable text", () => {
     const out = instantiateDays(sample, null);
     const firstItem = out[0].scheduleItems.create[0];
     const booking = firstItem.bookings!.create[0];
-    expect(booking.status).toBe("PLANNED");
+    expect(booking.status).toBe("PENDING");
     expect(booking.label).toBe("Hall hire");
     expect(booking.notes).toBe("call ahead");
     expect(booking.locationId).toBe("locX");

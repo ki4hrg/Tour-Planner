@@ -171,14 +171,18 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with its owner — actor US = us, VENUE = the venue — and whether and when it was done; step IDs feed set-booking-step), whose move it is (waiting: { actor US|VENUE, nextStep {id,label}, since, daysWaiting, dueOn, due } — the upcoming step's owner, how long since the last step was ticked (or since the booking was made), and when the step falls due: dueOn is the step's due offset counted back from the trip start (null = no set date) and due is false while that date is still ahead — such a step is not yet anyone's move; null when nothing is pending or no workflow), location, contact, confirmation reference, and money: priceLines (the itemized agreed price — [{label, amount, unit}], unit PER_PERSON or PER_GROUP) + agreedCurrency, agreedTotal (per-person lines × headcount + per-group lines; null with no lines, or per-person lines and no headcount), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with its owner — actor US = us, VENUE = the venue — and whether and when it was done; step IDs feed set-booking-step), whose move it is (waiting: { actor US|VENUE, nextStep {id,label}, since, daysWaiting, dueOn, due } — the upcoming step's owner, how long since the last step was ticked (or since the booking was made), and when the step falls due: dueOn is the step's due offset counted back from the trip start (null = no set date) and due is false while that date is still ahead — such a step is not yet anyone's move; null when nothing is pending or no workflow), location, contact, confirmation reference, and money: priceLines (the itemized agreed price — [{label, amount, unit}], unit PER_PERSON or PER_GROUP) + agreedCurrency, agreedTotal (per-person lines × headcount + per-group lines; null with no lines, or per-person lines and no headcount), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Optional status (one master status or an array — PENDING, IN_PROGRESS, CONFIRMED, FINALIZED, CANCELLED, NOT_NEEDED) narrows the list to those statuses whatever workflow stage each booking is at, e.g. every booking in progress. Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
-        status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
+        status: z
+          .union([z.enum(BOOKING_STATUSES_TUPLE), z.array(z.enum(BOOKING_STATUSES_TUPLE))])
+          .optional(),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ tripId, status }) => {
+    async ({ tripId, status: statusArg }) => {
+      const statuses = statusArg == null ? [] : Array.isArray(statusArg) ? statusArg : [statusArg];
+      const statusWhere = statuses.length ? { status: { in: statuses } } : {};
       try {
         if (!hasRole(user.role, "VIEWER")) {
           return {
@@ -195,7 +199,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const engagementBookings = await prisma.booking.findMany({
           where: {
             tripId,
-            ...(status ? { status: status as BookingStatus } : {}),
+            ...statusWhere,
           },
           include: {
             location: {
@@ -218,7 +222,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
         const itemBookings = await prisma.booking.findMany({
           where: {
             scheduleItem: { day: { tripId } },
-            ...(status ? { status: status as BookingStatus } : {}),
+            ...statusWhere,
           },
           include: {
             scheduleItem: {
@@ -327,7 +331,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Booking",
       description:
-        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it; a locationId that is booked via a parent venue (get-location's bookedVia) resolves to the PARENT's engagement, which is what is created/updated and returned as engagementLocationId) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. " +
+        "Create a booking. Provide EITHER tripId + locationId (a venue engagement covering every schedule item in the trip that visits that location, plus lodging there — idempotent: re-adding the same venue updates it; a locationId that is booked via a parent venue (get-location's bookedVia) resolves to the PARENT's engagement, which is what is created/updated and returned as engagementLocationId) OR scheduleItemId (a site-less reservation like a coach or travel leg, tied to one item — rejected if the item is at a venue, since the venue engagement already covers it). A venue booking is refused for a location marked not bookable, and a NEW engagement's payment schedule is pre-filled from the location's standing payment terms (see set-location-payment-schedule), and it starts on the location's default workflow (else the global default). Status is the master status: PENDING → IN_PROGRESS → CONFIRMED → FINALIZED, plus CANCELLED and NOT_NEEDED (off-ladder overrides). A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step (its stage is the substatus); on such a booking only CANCELLED / NOT_NEEDED (or leaving them) can be set directly. A booking without a workflow takes any status. bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. " +
         PRICE_LINES_DOC +
         " Log actual payments with add-payment.",
       inputSchema: {
@@ -524,7 +528,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
       description:
         "Update a booking's status, contact, confirmation reference, notes, booked-on date, or agreed price (priceLines + agreedCurrency; omit a field to leave it unchanged). " +
         PRICE_LINES_DOC +
-        " bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: record a confirmation reference number. Status is coarse: PLANNED, IN_PROGRESS, CONFIRMED, NOT_NEEDED. A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step; on such a booking only NOT_NEEDED (or leaving it) can be set directly. A booking without a workflow takes any status. To move a workflow booking along, use set-booking-step.",
+        " bookedOn (YYYY-MM-DD) is the date the engagement was booked — it anchors BOOKING-relative payment installments. Common use: record a confirmation reference number. Status is the master status: PENDING → IN_PROGRESS → CONFIRMED → FINALIZED, plus CANCELLED and NOT_NEEDED (off-ladder overrides). A booking on a workflow (see list-booking-workflows) derives its status from the workflow steps ticked with set-booking-step (its stage is the substatus); on such a booking only CANCELLED / NOT_NEEDED (or leaving them) can be set directly. A booking without a workflow takes any status. To move a workflow booking along, use set-booking-step.",
       inputSchema: {
         bookingId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -614,7 +618,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Booking Workflows",
       description:
-        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED) and its owner (actor: US = our move, e.g. 'Sign agreement'; VENUE = waiting on the venue, e.g. 'Availability confirmed'), and optionally when it falls due (dueOffsetValue dueOffsetUnits — DAY|WEEK|MONTH — before the trip's start date, described in `due`; a step with no offset is due as soon as it is next). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
+        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the master status a booking reaches once it is done (IN_PROGRESS, CONFIRMED or FINALIZED) — steps are a workflow's substatuses and its owner (actor: US = our move, e.g. 'Sign agreement'; VENUE = waiting on the venue, e.g. 'Availability confirmed'), and optionally when it falls due (dueOffsetValue dueOffsetUnits — DAY|WEEK|MONTH — before the trip's start date, described in `due`; a step with no offset is due as soon as it is next). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -711,7 +715,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "Set Booking Workflow",
       description:
-        "Put a booking on a different workflow (workflowId from list-booking-workflows), or pass workflowId: null to take it off workflows (its status is then set directly with update-booking). Needs bookingId from list-bookings. Clears the steps ticked under the old workflow and restarts the status at PLANNED (unless NOT_NEEDED). Returns the booking's resulting status and stage.",
+        "Put a booking on a different workflow (workflowId from list-booking-workflows), or pass workflowId: null to take it off workflows (its status is then set directly with update-booking). Needs bookingId from list-bookings. Clears the steps ticked under the old workflow and restarts the status at PENDING (unless CANCELLED or NOT_NEEDED). Returns the booking's resulting status and stage.",
       inputSchema: {
         bookingId: z.string(),
         workflowId: z.string().nullable(),

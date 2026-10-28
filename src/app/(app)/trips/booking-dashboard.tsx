@@ -20,9 +20,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { BookingStatus } from "@prisma/client";
 import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
+import {
+  BOOKING_STATUS_LABELS,
+  BOOKING_STATUSES,
+  countByStatus,
+  parseBookingStatuses,
+} from "@/lib/trips";
+import { BookingStatusChips } from "@/components/booking-status-chips";
 import type { SerializedDocument } from "@/lib/documents";
-import { isBookingSecured } from "@/lib/booking";
+import { isBookingOff, isBookingSecured } from "@/lib/booking";
 import { isYourMove } from "@/lib/cross-trip-bookings";
 import { VenueRow, ItemRow, VenueCard, ItemCard } from "./booking-row";
 import { BookingBoard } from "./booking-board";
@@ -32,9 +40,11 @@ export type DashboardView = "table" | "board" | "progress";
 
 // Table order + grouping, both kept in the URL (`?sort=`, `?group=`) like the
 // view. Rows come from the server in booking-window order (earliest-bookable
-// first, no window last), which stays the default.
+// first, no window last), which stays the default. The master-status filter
+// (`?status=IN_PROGRESS,CONFIRMED`) narrows the table and the Progress view
+// to those statuses whatever workflow stage each booking is at.
 export type DashboardSort = "window" | "name" | "day";
-export type DashboardGroup = "none" | "type" | "region";
+export type DashboardGroup = "none" | "status" | "type" | "region";
 
 const SORT_LABELS: Record<DashboardSort, string> = {
   window: "Booking window",
@@ -43,6 +53,7 @@ const SORT_LABELS: Record<DashboardSort, string> = {
 };
 const GROUP_LABELS: Record<DashboardGroup, string> = {
   none: "No grouping",
+  status: "Status",
   type: "Visit type",
   region: "Region",
 };
@@ -59,12 +70,20 @@ function sortVenues(rows: VenueBookingRow[], sort: DashboardSort): VenueBookingR
   );
 }
 
-// Group label per row; "Lodging" leads a type grouping, regions sort A–Z with
-// unregioned venues last.
+// Group label per row; statuses follow the ladder (walk-bys, which have none,
+// last), "Lodging" leads a type grouping, regions sort A–Z with unregioned
+// venues last.
+const WALK_BY = "Walk-by";
 function groupOf(row: VenueBookingRow, group: DashboardGroup): string {
+  if (group === "status")
+    return row.bookable ? BOOKING_STATUS_LABELS[row.status] : WALK_BY;
   if (group === "region") return row.regionName ?? "No region";
   return row.visitType;
 }
+const STATUS_GROUP_ORDER = [
+  ...BOOKING_STATUSES.map((st) => BOOKING_STATUS_LABELS[st]),
+  WALK_BY,
+];
 function groupVenues(
   rows: VenueBookingRow[],
   group: DashboardGroup,
@@ -76,7 +95,9 @@ function groupVenues(
     map.set(key, [...(map.get(key) ?? []), r]);
   }
   const rank = (label: string) =>
-    group === "type"
+    group === "status"
+      ? STATUS_GROUP_ORDER.indexOf(label)
+      : group === "type"
       ? label === "Lodging"
         ? 0
         : label === "Planned"
@@ -100,6 +121,14 @@ type Filters = {
   yourMove: boolean;
 };
 
+const NO_FILTERS: Filters = {
+  windowOpen: false,
+  missingPrice: false,
+  unconfirmed: false,
+  paymentOverdue: false,
+  yourMove: false,
+};
+
 const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
   { key: "windowOpen", label: "Window open" },
   { key: "missingPrice", label: "Missing price" },
@@ -109,8 +138,8 @@ const FILTER_LABELS: { key: keyof Filters; label: string }[] = [
 ];
 
 function venueMatches(row: VenueBookingRow, f: Filters): boolean {
-  // Not-bookable sites and ones marked "not needed" are never actionable.
-  if (!row.bookable || row.status === "NOT_NEEDED") return false;
+  // Not-bookable sites and cancelled / not-needed ones are never actionable.
+  if (!row.bookable || isBookingOff(row.status)) return false;
   return (
     (f.windowOpen && row.open && !isBookingSecured(row.status)) ||
     (f.missingPrice && row.isMissingCost) ||
@@ -157,7 +186,10 @@ export function BookingDashboard({
     sortParam === "name" || sortParam === "day" ? sortParam : "window";
   const groupParam = searchParams.get("group");
   const group: DashboardGroup =
-    groupParam === "type" || groupParam === "region" ? groupParam : "none";
+    groupParam === "status" || groupParam === "type" || groupParam === "region"
+      ? groupParam
+      : "none";
+  const statuses = parseBookingStatuses(searchParams.get("status"));
   const setParam = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value == null) params.delete(key);
@@ -171,13 +203,22 @@ export function BookingDashboard({
     (bookingId && documentsByBooking[bookingId]) || [];
   const focused = focusLocationId != null &&
     venueRows.some((r) => r.locationId === focusLocationId);
+  // A deep link to one venue or to a status starts with the attention filters
+  // off, so every row it names shows.
+  const attentionOn = !focused && statuses.length === 0;
   const [filters, setFilters] = useState<Filters>({
-    windowOpen: !focused,
-    missingPrice: !focused,
-    unconfirmed: !focused,
-    paymentOverdue: !focused,
-    yourMove: !focused,
+    windowOpen: attentionOn,
+    missingPrice: attentionOn,
+    unconfirmed: attentionOn,
+    paymentOverdue: attentionOn,
+    yourMove: attentionOn,
   });
+  const setStatuses = (next: BookingStatus[]) => {
+    setParam("status", next.length ? next.join(",") : null);
+    // Picking a status means "show me those": the attention filters would
+    // hide most of them (a finalized booking needs nothing), so clear them.
+    if (next.length) setFilters(NO_FILTERS);
+  };
 
   useEffect(() => {
     if (!focused) return;
@@ -190,17 +231,30 @@ export function BookingDashboard({
   }, [focused, focusLocationId]);
   const anyFilter = Object.values(filters).some(Boolean);
 
+  // Master-status counts over everything that has a status (walk-bys don't).
+  const statusCounts = countByStatus([
+    ...venueRows.filter((r) => r.bookable),
+    ...itemRows,
+  ]);
+  const statusOk = (r: { status: BookingStatus }) =>
+    statuses.length === 0 || statuses.includes(r.status);
+  const statusVenues =
+    statuses.length === 0
+      ? venueRows
+      : venueRows.filter((r) => r.bookable && statusOk(r));
+  const statusItems = itemRows.filter(statusOk);
+
   // No filter checked = show everything; otherwise show rows matching any filter.
   const shownVenues = anyFilter
-    ? venueRows.filter((r) => venueMatches(r, filters))
-    : venueRows;
+    ? statusVenues.filter((r) => venueMatches(r, filters))
+    : statusVenues;
   const shownItems = anyFilter
-    ? itemRows.filter(
+    ? statusItems.filter(
         (r) =>
-          (filters.unconfirmed && !isBookingSecured(r.status)) ||
+          (filters.unconfirmed && !isBookingOff(r.status) && !isBookingSecured(r.status)) ||
           (filters.yourMove && isYourMove(r)),
       )
-    : itemRows;
+    : statusItems;
 
   const total = venueRows.length + itemRows.length;
   const shown = shownVenues.length + shownItems.length;
@@ -237,15 +291,24 @@ export function BookingDashboard({
     </Tabs>
   );
 
+  const statusChips = (
+    <BookingStatusChips
+      counts={statusCounts}
+      selected={statuses}
+      onChange={setStatuses}
+    />
+  );
+
   if (view === "progress") {
     return (
       <div className="space-y-3">
         <div className="flex">{viewToggle}</div>
+        {statusChips}
         <BookingProgress
           tripId={tripId}
           canEdit={canEdit}
-          venueRows={venueRows}
-          itemRows={itemRows}
+          venueRows={statusVenues}
+          itemRows={statusItems}
         />
       </div>
     );
@@ -286,11 +349,12 @@ export function BookingDashboard({
           </label>
         ))}
         <span className="ml-auto text-xs text-muted-foreground">
-          {anyFilter
+          {anyFilter || statuses.length
             ? `${shown} of ${total} shown`
             : `All ${total} venues`}
         </span>
       </div>
+      {statusChips}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         <label className="flex items-center gap-1.5">
           <span className="text-muted-foreground">Sort</span>

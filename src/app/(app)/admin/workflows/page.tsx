@@ -28,7 +28,11 @@ export default async function WorkflowsPage() {
           steps: w.steps.map((s) => ({
             id: s.id,
             label: s.label,
-            status: s.status === "CONFIRMED" ? "CONFIRMED" : "IN_PROGRESS",
+            // The DB CHECK keeps steps to these; anything else reads as underway.
+            status:
+              s.status === "CONFIRMED" || s.status === "FINALIZED"
+                ? s.status
+                : "IN_PROGRESS",
             actor: s.actor,
             dueOffsetValue: s.dueOffsetValue,
             dueOffsetUnit: s.dueOffsetUnit,

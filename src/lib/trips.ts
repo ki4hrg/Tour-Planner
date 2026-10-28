@@ -112,55 +112,130 @@ export function tripStillInPlayWhere(today: Date): Prisma.TripWhereInput {
 }
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
-  PLANNED: "Planned",
+  PENDING: "Pending",
   IN_PROGRESS: "In progress",
   CONFIRMED: "Confirmed",
+  FINALIZED: "Finalized",
+  CANCELLED: "Cancelled",
   NOT_NEEDED: "Not needed",
 };
 
-export const BOOKING_STATUSES = Object.keys(
-  BOOKING_STATUS_LABELS,
-) as BookingStatus[];
+/** Every master status in display order: the ladder, then the two off it. */
+export const BOOKING_STATUSES: BookingStatus[] = [
+  "PENDING",
+  "IN_PROGRESS",
+  "CONFIRMED",
+  "FINALIZED",
+  "CANCELLED",
+  "NOT_NEEDED",
+];
+
+/** The master-status ladder a booking climbs (workflow steps map onto it). */
+export const BOOKING_STATUS_FLOW: BookingStatus[] = [
+  "PENDING",
+  "IN_PROGRESS",
+  "CONFIRMED",
+  "FINALIZED",
+];
+
+/**
+ * Parse a `?status=` param ("IN_PROGRESS,CONFIRMED") into known statuses.
+ * The pre-rename "PLANNED" still reads as PENDING so old links keep working.
+ */
+export function parseBookingStatuses(param: string | null | undefined): BookingStatus[] {
+  if (!param) return [];
+  const out = new Set<BookingStatus>();
+  for (const raw of param.split(",")) {
+    const v = raw.trim().toUpperCase();
+    const s = (v === "PLANNED" ? "PENDING" : v) as BookingStatus;
+    if (BOOKING_STATUSES.includes(s)) out.add(s);
+  }
+  return BOOKING_STATUSES.filter((s) => out.has(s));
+}
+
+/** How many rows sit at each master status (every status present, zeros included). */
+export function countByStatus(rows: { status: BookingStatus }[]): Record<BookingStatus, number> {
+  const counts = Object.fromEntries(BOOKING_STATUSES.map((s) => [s, 0])) as Record<
+    BookingStatus,
+    number
+  >;
+  for (const r of rows) counts[r.status]++;
+  return counts;
+}
 
 // Tailwind classes for a booking-status pill (matches Badge usage).
-// PLANNED is the neutral baseline, so it stays neutral: amber is reserved for
+// PENDING is the neutral baseline, so it stays neutral: amber is reserved for
 // "we must act" cues (Your move, stale, no price) and must not also mean
 // "nothing done yet", or the alarm stops reading as one. IN_PROGRESS takes
-// the palette's primary tint rather than an off-palette blue.
+// the palette's primary tint rather than an off-palette blue. FINALIZED is the
+// solid form of CONFIRMED's emerald; CANCELLED is an outline so it reads apart
+// from NOT_NEEDED's fill without borrowing the overdue red.
 export const BOOKING_STATUS_CLASSES: Record<BookingStatus, string> = {
-  PLANNED: "bg-secondary text-secondary-foreground",
+  PENDING: "bg-secondary text-secondary-foreground",
   IN_PROGRESS: "bg-primary/10 text-primary dark:bg-primary/20",
   CONFIRMED:
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  FINALIZED: "bg-emerald-700 text-white dark:bg-emerald-600",
+  CANCELLED: "border-border text-muted-foreground",
   NOT_NEEDED: "bg-muted text-muted-foreground",
 };
 
+export type BookingStatusVariant =
+  | "planned"
+  | "progress"
+  | "confirmed"
+  | "finalized"
+  | "cancelled"
+  | "muted";
+
 /** The `<Badge variant>` for a booking status (same palette as BOOKING_STATUS_CLASSES). */
-export function bookingStatusVariant(
-  status: BookingStatus,
-): "planned" | "progress" | "confirmed" | "muted" {
+export function bookingStatusVariant(status: BookingStatus): BookingStatusVariant {
   switch (status) {
-    case "PLANNED":
+    case "PENDING":
       return "planned";
     case "IN_PROGRESS":
       return "progress";
     case "CONFIRMED":
       return "confirmed";
+    case "FINALIZED":
+      return "finalized";
+    case "CANCELLED":
+      return "cancelled";
     default:
       return "muted";
   }
 }
 
 /**
- * What a booking's pill reads: its workflow stage ("Availability confirmed")
- * when it has one, else the coarse status. NOT_NEEDED always wins.
+ * The substatus worth showing beside the master status: the workflow stage
+ * (the latest step done), unless the booking is off the ladder (cancelled /
+ * not needed — the stage is history then) or the stage just repeats the
+ * master label.
+ */
+export function bookingSubstatus(b: {
+  status: BookingStatus;
+  stageLabel?: string | null;
+}): string | null {
+  if (b.status === "CANCELLED" || b.status === "NOT_NEEDED") return null;
+  const stage = b.stageLabel?.trim();
+  if (!stage || stage.toLowerCase() === BOOKING_STATUS_LABELS[b.status].toLowerCase())
+    return null;
+  return stage;
+}
+
+/**
+ * What a booking's status reads as text: the master status, then its
+ * workflow stage — "In progress · Availability confirmed". Off-ladder
+ * statuses read alone.
  */
 export function bookingStageText(b: {
   status: BookingStatus;
   stageLabel?: string | null;
 }): string {
-  if (b.status === "NOT_NEEDED") return BOOKING_STATUS_LABELS.NOT_NEEDED;
-  return b.stageLabel ?? BOOKING_STATUS_LABELS[b.status];
+  const sub = bookingSubstatus(b);
+  return sub
+    ? `${BOOKING_STATUS_LABELS[b.status]} · ${sub}`
+    : BOOKING_STATUS_LABELS[b.status];
 }
 
 // --- Serialization (Date → "yyyy-mm-dd" strings for Client Components) ---

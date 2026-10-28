@@ -4,6 +4,8 @@ import {
   windowStatus,
   earliestCoveredDate,
   bookingNeedsInfo,
+  isBookingOff,
+  isBookingSecured,
 } from "./booking";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -69,7 +71,7 @@ describe("earliestCoveredDate", () => {
 
 describe("bookingNeedsInfo", () => {
   const base = {
-    status: "PLANNED" as const,
+    status: "PENDING" as const,
     windowOpen: false,
     hasRef: true,
     isMissingCost: false,
@@ -117,5 +119,29 @@ describe("bookingNeedsInfo", () => {
   });
   it("is quiet when everything is in order", () => {
     expect(bookingNeedsInfo({ ...base, status: "CONFIRMED" })).toBe(false);
+  });
+});
+
+describe("master statuses", () => {
+  it("treats CONFIRMED and FINALIZED as secured", () => {
+    expect(isBookingSecured("CONFIRMED")).toBe(true);
+    expect(isBookingSecured("FINALIZED")).toBe(true);
+    expect(isBookingSecured("IN_PROGRESS")).toBe(false);
+    expect(isBookingSecured("CANCELLED")).toBe(false);
+  });
+
+  it("CANCELLED and NOT_NEEDED are off the ladder and never need info", () => {
+    expect(isBookingOff("CANCELLED")).toBe(true);
+    expect(isBookingOff("NOT_NEEDED")).toBe(true);
+    expect(isBookingOff("PENDING")).toBe(false);
+    const ask = {
+      windowOpen: true,
+      hasRef: false,
+      isMissingCost: true,
+      isMissingTime: true,
+      paymentOverdue: true,
+    };
+    expect(bookingNeedsInfo({ ...ask, status: "CANCELLED" })).toBe(false);
+    expect(bookingNeedsInfo({ ...ask, status: "PENDING" })).toBe(true);
   });
 });

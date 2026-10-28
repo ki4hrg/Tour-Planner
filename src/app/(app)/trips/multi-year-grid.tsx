@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
-import { isBookingSecured } from "@/lib/booking";
+import { isBookingOff, isBookingSecured } from "@/lib/booking";
 import type { VenueBookingRow } from "@/lib/booking-dashboard";
 import { WorkflowControl } from "./workflow-control";
 
@@ -77,7 +77,7 @@ function Cell({
       <div className="text-xs text-muted-foreground">
         {isBookingSecured(row.status)
           ? "Booked"
-          : row.status === "NOT_NEEDED" || row.earliest == null
+          : isBookingOff(row.status) || row.earliest == null
             ? "—"
             : row.open
               ? "Open now"

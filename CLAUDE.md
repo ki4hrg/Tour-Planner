@@ -59,7 +59,7 @@ days the item keeps its times and lands by them), `move-planned-location` (P).
 Shared logic: `src/lib/itinerary-mutations.ts`.
 
 **bookings.ts** — `list-bookings` (V, venue-engagement + site-less item bookings,
-incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting, `dueOn`/`due` (step due offsets) — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
+optional `status` filter (one master status or an array), incl. `priceLines` + `agreedTotal` (per-person lines × headcount + per-group lines) + paid total + workflow progress + `waiting` — whose move: next step, its actor, days waiting, `dueOn`/`due` (step due offsets) — + the engaged venue's `coveredSites`), `add-booking` (P, upserts the `(trip, location)`
 engagement — a booked-via child resolves to its parent's (returns `engagementLocationId`) —
 refuses not-bookable venues, seeds standing terms + default workflow on create; item target
 only for site-less items; idempotent; takes `bookedOn` + `agreedCurrency` + `priceLines`
@@ -271,8 +271,9 @@ npm test                          # vitest
   (one copy; it catches a save that never reaches the server and keeps the form
   open). Every mutation button is `disabled={pending}`; anything over ~300ms
   shows a `Loader2 animate-spin`. `src/app/(app)/error.tsx` is the backstop.
-- **Status colours**: PLANNED = `secondary` (neutral), IN_PROGRESS = `primary/10`,
-  CONFIRMED = emerald, NOT_NEEDED = muted (`BOOKING_STATUS_CLASSES`). **Amber means
+- **Status colours**: PENDING = `secondary` (neutral), IN_PROGRESS = `primary/10`,
+  CONFIRMED = emerald, FINALIZED = solid emerald, CANCELLED = outline, NOT_NEEDED =
+  muted (`BOOKING_STATUS_CLASSES` / the Badge variants). **Amber means
   "we must act"** ("Next for you", needs-info, stale, no price) and nothing else;
   positive facts ("Open now", "agreed", "paid") are emerald or plain foreground.
   One red: overdue money and missing lodging use `text-destructive`, not
@@ -312,14 +313,16 @@ npm test                          # vitest
   overview keeps the itinerary panel (every venue mention links to its booking
   row via `bookingDashboardHref`, with `VenueEngagementStatus` beside timed stops
   and rough-plan locations — the page wraps the panel in a
-  `VenueEngagementsProvider`), Lodging, Details and one **Finance** card.
+  `VenueEngagementsProvider`), Lodging, Details, a **Bookings** card (master-status
+  counts, each linking to the tab filtered to it) and one **Finance** card.
 - **Finance (`src/lib/trip-finance.ts`, pure + unit-tested; `trip-finance.server.ts`
   loads)**: `buildTripFinance` answers two questions per currency — the ESTIMATE
   (what the trip will likely cost, by source: a venue engagement with an agreed
   price counts at that total and drops its list price + stays; otherwise the venue's
   list price in force for the trip's start (`effectiveCosts`) × headcount, each stay
-  at its nightly rate, and site-less item bookings at their agreed price; NOT_NEEDED
-  venues count nothing) and the COMMITMENTS (every booking with an agreed price or a
+  at its nightly rate, and site-less item bookings at their agreed price; a
+  CANCELLED / NOT_NEEDED booking counts only what was already paid on it, owes
+  nothing, and its venue's list price + stays drop out) and the COMMITMENTS (every booking with an agreed price or a
   payment: balance, schedule, overdue/next due). `FinanceCard` on the overview shows
   the roll-up; the Finance tab (`trips/[id]/finance`) shows every line with its
   source and a link, the commitments table and what is unpriced.
@@ -348,8 +351,10 @@ npm test                          # vitest
   · from 12 Mar 2027" instead of amber. `BookingProgressView.tripStartDate` feeds
   the client controls — every `progressView(...)` call passes the trip's start.
 - **Bookings tab table**: rows arrive in booking-window order (default); the
-  Sort (window / venue / first visit) and Group (none / visit type / region)
-  selects live in the URL (`?sort=`, `?group=`). `VenueBookingRow.visitType`
+  Sort (window / venue / first visit) and Group (none / status / visit type /
+  region) selects live in the URL (`?sort=`, `?group=`), as does the master-status
+  filter (`?status=IN_PROGRESS,CONFIRMED`, `BookingStatusChips`), which narrows the
+  table and the Progress view and clears the attention checkboxes when picked. `VenueBookingRow.visitType`
   ("Lodging" when the engagement covers nights, else the most common session
   category, "Planned" for rough-plan-only), `regionName` and `firstDayIndex` come
   from the builder; the expanded row lists the covered `stays` beside the sessions.
@@ -505,14 +510,27 @@ npm test                          # vitest
   `anchor`/`offsetValue`/`offsetUnit` shape (+ `location_payment_schedule_anchor`
   CHECK); a `BOOKING`/`NONE` term resolves per engagement once seeded onto a real
   booking, and like booking schedules a term is "unscheduled" until it lands on one.
+- **Master statuses**: `BookingStatus` is one normalized ladder every workflow maps
+  onto — `PENDING → IN_PROGRESS → CONFIRMED → FINALIZED` (`BOOKING_STATUS_FLOW`),
+  plus the off-ladder overrides `CANCELLED` and `NOT_NEEDED` (`isBookingOff`: never
+  actionable, never owed). A workflow's steps are its **substatuses**: every surface
+  shows the master status pill first and the stage beside it (`BookingStatusPill`,
+  `bookingStageText` → "In progress · Requested", `bookingSubstatus`), so the same
+  state reads the same across workflows. `isBookingSecured` = CONFIRMED or FINALIZED.
+  Views filter/group by master status, never by stage label: the Bookings tab
+  (`?status=`, Group "Status"), the board's Status columns, the cross-trip
+  `/bookings?status=` (`filterGroupsByStatus`), the overview Bookings card and the
+  home card's status counts (`countByStatus`, `BookingStatusChips`), MCP
+  `list-bookings` `status`. `parseBookingStatuses` still reads the pre-rename
+  `PLANNED` as PENDING.
 - **Booking workflows**: admin-defined milestone ladders (`BookingWorkflow` →
   ordered `BookingWorkflowStep`s, edited at `/admin/workflows`) that a booking moves
   through — "Booking agreement", "Tickets only", "Site visit with meal". A booking
   has at most one (`Booking.workflowId`); ticking a step writes a dated
-  `BookingStepCompletion` (planner-editable `completedOn`). `BookingStatus` is now
-  coarse — `PLANNED | IN_PROGRESS | CONFIRMED | NOT_NEEDED` — and on a workflow
+  `BookingStepCompletion` (planner-editable `completedOn`). `BookingStatus` is the
+  **master status** (see below) and on a workflow
   booking it is **derived**: each step names the status it reaches (DB CHECK
-  `booking_workflow_step_status`: IN_PROGRESS or CONFIRMED), the booking's status is
+  `booking_workflow_step_status`: IN_PROGRESS, CONFIRMED or FINALIZED), the booking's status is
   the furthest any completed step reaches, and `stageLabel`/`stageOn` = the latest
   step done. Steps are **sequential**: a step can be done only once every earlier
   step is, and undone only while no later step is (`stepGate`/`stepGateError`,
@@ -520,7 +538,8 @@ npm test                          # vitest
   **stored** (so filters stay column reads) and recomputed by every write that
   changes them — all such writes go through `src/lib/booking-workflow-sync.ts`
   (MCP-safe; pure resolver `resolveBookingProgress` in `src/lib/booking-workflow.ts`,
-  unit-tested). `NOT_NEEDED` is a manual override steps never clear; a booking with
+  unit-tested). `CANCELLED` / `NOT_NEEDED` are manual overrides steps never clear
+  (`isBookingOff`); a booking with
   no workflow takes its status by hand. New bookings start on the location's
   `defaultWorkflowId`, else the global `isDefault` workflow (`seedWorkflowFor`, at
   every create point incl. `ensureVenueEngagement` + template instantiation, where

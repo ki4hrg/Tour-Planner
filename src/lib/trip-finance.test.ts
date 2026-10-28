@@ -252,3 +252,40 @@ describe("buildTripFinance commitments and dues", () => {
     expect(f.money[0]).toMatchObject({ agreed: 0, paid: 50, outstanding: 0 });
   });
 });
+
+describe("buildTripFinance off-ladder bookings", () => {
+  const engagement = (status: "CANCELLED" | "NOT_NEEDED", paid: number[]) => ({
+    id: "eng",
+    locationId: "sarum",
+    label: null,
+    status,
+    stageLabel: "Contract signed",
+    agreedCurrency: "GBP",
+    priceLines: [{ label: "Package", amount: 5000, unit: "PER_GROUP" as const }],
+    payments: paid,
+    paymentSchedule: [],
+    bookedOn: d("2026-09-01"),
+    createdAt: d("2026-09-01"),
+    item: null,
+  });
+
+  it("a cancelled engagement counts only what was paid and owes nothing", () => {
+    const f = buildTripFinance({ ...base, bookings: [engagement("CANCELLED", [500])] });
+    const gbp = f.estimate[0];
+    const keys = gbp.lines.map((l) => l.key);
+    // Its list price and stay drop out; the paid deposit stays.
+    expect(keys).not.toContain("list:sarum:GBP");
+    expect(keys).not.toContain("stay:s1");
+    expect(gbp.lines.find((l) => l.key === "agreed:eng")?.amount).toBe(500);
+    const c = f.commitments.find((x) => x.key === "v:eng");
+    expect(c?.outstanding).toBe(0);
+    expect(c?.agreedTotal).toBe(500);
+    expect(f.money[0].outstanding).toBe(0);
+  });
+
+  it("an unpaid not-needed engagement drops out entirely", () => {
+    const f = buildTripFinance({ ...base, bookings: [engagement("NOT_NEEDED", [])] });
+    expect(f.commitments).toEqual([]);
+    expect(f.estimate[0].lines.map((l) => l.key)).not.toContain("agreed:eng");
+  });
+});

@@ -25,9 +25,9 @@ const steps = [
 ];
 
 describe("resolveBookingProgress", () => {
-  it("is PLANNED with no stage when nothing is done", () => {
-    expect(resolveBookingProgress(steps, [], "PLANNED")).toEqual({
-      status: "PLANNED",
+  it("is PENDING with no stage when nothing is done", () => {
+    expect(resolveBookingProgress(steps, [], "PENDING")).toEqual({
+      status: "PENDING",
       stageLabel: null,
       stageOn: null,
     });
@@ -40,7 +40,7 @@ describe("resolveBookingProgress", () => {
         { stepId: "avail", completedOn: d("2026-11-03") },
         { stepId: "contact", completedOn: d("2026-10-20") },
       ],
-      "PLANNED",
+      "PENDING",
     );
     expect(p.status).toBe("IN_PROGRESS");
     expect(p.stageLabel).toBe("Availability confirmed");
@@ -78,7 +78,7 @@ describe("resolveBookingProgress", () => {
       [{ stepId: "other", completedOn: d("2026-10-01") }],
       "CONFIRMED",
     );
-    expect(p).toEqual({ status: "PLANNED", stageLabel: null, stageOn: null });
+    expect(p).toEqual({ status: "PENDING", stageLabel: null, stageOn: null });
   });
 });
 
@@ -94,7 +94,7 @@ describe("nextStep", () => {
 describe("upcomingStep", () => {
   const done = (...ids: string[]) => ids.map((stepId) => ({ stepId }));
   it("starts at the first step", () => {
-    expect(upcomingStep(steps, [], "PLANNED")?.id).toBe("contact");
+    expect(upcomingStep(steps, [], "PENDING")?.id).toBe("contact");
   });
   it("is the step after the latest done one", () => {
     expect(upcomingStep(steps, done("contact", "avail"), "IN_PROGRESS")?.label).toBe(
@@ -123,7 +123,7 @@ describe("waitingOn", () => {
   const at = (stepId: string, on: string) => ({ stepId, completedOn: d(on) });
 
   it("is our move on the first step, waiting since the booking opened", () => {
-    expect(waitingOn(owned, [], "PLANNED", d("2026-10-01"))).toMatchObject({
+    expect(waitingOn(owned, [], "PENDING", d("2026-10-01"))).toMatchObject({
       step: { id: "contact" },
       actor: "US",
       since: d("2026-10-01"),
@@ -153,7 +153,7 @@ describe("waitingOn", () => {
     expect(w?.since).toEqual(d("2026-10-20"));
   });
   it("ignores completions from another workflow; a missing actor reads as US", () => {
-    const w = waitingOn(steps, [at("stale", "2026-10-25")], "PLANNED", null);
+    const w = waitingOn(steps, [at("stale", "2026-10-25")], "PENDING", null);
     expect(w).toEqual({ step: steps[0], actor: "US", since: null, dueOn: null });
   });
   it("is null when nothing is pending", () => {
@@ -245,7 +245,7 @@ describe("step due offsets", () => {
     expect(isDue(w, d("2026-10-27"))).toBe(false);
     expect(isDue(w, d("2027-05-12"))).toBe(true);
     // Without a trip start the offset can't resolve: due now.
-    expect(waitingOn(dated, [], "PLANNED", null, null)?.dueOn).toBeNull();
+    expect(waitingOn(dated, [], "PENDING", null, null)?.dueOn).toBeNull();
     expect(isDue(null, d("2026-10-27"))).toBe(true);
   });
   it("waitingFromView reads the start date off the progress view", () => {
@@ -254,7 +254,7 @@ describe("step due offsets", () => {
     );
     const w = waitingFromView(
       dated,
-      { status: "PLANNED", completions: [], openedOn: null, tripStartDate: "2028-07-10" },
+      { status: "PENDING", completions: [], openedOn: null, tripStartDate: "2028-07-10" },
       d("2026-10-27"),
     );
     expect(w?.dueOn).toEqual(d("2027-07-10"));
@@ -317,5 +317,38 @@ describe("stepGateError", () => {
   });
   it("rejects a step from another workflow", () => {
     expect(stepGateError(steps, done, "nope", true)).toMatch(/isn't part/);
+  });
+});
+
+describe("master statuses: FINALIZED steps and off-ladder overrides", () => {
+  const ladder = [
+    { id: "req", label: "Requested", sortOrder: 0, status: "IN_PROGRESS" as const },
+    { id: "ok", label: "Contract signed", sortOrder: 1, status: "CONFIRMED" as const },
+    { id: "final", label: "Final numbers sent", sortOrder: 2, status: "FINALIZED" as const },
+  ];
+  const all = [
+    { stepId: "req", completedOn: d("2026-10-01") },
+    { stepId: "ok", completedOn: d("2026-10-10") },
+    { stepId: "final", completedOn: d("2027-06-01") },
+  ];
+
+  it("a FINALIZED step lifts the booking to FINALIZED", () => {
+    expect(resolveBookingProgress(ladder, all, "CONFIRMED").status).toBe("FINALIZED");
+    expect(resolveBookingProgress(ladder, all.slice(0, 2), "PENDING").status).toBe(
+      "CONFIRMED",
+    );
+  });
+
+  it("CANCELLED is an override the steps never clear, like NOT_NEEDED", () => {
+    const p = resolveBookingProgress(ladder, all.slice(0, 2), "CANCELLED");
+    expect(p.status).toBe("CANCELLED");
+    // The stage still tracks, so reinstating restores it.
+    expect(p.stageLabel).toBe("Contract signed");
+    expect(resolveBookingProgress(ladder, [], "NOT_NEEDED").status).toBe("NOT_NEEDED");
+  });
+
+  it("a cancelled booking has no upcoming step", () => {
+    expect(upcomingStep(ladder, [{ stepId: "req" }], "CANCELLED")).toBeNull();
+    expect(upcomingStep(ladder, [{ stepId: "req" }], "IN_PROGRESS")?.id).toBe("ok");
   });
 });
