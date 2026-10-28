@@ -30,10 +30,17 @@ export const metadata: Metadata = {
   description: "Plan pilgrimage trips, locations, and itineraries.",
   applicationName: "Tour Planner",
   appleWebApp: { capable: true, title: "Tours", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: "#2e5e4e",
   width: "device-width",
   initialScale: 1,
   // Comfortable mobile use without zoom traps on tap.
