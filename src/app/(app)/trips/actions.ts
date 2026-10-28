@@ -11,7 +11,7 @@ import type {
 import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
-import { tripSchema, type TripInput } from "@/lib/validators/trip";
+import { sourceTripIdSchema, tripSchema, type TripInput } from "@/lib/validators/trip";
 import { daySchema, plannedLocationSchema } from "@/lib/validators/day";
 import { scheduleItemSchema } from "@/lib/validators/scheduleItem";
 import {
@@ -33,9 +33,11 @@ import {
   type LocationScheduleSeed,
 } from "@/lib/trip-mutations";
 import {
+  copyStays,
+  describeDayFit,
+  fitDaysToRange,
   instantiateDays,
   instantiateVenueBookings,
-  instantiateStays,
   templatizeStays,
   type InstantiatedVenueBooking,
 } from "@/lib/templates";
@@ -188,13 +190,20 @@ const TEMPLATE_STAYS_SELECT = {
   notes: true,
 } satisfies Prisma.StaySelect;
 
+// The create form returns the new trip's id instead of redirecting so the form
+// can toast what happened (day count / moved end date) and then navigate.
+export type CreateTripState = FormState & { tripId?: string };
+
 export async function createTrip(
   _prev: FormState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<CreateTripState> {
   const user = await assertRole("PLANNER");
   const parsed = parseTrip(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  const parsedSource = sourceTripIdSchema.safeParse(formData.get("sourceTripId"));
+  if (!parsedSource.success) return { error: "Invalid source trip." };
+  const sourceTripId = parsedSource.data;
 
   const data = toTripData(parsed.data);
   const isTemplate = parsed.data.isTemplate ?? false;
@@ -204,37 +213,64 @@ export async function createTrip(
     data.startDate = null;
     data.endDate = null;
   }
-  const templateId = String(formData.get("templateId") ?? "");
 
-  // Optionally instantiate from a template: deep-copy its days/items (dates
-  // derived from the new startDate, bookings reset). Templates are snapshots.
+  // Optionally start from a source trip: a template OR any ordinary trip of the
+  // same type (incl. archived — "same as last year, shifted a week"). Either
+  // way the days/items are deep-copied with dates derived from the new
+  // startDate and stays re-anchored to the new dates. Copies are snapshots.
   let daysCreate;
   let venueBookingsCreate: ReturnType<typeof instantiateVenueBookings> = [];
-  let staysCreate: ReturnType<typeof instantiateStays> = [];
-  if (templateId) {
-    const template = await prisma.trip.findUnique({
-      where: { id: templateId },
+  let staysCreate: ReturnType<typeof copyStays> = [];
+  let message = "Created.";
+  if (sourceTripId) {
+    const source = await prisma.trip.findUnique({
+      where: { id: sourceTripId },
       select: {
+        isTemplate: true,
+        tripTypeId: true,
+        startDate: true,
         days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
         bookings: { select: TEMPLATE_VENUE_BOOKING_SELECT },
         stays: { select: TEMPLATE_STAYS_SELECT },
       },
     });
-    if (!template) return { error: "Template not found." };
-    daysCreate = instantiateDays(template.days, data.startDate);
-    // Template schedule wins; where a copied engagement carries none, fall back
-    // to the venue's standing terms (GH #86). Both beat an empty schedule.
-    venueBookingsCreate = await applyLocationWorkflowDefaults(
-      await applyLocationScheduleDefaults(
-        instantiateVenueBookings(
-          template.bookings,
-          await engagementVenueResolver(template.bookings),
+    if (!source) return { error: "Source trip not found." };
+    if (source.tripTypeId !== data.tripTypeId) {
+      return { error: "Source trip is a different type." };
+    }
+    if (source.isTemplate) {
+      daysCreate = instantiateDays(source.days, data.startDate);
+      // Template schedule wins; where a copied engagement carries none, fall back
+      // to the venue's standing terms (GH #86). Both beat an empty schedule.
+      venueBookingsCreate = await applyLocationWorkflowDefaults(
+        await applyLocationScheduleDefaults(
+          instantiateVenueBookings(
+            source.bookings,
+            await engagementVenueResolver(source.bookings),
+          ),
         ),
-      ),
-    );
-    // Day-relative template stays resolve to dates against the new startDate (or
-    // stay day-relative when the new trip is itself a date-less template).
-    staysCreate = instantiateStays(template.stays, data.startDate);
+      );
+    } else {
+      // A past trip is this year's plan, not this year's paperwork: its
+      // bookings (venue engagements AND item bookings), payments, notes and
+      // documents stay behind. Each item's speakers come along.
+      daysCreate = instantiateDays(source.days, data.startDate, {
+        bookings: false,
+        presenters: true,
+      });
+    }
+    // Day-relative stays resolve to dates against the new startDate (a dated
+    // source is first measured from its own startDate); a new date-less
+    // template keeps them day-relative.
+    staysCreate = copyStays(source.stays, source, data.startDate);
+    // The typed range and the copied day count rarely agree: pad empty days
+    // out to endDate, or keep every day and move endDate — never drop days.
+    if (!isTemplate) {
+      const fit = fitDaysToRange(daysCreate, data.startDate, data.endDate);
+      daysCreate = fit.days;
+      data.endDate = fit.endDate;
+      message = describeDayFit(fit);
+    }
   }
 
   const trip = await prisma.trip.create({
@@ -251,7 +287,7 @@ export async function createTrip(
   });
 
   revalidatePath("/trips");
-  redirect(`/trips/${trip.id}`);
+  return { ok: true, message, tripId: trip.id };
 }
 
 export async function updateTrip(
@@ -960,6 +996,35 @@ export async function shiftDaySchedule(
   fromItemId?: string,
 ): Promise<FormState> {
   await assertRole("PLANNER");
+  return slideDayRun(dayId, deltaMinutes, fromItemId, "Shifted");
+}
+
+// "Site closed, move on": after an item is removed, pull the next item and
+// everything ordered after it earlier by the hole it left (the day view
+// offers this from the remove toast; the gap comes from gapAfterRemoval).
+// The same slide as shiftDaySchedule — it stops at the next fixed-time item —
+// worded as a pull.
+export async function pullScheduleForward(
+  dayId: string,
+  fromItemId: string,
+  minutes: number,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!Number.isInteger(minutes) || minutes <= 0) {
+    return { error: "Minutes must be positive." };
+  }
+  return slideDayRun(dayId, -minutes, fromItemId, "Pulled");
+}
+
+// The slide shared by shiftDaySchedule and pullScheduleForward: load the day,
+// resolve the start of the run, write the shifts, and report what moved and
+// whether a fixed-time item stopped the run or is now overlapped.
+async function slideDayRun(
+  dayId: string,
+  deltaMinutes: number,
+  fromItemId: string | undefined,
+  verb: "Shifted" | "Pulled",
+): Promise<FormState> {
   if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
     return { error: "Minutes must be non-zero." };
   }
@@ -1009,7 +1074,7 @@ export async function shiftDaySchedule(
   return {
     ok: true,
     message:
-      `Shifted ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.` +
+      `${verb} ${n} item${n === 1 ? "" : "s"} ${Math.abs(deltaMinutes)} min ${dir}.` +
       (overlaps
         ? " It now overlaps a fixed-time item."
         : stopped

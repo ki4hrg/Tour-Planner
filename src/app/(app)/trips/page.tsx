@@ -195,6 +195,13 @@ export default async function TripsPage({
                     }`
                   : ""}
               </p>
+              {canEdit ? (
+                <p>
+                  <Link href={`/trips/new?from=${t.id}`} className="link-quiet">
+                    Duplicate
+                  </Link>
+                </p>
+              ) : null}
             </CardContent>
           </Card>
         ))}

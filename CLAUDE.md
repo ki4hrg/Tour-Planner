@@ -342,6 +342,14 @@ npm test                          # vitest
   (DB CHECK `stay_anchor_mode`). Templatizing/instantiating a trip converts between
   them (`templatizeStays`/`instantiateStays` in `src/lib/templates.ts`), mirroring
   how `ItineraryDay.date` derives from `startDate + dayIndex`.
+  **Starting a trip** (`createTrip`, form field `sourceTripId`) copies from a template
+  OR any trip of the same type (incl. archived): a template source keeps the
+  template semantics (venue bookings reset + standing terms, presenters reset); an
+  ordinary source copies days/items/sites/travel/planned locations/presenters and
+  re-anchors stays via `copyStays`, and copies NO bookings, payments, notes or
+  documents. `fitDaysToRange` then pads empty dated days up to `endDate` or moves
+  `endDate` to the last copied day (`describeDayFit` is the toast). "Duplicate" on
+  the trip list/overview is `/trips/new?from=<id>`.
 - **Travel legs (GH #80)**: a `ScheduleItem` with a 1:1 `TravelLeg` extension IS a
   travel span — origin → destination (`fromLocation`/`toLocation` or free-text
   labels), a `TravelMethod`, ordered `TravelStop`s — with the item's

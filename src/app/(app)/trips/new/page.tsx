@@ -7,8 +7,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { TripForm } from "../trip-form";
+import { TripForm, type TripSource } from "../trip-form";
 import { createTrip } from "../actions";
+import { toDateInput } from "@/lib/dates";
 import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -16,23 +17,44 @@ export const dynamic = "force-dynamic";
 export default async function NewTripPage({
   searchParams,
 }: {
-  searchParams: Promise<{ template?: string }>;
+  searchParams: Promise<{ template?: string; from?: string }>;
 }) {
   await requireRole("PLANNER");
-  const { template } = await searchParams;
+  const { template, from } = await searchParams;
   const asTemplate = template === "1";
 
-  const [tripTypes, templates] = await Promise.all([
+  // "Start from" choices: every template plus every ordinary trip (archived
+  // and cancelled included — last year's plan is the usual seed), newest
+  // first. The form scopes them to the chosen type.
+  const [tripTypes, sourceRows] = await Promise.all([
     prisma.tripType.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, defaultCurrency: true },
     }),
     prisma.trip.findMany({
-      where: { isTemplate: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, tripTypeId: true },
+      orderBy: [
+        { startDate: { sort: "desc", nulls: "last" } },
+        { createdAt: "desc" },
+      ],
+      select: {
+        id: true,
+        name: true,
+        tripTypeId: true,
+        isTemplate: true,
+        startDate: true,
+        _count: { select: { days: true } },
+      },
     }),
   ]);
+  const sources: TripSource[] = sourceRows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    tripTypeId: t.tripTypeId,
+    isTemplate: t.isTemplate,
+    startDate: t.startDate ? toDateInput(t.startDate) : null,
+    dayCount: t._count.days,
+  }));
+  const initialSourceId = sources.some((s) => s.id === from) ? from : undefined;
 
   return (
     <div className="space-y-6">
@@ -60,7 +82,8 @@ export default async function NewTripPage({
               action={createTrip}
               submitLabel={asTemplate ? "Create template" : "Create trip"}
               tripTypes={tripTypes}
-              templates={asTemplate ? undefined : templates}
+              sources={asTemplate ? undefined : sources}
+              initialSourceId={asTemplate ? undefined : initialSourceId}
               defaultIsTemplate={asTemplate}
             />
           ) : (

@@ -3,6 +3,9 @@ import {
   instantiateDays,
   templatizeStays,
   instantiateStays,
+  copyStays,
+  fitDaysToRange,
+  describeDayFit,
   type TemplateScheduleItem,
   type SourceStay,
 } from "./templates";
@@ -149,7 +152,7 @@ describe("instantiateDays", () => {
   it("resets bookings to PLANNED and keeps reusable text", () => {
     const out = instantiateDays(sample, null);
     const firstItem = out[0].scheduleItems.create[0];
-    const booking = firstItem.bookings.create[0];
+    const booking = firstItem.bookings!.create[0];
     expect(booking.status).toBe("PLANNED");
     expect(booking.label).toBe("Hall hire");
     expect(booking.notes).toBe("call ahead");
@@ -299,5 +302,139 @@ describe("instantiateStays", () => {
     // day 3 == Sep 12, day 6 == Sep 15
     expect(instantiated[0].checkIn?.toISOString().slice(0, 10)).toBe("2026-09-12");
     expect(instantiated[0].checkOut?.toISOString().slice(0, 10)).toBe("2026-09-15");
+  });
+});
+
+describe("instantiateDays — duplicating a trip (bookings: false, presenters: true)", () => {
+  const dup = { bookings: false, presenters: true };
+
+  it("omits item bookings entirely", () => {
+    const out = instantiateDays(sample, d("2026-11-01"), dup);
+    const first = out[0].scheduleItems.create[0];
+    expect("bookings" in first).toBe(false);
+    // Everything else still carries over.
+    expect(first.title).toBe("Talk");
+    expect(first.sites.create).toEqual([{ locationId: "locX", order: 0 }]);
+  });
+
+  it("connects each item's own speakers", () => {
+    const days = [
+      {
+        dayIndex: 1,
+        title: null,
+        logisticalNotes: null,
+        plannedLocations: [],
+        scheduleItems: [
+          item(1, { presentationId: "talkA", presenters: [{ id: "c1" }, { id: "c2" }] }),
+          item(2, { presenters: [] }),
+        ],
+      },
+    ];
+    const [day] = instantiateDays(days, null, dup);
+    expect(day.scheduleItems.create[0].presenters).toEqual({
+      connect: [{ id: "c1" }, { id: "c2" }],
+    });
+    expect("presenters" in day.scheduleItems.create[1]).toBe(false);
+  });
+
+  it("keeps the template defaults when no options are passed", () => {
+    const [day] = instantiateDays(
+      [
+        {
+          dayIndex: 1,
+          title: null,
+          logisticalNotes: null,
+          plannedLocations: [],
+          scheduleItems: [item(1, { presenters: [{ id: "c1" }], bookings: [{ locationId: null, label: "Coach", notes: null }] })],
+        },
+      ],
+      null,
+    );
+    const first = day.scheduleItems.create[0];
+    expect("presenters" in first).toBe(false);
+    expect(first.bookings?.create).toHaveLength(1);
+  });
+});
+
+describe("copyStays", () => {
+  it("re-anchors a dated trip's stays onto the new dates by trip day", () => {
+    // Last year: nights 2–4 of a trip starting 1 Jul 2025.
+    const src = [stay({ checkIn: d("2025-07-02"), checkOut: d("2025-07-04") })];
+    const out = copyStays(src, { isTemplate: false, startDate: d("2025-07-01") }, d("2026-10-26"));
+    expect(out[0].checkIn).toEqual(d("2026-10-27"));
+    expect(out[0].checkOut).toEqual(d("2026-10-29"));
+    expect(out[0].checkInDayIndex).toBeNull();
+    expect(out[0].checkOutDayIndex).toBeNull();
+  });
+
+  it("instantiates a template's day-relative stays directly", () => {
+    const src = [stay({ checkInDayIndex: 1, checkOutDayIndex: 3 })];
+    const out = copyStays(src, { isTemplate: true, startDate: null }, d("2026-10-26"));
+    expect(out[0].checkIn).toEqual(d("2026-10-26"));
+    expect(out[0].checkOut).toEqual(d("2026-10-28"));
+  });
+
+  it("copies a dated trip into a date-less template as day indices", () => {
+    const src = [stay({ checkIn: d("2025-07-02"), checkOut: d("2025-07-04") })];
+    const out = copyStays(src, { isTemplate: false, startDate: d("2025-07-01") }, null);
+    expect(out[0]).toMatchObject({ checkIn: null, checkOut: null, checkInDayIndex: 2, checkOutDayIndex: 4 });
+  });
+
+  it("drops stays a date-less source trip cannot anchor", () => {
+    const src = [stay({ checkIn: d("2025-07-02"), checkOut: d("2025-07-04") })];
+    expect(copyStays(src, { isTemplate: false, startDate: null }, d("2026-10-26"))).toEqual([]);
+  });
+});
+
+describe("fitDaysToRange", () => {
+  const three = instantiateDays(
+    [1, 2, 3].map((i) => ({
+      dayIndex: i,
+      title: `Day ${i}`,
+      logisticalNotes: null,
+      plannedLocations: [],
+      scheduleItems: [],
+    })),
+    d("2026-11-01"),
+  );
+
+  it("pads empty dated days up to a longer endDate", () => {
+    const fit = fitDaysToRange(three, d("2026-11-01"), d("2026-11-07"));
+    expect(fit.days).toHaveLength(7);
+    expect(fit.padded).toBe(4);
+    expect(fit.endDateMoved).toBe(false);
+    expect(fit.endDate).toEqual(d("2026-11-07"));
+    expect(fit.days[3]).toMatchObject({ dayIndex: 4, date: d("2026-11-04"), title: null });
+    expect(fit.days[6]).toMatchObject({ dayIndex: 7, date: d("2026-11-07") });
+    expect(fit.days[6].scheduleItems.create).toEqual([]);
+    // Copied days are untouched.
+    expect(fit.days[2].title).toBe("Day 3");
+    expect(describeDayFit(fit)).toBe("Created with 7 days.");
+  });
+
+  it("keeps every day and moves endDate out when the range is shorter", () => {
+    const fit = fitDaysToRange(three, d("2026-11-01"), d("2026-11-02"));
+    expect(fit.days).toHaveLength(3);
+    expect(fit.endDateMoved).toBe(true);
+    expect(fit.endDate).toEqual(d("2026-11-03"));
+    expect(describeDayFit(fit)).toBe("Created with 3 days; end date moved to 3 Nov.");
+  });
+
+  it("sets a missing endDate to the last day", () => {
+    const fit = fitDaysToRange(three, d("2026-11-01"), null);
+    expect(fit.endDate).toEqual(d("2026-11-03"));
+    expect(fit.endDateMoved).toBe(true);
+  });
+
+  it("is a no-op when the range matches, or there is no startDate / no days", () => {
+    const exact = fitDaysToRange(three, d("2026-11-01"), d("2026-11-03"));
+    expect(exact).toMatchObject({ padded: 0, endDateMoved: false, endDate: d("2026-11-03") });
+    expect(exact.days).toBe(three);
+    const dateless = fitDaysToRange(three, null, null);
+    expect(dateless.days).toBe(three);
+    expect(describeDayFit(dateless)).toBe("Created with 3 days.");
+    const empty = fitDaysToRange([], d("2026-11-01"), d("2026-11-07"));
+    expect(empty.days).toEqual([]);
+    expect(empty.endDate).toEqual(d("2026-11-07"));
   });
 });

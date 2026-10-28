@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -19,7 +22,27 @@ import { CURRENCIES } from "@/lib/money";
 import { useEditSection } from "@/components/editable-section";
 import type { FormState } from "@/lib/forms";
 
-type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
+// Create returns the new trip's id (the form toasts, then navigates); edit
+// just returns the result.
+type TripFormState = FormState & { tripId?: string };
+type Action = (prev: FormState, formData: FormData) => Promise<TripFormState>;
+
+// A "Start from" choice on the create form: a template or any past trip of
+// the same type. Dates arrive serialized ("yyyy-mm-dd"), never as Date.
+export type TripSource = {
+  id: string;
+  name: string;
+  tripTypeId: string;
+  isTemplate: boolean;
+  startDate: string | null;
+  dayCount: number;
+};
+
+function sourceLabel(s: TripSource): string {
+  const year = s.startDate?.slice(0, 4);
+  if (!s.isTemplate && year) return `${s.name} · ${year}`;
+  return `${s.name} · ${s.dayCount} day${s.dayCount === 1 ? "" : "s"}`;
+}
 
 export type TripInitial = {
   id?: string;
@@ -42,26 +65,33 @@ export function TripForm({
   submitLabel,
   tripTypes,
   initial,
-  templates,
+  sources,
+  initialSourceId,
   defaultIsTemplate,
 }: {
   action: Action;
   submitLabel: string;
   tripTypes: { id: string; name: string; defaultCurrency: string }[];
   initial?: TripInitial;
-  // When provided (create flow), offer to instantiate from a template of the
-  // selected trip type. Omitted on edit — you don't re-instantiate an existing trip.
-  templates?: { id: string; name: string; tripTypeId: string }[];
+  // When provided (create flow), offer to start from a template or a past trip
+  // of the selected type. Omitted on edit — you don't re-seed an existing trip.
+  sources?: TripSource[];
+  // Pre-pick a source (and its type): the "Duplicate" entry point.
+  initialSourceId?: string;
   defaultIsTemplate?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
+  const [state, formAction, pending] = useActionState<TripFormState, FormData>(
     action,
     {},
   );
+  const router = useRouter();
 
   const section = useEditSection();
-  const [tripTypeId, setTripTypeId] = useState(initial?.tripTypeId ?? "");
-  const [templateId, setTemplateId] = useState(BLANK);
+  const initialSource = sources?.find((s) => s.id === initialSourceId);
+  const [tripTypeId, setTripTypeId] = useState(
+    initial?.tripTypeId ?? initialSource?.tripTypeId ?? "",
+  );
+  const [sourceId, setSourceId] = useState(initialSource?.id ?? BLANK);
   // Templates carry no calendar dates — they're reusable skeletons. Track the
   // flag reactively so the date fields disappear the moment "template" is chosen.
   const [isTemplate, setIsTemplate] = useState(
@@ -69,25 +99,31 @@ export function TripForm({
   );
   // The trip's currency vocabulary — everything trip-scoped (stays, agreed
   // prices, payments) picks from this set instead of free text.
-  const [currencies, setCurrencies] = useState<string[]>(
-    initial?.currencies ?? [],
-  );
+  const [currencies, setCurrencies] = useState<string[]>(() => {
+    if (initial?.currencies) return initial.currencies;
+    const def = tripTypes.find((t) => t.id === initialSource?.tripTypeId)
+      ?.defaultCurrency;
+    return def ? [def] : [];
+  });
   // Offer the curated list plus any stored code outside it (legacy data).
   const currencyChoices = [
     ...CURRENCIES,
     ...currencies.filter((c) => !(CURRENCIES as readonly string[]).includes(c)),
   ];
 
-  // Templates are type-scoped: only show those matching the selected type.
-  const typeTemplates = useMemo(
-    () => (templates ?? []).filter((t) => t.tripTypeId === tripTypeId),
-    [templates, tripTypeId],
+  // Sources are type-scoped: only offer those matching the selected type.
+  const typeSources = useMemo(
+    () => (sources ?? []).filter((t) => t.tripTypeId === tripTypeId),
+    [sources, tripTypeId],
   );
+  const templateSources = typeSources.filter((s) => s.isTemplate);
+  const pastSources = typeSources.filter((s) => !s.isTemplate);
 
   useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message);
       section?.setEditing(false);
+      if (state.tripId) router.push(`/trips/${state.tripId}`);
     } else if (state.error) toast.error(state.error);
     // section identity is stable; depend only on the action result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,8 +146,8 @@ export function TripForm({
             value={tripTypeId}
             onValueChange={(v) => {
               setTripTypeId(v);
-              // Template choices are type-scoped — reset on type change.
-              setTemplateId(BLANK);
+              // Source choices are type-scoped — reset on type change.
+              setSourceId(BLANK);
               // On create, seed the currency set from the type's default.
               if (!initial?.id) {
                 const def = tripTypes.find((t) => t.id === v)?.defaultCurrency;
@@ -132,21 +168,44 @@ export function TripForm({
           </Select>
         </div>
 
-        {templates && typeTemplates.length ? (
+        {sources ? (
           <div className="space-y-1.5">
-            <Label htmlFor="templateId">Start from template</Label>
-            <input type="hidden" name="templateId" value={templateId === BLANK ? "" : templateId} />
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger id="templateId">
-                <SelectValue />
+            <Label htmlFor="sourceTripId">Start from</Label>
+            <input
+              type="hidden"
+              name="sourceTripId"
+              value={sourceId === BLANK ? "" : sourceId}
+            />
+            <Select
+              value={tripTypeId ? sourceId : ""}
+              onValueChange={setSourceId}
+              disabled={!tripTypeId}
+            >
+              <SelectTrigger id="sourceTripId">
+                <SelectValue placeholder="Choose trip type first" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={BLANK}>Blank itinerary</SelectItem>
-                {typeTemplates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
-                  </SelectItem>
-                ))}
+                {templateSources.length ? (
+                  <SelectGroup>
+                    <SelectLabel>Templates</SelectLabel>
+                    {templateSources.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {sourceLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ) : null}
+                {pastSources.length ? (
+                  <SelectGroup>
+                    <SelectLabel>Past trips</SelectLabel>
+                    {pastSources.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {sourceLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ) : null}
               </SelectContent>
             </Select>
           </div>
@@ -162,7 +221,9 @@ export function TripForm({
             value={initial?.status ?? "ACTIVE"}
           />
         ) : (
-          <div className="space-y-1.5">
+          // With "Start from" beside Trip type, span the row so the date pair
+          // below stays side by side.
+          <div className={sources ? "space-y-1.5 sm:col-span-2" : "space-y-1.5"}>
             <Label htmlFor="status">Status</Label>
             <Select name="status" defaultValue={initial?.status ?? "ACTIVE"}>
               <SelectTrigger id="status">

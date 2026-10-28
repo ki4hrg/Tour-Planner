@@ -726,12 +726,17 @@ export default async function TripOverviewPage({
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">Details</CardTitle>
               {canEdit && !trip.isTemplate ? (
-                <form action={saveTripAsTemplate}>
-                  <input type="hidden" name="id" value={trip.id} />
-                  <Button type="submit" size="sm" variant="outline">
-                    Save as template
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href={`/trips/new?from=${trip.id}`}>Duplicate</Link>
                   </Button>
-                </form>
+                  <form action={saveTripAsTemplate}>
+                    <input type="hidden" name="id" value={trip.id} />
+                    <Button type="submit" size="sm" variant="outline">
+                      Save as template
+                    </Button>
+                  </form>
+                </div>
               ) : null}
             </CardHeader>
             <CardContent>

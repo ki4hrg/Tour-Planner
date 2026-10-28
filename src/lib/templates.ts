@@ -47,6 +47,9 @@ export type TemplateScheduleItem = {
   isBlock: boolean;
   fixedTime?: boolean;
   presentationId: string | null;
+  // This occurrence's speakers — carried over only when duplicating a trip
+  // (see InstantiateOptions.presenters); a template resets them.
+  presenters?: { id: string }[];
   sites: TemplateItemLocation[];
   bookings: TemplateBooking[];
   travel?: TemplateTravelLeg | null;
@@ -90,9 +93,10 @@ export type InstantiatedScheduleItem = {
   notes: string | null;
   isBlock: boolean;
   fixedTime?: boolean;
-  presentationId: string | null; // catalog link survives; presenters reset (omitted)
+  presentationId: string | null; // catalog link survives; presenters reset unless asked for
+  presenters?: { connect: { id: string }[] };
   sites: { create: InstantiatedItemLocation[] };
-  bookings: { create: InstantiatedBooking[] };
+  bookings?: { create: InstantiatedBooking[] };
   travel?: {
     create: Omit<TemplateTravelLeg, "stops"> & {
       stops: { create: TemplateTravelLeg["stops"] };
@@ -214,10 +218,23 @@ export function instantiateVenueBookings(
  * Templates are snapshots: this copies values, so later edits to the template do
  * not propagate to trips already instantiated from it.
  */
+export type InstantiateOptions = {
+  // Copy item bookings (reset to PLANNED) as planning intent. Default true —
+  // the template path. Duplicating a past trip passes false: last year's
+  // coach booking is not this year's plan.
+  bookings?: boolean;
+  // Connect each item's own speakers on the copy. Default false (a template
+  // resets them); duplicating a trip keeps them — "same as last year".
+  presenters?: boolean;
+};
+
 export function instantiateDays(
   days: TemplateDay[],
   startDate: Date | null,
+  options: InstantiateOptions = {},
 ): InstantiatedDay[] {
+  const copyBookings = options.bookings ?? true;
+  const copyPresenters = options.presenters ?? false;
   return [...days]
     .sort((a, b) => a.dayIndex - b.dayIndex)
     .map((day, i) => {
@@ -252,20 +269,27 @@ export function instantiateDays(
               // The shared catalog link survives; the per-occurrence speaker
               // override is reset (next trip assigns its own — like bookings).
               presentationId: item.presentationId,
+              ...(copyPresenters && item.presenters?.length
+                ? { presenters: { connect: item.presenters.map((c) => ({ id: c.id })) } }
+                : {}),
               sites: {
                 create: [...item.sites]
                   .sort((a, b) => a.order - b.order)
                   .map((s, sj) => ({ locationId: s.locationId, order: sj })),
               },
-              bookings: {
-                create: item.bookings.map((b) => ({
-                  locationId: b.locationId,
-                  label: b.label,
-                  notes: b.notes,
-                  status: "PLANNED" as BookingStatus,
-                  workflowId: b.workflowId ?? null,
-                })),
-              },
+              ...(copyBookings
+                ? {
+                    bookings: {
+                      create: item.bookings.map((b) => ({
+                        locationId: b.locationId,
+                        label: b.label,
+                        notes: b.notes,
+                        status: "PLANNED" as BookingStatus,
+                        workflowId: b.workflowId ?? null,
+                      })),
+                    },
+                  }
+                : {}),
               // The travel leg (route/method/stops) is reusable plan — copied
               // verbatim, stops renumbered 0..n.
               ...(item.travel
@@ -411,4 +435,91 @@ export function instantiateStays(
       checkOutDayIndex: null,
     };
   });
+}
+
+/**
+ * Copy stays from any source trip onto a new one. A date-less template already
+ * carries day indices; a dated trip's stays are first re-expressed as indices
+ * against the SOURCE startDate (as "Save as template" would), so the copy lands on
+ * the same trip days under the new dates — the "same as last year, shifted a
+ * week" case — without a template row ever being written.
+ */
+export function copyStays(
+  stays: SourceStay[],
+  source: { isTemplate: boolean; startDate: Date | null },
+  targetStartDate: Date | null,
+): InstantiatedStay[] {
+  const dayRelative = source.isTemplate
+    ? stays
+    : templatizeStays(stays, source.startDate);
+  return instantiateStays(dayRelative, targetStartDate);
+}
+
+// --- Fit copied days to the new trip's date range ---
+
+export type DayFit = {
+  days: InstantiatedDay[];
+  endDate: Date | null;
+  // How many empty days were appended to reach endDate.
+  padded: number;
+  // endDate was pushed out to the last copied day (the range was shorter).
+  endDateMoved: boolean;
+};
+
+/**
+ * Reconcile a copied itinerary with the date range the planner typed. A longer
+ * range pads empty dated days up to endDate (what addDay would create, one per
+ * missing date); a shorter range KEEPS every day and moves endDate to the last
+ * one — dropping days silently would lose plan. No startDate ⇒ nothing to fit
+ * (a template). No endDate ⇒ it is set to the last day.
+ */
+export function fitDaysToRange(
+  days: InstantiatedDay[],
+  startDate: Date | null,
+  endDate: Date | null,
+): DayFit {
+  if (!startDate || days.length === 0) {
+    return { days, endDate, padded: 0, endDateMoved: false };
+  }
+  const rangeDays = dayIndexForDate(startDate, endDate) ?? 0;
+  const count = days.length;
+  if (rangeDays > count) {
+    const pad: InstantiatedDay[] = [];
+    for (let dayIndex = count + 1; dayIndex <= rangeDays; dayIndex++) {
+      pad.push({
+        dayIndex,
+        date: computeDayDate(startDate, dayIndex),
+        title: null,
+        logisticalNotes: null,
+        cityRegionId: null,
+        scheduleItems: { create: [] },
+        plannedLocations: { create: [] },
+      });
+    }
+    return { days: [...days, ...pad], endDate, padded: pad.length, endDateMoved: false };
+  }
+  if (rangeDays < count) {
+    return {
+      days,
+      endDate: computeDayDate(startDate, count),
+      padded: 0,
+      endDateMoved: true,
+    };
+  }
+  return { days, endDate, padded: 0, endDateMoved: false };
+}
+
+const DAY_MONTH_FMT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** The create toast: "Created with 7 days." / "…; end date moved to 5 Nov." */
+export function describeDayFit(fit: DayFit): string {
+  const n = fit.days.length;
+  const base = `Created with ${n} day${n === 1 ? "" : "s"}`;
+  return fit.endDateMoved && fit.endDate
+    ? `${base}; end date moved to ${DAY_MONTH_FMT.format(fit.endDate)}.`
+    : `${base}.`;
 }
