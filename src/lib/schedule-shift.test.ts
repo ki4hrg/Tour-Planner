@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   cascadeFromEdit,
+  describeShifts,
   fixedTimeOverlaps,
+  overlappingItemIds,
   shiftDayItems,
   type DayScheduleItem,
 } from "./schedule-shift";
@@ -218,5 +220,50 @@ describe("fixed-time anchors", () => {
     expect(fixedTimeOverlaps(items, ok)).toEqual([]);
     const late = shiftDayItems(items, 45);
     expect(fixedTimeOverlaps(items, late)).toEqual(["p"]);
+  });
+});
+
+describe("describeShifts", () => {
+  const items = [
+    item("a", 1, "09:00", "10:00"),
+    item("b", 2, "10:30", "11:00"),
+    item("c", 3, "12:00", "12:30"),
+  ];
+
+  it("names the count and delta of a ripple", () => {
+    const shifts = cascadeFromEdit(items, "a", "09:00", "10:30");
+    expect(describeShifts(items, shifts)).toBe("2 later items moved 30 min later.");
+  });
+
+  it("singular item, earlier, and whole hours", () => {
+    const shifts = cascadeFromEdit([items[0], items[1]], "a", "09:00", "09:00");
+    expect(describeShifts(items, shifts)).toBe("1 later item moved 1 h earlier.");
+    expect(
+      describeShifts(items, cascadeFromEdit(items, "a", "09:00", "11:15")),
+    ).toBe("2 later items moved 1 h 15 min later.");
+  });
+
+  it("is null when nothing moved", () => {
+    expect(describeShifts(items, [])).toBeNull();
+  });
+});
+
+describe("overlappingItemIds", () => {
+  it("flags the later item of each pair whose start precedes the previous end", () => {
+    const items = [
+      item("a", 1, "09:00", "10:00"),
+      item("b", 2, "09:45", "10:30"), // starts inside a
+      item("c", 3, "10:30", "11:00"), // back-to-back is not an overlap
+      item("d", 4, null), // untimed: skipped, doesn't break the chain
+      item("e", 5, "10:50"), // point item before c's end
+      item("f", 6, "10:40"), // before e's start (a point item's edge is its start)
+    ];
+    expect([...overlappingItemIds(items)].sort()).toEqual(["b", "e", "f"]);
+  });
+
+  it("is empty for a well-ordered day", () => {
+    expect(
+      overlappingItemIds([item("a", 1, "09:00", "10:00"), item("b", 2, "10:00")]).size,
+    ).toBe(0);
   });
 });

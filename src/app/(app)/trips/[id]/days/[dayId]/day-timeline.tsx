@@ -304,7 +304,7 @@ function QuickEditForm({
           item.id,
           {
             categoryId: item.categoryId ?? undefined,
-            title: title.trim() || undefined,
+            title: title.trim(),
             startTime: startTime || undefined,
             endTime: endTime || undefined,
             notes: notes.trim() || undefined,

@@ -11,7 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { GripVertical, Lock } from "lucide-react";
+import { AlertTriangle, CalendarPlus, GripVertical, Lock, X } from "lucide-react";
 import {
   useVenueEngagementVia,
   VenueEngagementStatus,
@@ -35,9 +35,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { useAction } from "@/lib/use-action";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
-import { timeToMinutes, minutesToTime } from "@/lib/schedule-gaps";
+import {
+  timeToMinutes,
+  minutesToTime,
+  formatDuration,
+} from "@/lib/schedule-gaps";
+import { overlappingItemIds } from "@/lib/schedule-shift";
 import {
   TRAVEL_METHOD_LABELS,
   effectivePresenters,
@@ -117,7 +124,15 @@ type Location = {
   name: string;
   region: string | null;
   tagged: boolean;
+  // Staff-only planning facts shown beside a chosen venue.
+  scheduleLimitations: string | null;
+  logisticsNotes: string | null;
+  primaryContact: { name: string; phone: string | null; email: string | null } | null;
 };
+
+// "Wesley's Chapel · London" — the picker line that tells near-duplicates apart.
+const locationOptionLabel = (l: Location) =>
+  l.region ? `${l.name} · ${l.region}` : l.name;
 type Contact = { id: string; name: string };
 // A Region option for the day's city: `label` is the full path for the picker,
 // `name` the short form for the day header.
@@ -134,19 +149,41 @@ type Presentation = {
   defaultPresenters: { id: string; name: string }[];
 };
 
-// Run a FormState-returning action, surfacing the result as a toast.
-function useAction() {
-  const [pending, start] = useTransition();
-  const run = (fn: () => Promise<FormState>, onOk?: () => void) =>
-    start(async () => {
-      const res = await fn();
-      if (res.error) toast.error(res.error);
-      else {
-        if (res.message) toast.success(res.message);
-        onOk?.();
-      }
-    });
-  return { pending, run };
+// "1 h 15 min" — the slot length between two "HH:MM" times, null when either
+// is missing or the end precedes the start.
+function durationLabel(startTime: string, endTime: string): string | null {
+  const start = startTime ? timeToMinutes(startTime) : null;
+  const end = endTime ? timeToMinutes(endTime) : null;
+  if (start === null || end === null || end < start) return null;
+  return formatDuration(end - start, "").trim();
+}
+
+// Moving the start shifts the end by the same delta, so a nudge never changes
+// the slot's length (clamped to the day). An end with no prior start is only
+// dragged along when the new start would pass it.
+function shiftedEnd(
+  prevStart: string,
+  nextStart: string,
+  endTime: string,
+): string | null {
+  const next = nextStart ? timeToMinutes(nextStart) : null;
+  const end = endTime ? timeToMinutes(endTime) : null;
+  if (next === null || end === null) return null;
+  const prev = prevStart ? timeToMinutes(prevStart) : null;
+  const delta = prev === null ? Math.max(0, next - end) : next - prev;
+  if (delta === 0) return null;
+  return minutesToTime(Math.max(0, Math.min(24 * 60 - 1, end + delta)));
+}
+
+// Escape closes an open editor form. Events from a portalled menu (a Select's
+// list) bubble through the React tree but aren't inside the form's DOM, so the
+// `contains` check leaves those to the menu.
+function escapeCancels(onCancel: () => void) {
+  return (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Escape" || !e.currentTarget.contains(e.target as Node)) return;
+    e.stopPropagation();
+    onCancel();
+  };
 }
 
 // Trip headcount + currency set for the item-booking price editor, so they
@@ -169,6 +206,7 @@ export function ItineraryEditor({
   cities,
   headcount = null,
   currencies = [],
+  paymentCounts = {},
 }: {
   tripId: string;
   canEdit: boolean;
@@ -183,6 +221,8 @@ export function ItineraryEditor({
   // Trip headcount (participants ?? capacity) for per-person booking prices.
   headcount?: number | null;
   currencies?: string[];
+  // Payments per item booking — what an item delete would cascade.
+  paymentCounts?: Record<string, number>;
 }) {
   // Inline-created locations/contacts are held locally so they show immediately;
   // server revalidation folds them into the props shortly after (deduped by id).
@@ -247,7 +287,17 @@ export function ItineraryEditor({
     setExtraLocations((prev) =>
       prev.some((s) => s.id === res.location.id)
         ? prev
-        : [...prev, { ...res.location, region: null, tagged: true }],
+        : [
+            ...prev,
+            {
+              ...res.location,
+              region: null,
+              tagged: true,
+              scheduleLimitations: null,
+              logisticsNotes: null,
+              primaryContact: null,
+            },
+          ],
     );
     toast.success(`Created ${res.location.name}.`);
     return res.location;
@@ -379,6 +429,7 @@ export function ItineraryEditor({
           contacts={contacts}
           presentations={presentations}
           cities={cities}
+          paymentCounts={paymentCounts}
           onMove={moveDay}
           onCreateLocation={addNewLocation}
           onCreateContact={addNewContact}
@@ -406,7 +457,11 @@ export function ItineraryEditor({
         {lodgingPrompt ? (
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Move lodging with these days?</DialogTitle>
+              <DialogTitle>
+                {lodgingPrompt.stays.some((st) => st.to)
+                  ? "Move lodging with these days?"
+                  : "Lodging stays put"}
+              </DialogTitle>
             </DialogHeader>
             <ul className="space-y-2 text-sm">
               {lodgingPrompt.stays.map((st) => (
@@ -431,17 +486,23 @@ export function ItineraryEditor({
               >
                 Cancel
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => applyDayOrder(lodgingPrompt.ids, false)}
-              >
-                Keep lodging dates
-              </Button>
               {lodgingPrompt.stays.some((st) => st.to) ? (
-                <Button onClick={() => applyDayOrder(lodgingPrompt.ids, true)}>
-                  Move lodging
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => applyDayOrder(lodgingPrompt.ids, false)}
+                  >
+                    Keep lodging dates
+                  </Button>
+                  <Button onClick={() => applyDayOrder(lodgingPrompt.ids, true)}>
+                    Move lodging
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={() => applyDayOrder(lodgingPrompt.ids, false)}>
+                  Reorder days
                 </Button>
-              ) : null}
+              )}
             </DialogFooter>
           </DialogContent>
         ) : null}
@@ -464,6 +525,7 @@ function DayCard({
   contacts,
   presentations,
   cities,
+  paymentCounts,
   onMove,
   onCreateLocation,
   onCreateContact,
@@ -480,6 +542,7 @@ function DayCard({
   contacts: Contact[];
   presentations: Presentation[];
   cities: City[];
+  paymentCounts: Record<string, number>;
   onMove: (index: number, dir: -1 | 1) => void;
   onCreateLocation: (name: string) => Promise<CreatedLocation | null>;
   onCreateContact: (
@@ -503,6 +566,8 @@ function DayCard({
     day.cityRegionId ?? NONE,
   );
   const cityName = cities.find((c) => c.id === day.cityRegionId)?.name;
+  // Items booked into a slot the previous item still occupies.
+  const overlaps = useMemo(() => overlappingItemIds(day.items), [day.items]);
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
     const target = itemIndex + dir;
@@ -538,7 +603,7 @@ function DayCard({
       onDragOver={canEdit ? onCardDragOver : undefined}
       onDrop={canEdit ? dnd.drop : undefined}
       className={cn(
-        "relative rounded-lg border bg-card transition-opacity",
+        "relative scroll-mt-20 rounded-lg border bg-card transition-opacity",
         dnd.drag?.kind === "day" && dnd.drag.id === day.id && "opacity-50",
         over?.kind === "planned" && "ring-2 ring-primary/50",
       )}
@@ -569,8 +634,14 @@ function DayCard({
             </span>
           ) : null}
           <div className="min-w-0">
-          <span className="font-medium">Day {day.dayIndex}</span>
-          {day.title ? <span> — {day.title}</span> : null}
+          {/* The day page is the phone-friendly, on-the-ground view of this day. */}
+          <Link
+            href={`/trips/${day.tripId}/days/${day.id}`}
+            className="link-quiet"
+          >
+            <span className="font-medium">Day {day.dayIndex}</span>
+            {day.title ? <span> — {day.title}</span> : null}
+          </Link>
           {cityName ? (
             <span className="text-sm text-muted-foreground">
               {" "}
@@ -612,24 +683,31 @@ function DayCard({
             >
               {editingDay ? "Close" : "Edit day"}
             </Button>
-            <Button
+            <ConfirmButton
               variant="ghost"
               size="sm"
               className="text-destructive"
               disabled={pending}
-              onClick={() => {
-                if (window.confirm(`Delete day ${day.dayIndex} and its items?`))
-                  run(() => deleteDay(day.id));
-              }}
+              title={`Delete day ${day.dayIndex}?`}
+              description={
+                day.items.length
+                  ? `Deletes its ${day.items.length} item${day.items.length === 1 ? "" : "s"}. Later days renumber.`
+                  : "Later days renumber."
+              }
+              confirmLabel="Delete day"
+              onConfirm={() => run(() => deleteDay(day.id))}
             >
               Delete
-            </Button>
+            </ConfirmButton>
           </div>
         ) : null}
       </div>
 
       {editingDay && canEdit ? (
-        <div className="space-y-3 border-b p-4">
+        <div
+          className="space-y-3 border-b p-4"
+          onKeyDown={escapeCancels(() => setEditingDay(false))}
+        >
           <div className="space-y-1.5">
             <Label className="text-xs">Title</Label>
             <Input
@@ -681,7 +759,7 @@ function DayCard({
                 <SelectItem value={NONE}>None</SelectItem>
                 {locations.map((l) => (
                   <SelectItem key={l.id} value={l.id}>
-                    {l.name}
+                    {locationOptionLabel(l)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -758,6 +836,8 @@ function DayCard({
                 }
                 dayOptions={dayOptions}
                 onMoveToDay={(toDayId) => onMoveItemTo(item.id, toDayId, Number.MAX_SAFE_INTEGER)}
+                overlapsPrevious={overlaps.has(item.id)}
+                paymentCounts={paymentCounts}
                 canEdit={canEdit}
                 categories={categories}
                 locations={locations}
@@ -864,12 +944,16 @@ function PlannedLocations({
   const dnd = useItineraryDnd();
   const [pick, setPick] = useState<string>(NONE);
   const [note, setNote] = useState("");
+  // Same trip-type filter as the item picker, with the same escape hatch.
+  const [showAll, setShowAll] = useState(false);
 
   if (!canEdit && planned.length === 0) return null;
 
   // Don't offer a location already planned for this day (one row per pair).
   const plannedIds = new Set(planned.map((p) => p.locationId));
-  const available = locations.filter((l) => !plannedIds.has(l.id));
+  const available = (showAll ? locations : locations.filter((l) => l.tagged)).filter(
+    (l) => !plannedIds.has(l.id),
+  );
 
   const add = () => {
     if (pick === NONE) return;
@@ -900,32 +984,39 @@ function PlannedLocations({
                 dnd.drag?.kind === "planned" && dnd.drag.id === p.id && "opacity-50",
               )}
             >
-              <span>{p.name}</span>
+              <Link href={`/locations/${p.locationId}`} className="link-quiet">
+                {p.name}
+              </Link>
               {p.note ? (
                 <span className="text-xs text-muted-foreground">· {p.note}</span>
               ) : null}
               {canEdit ? (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     disabled={pending}
                     onClick={() => run(() => promotePlannedLocation(p.id))}
-                    className="rounded px-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
+                    className="h-6 px-1.5 text-xs text-muted-foreground"
                     title="Add to schedule"
                     aria-label={`Add ${p.name} to schedule`}
                   >
+                    <CalendarPlus aria-hidden />
                     Schedule
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     disabled={pending}
                     onClick={() => run(() => removePlannedLocation(p.id))}
-                    className="rounded px-1 text-muted-foreground hover:bg-background hover:text-destructive disabled:opacity-50"
+                    className="text-muted-foreground hover:text-destructive"
                     title="Remove planned location"
                     aria-label={`Remove ${p.name}`}
                   >
-                    ×
-                  </button>
+                    <X aria-hidden />
+                  </Button>
                 </>
               ) : null}
             </li>
@@ -943,7 +1034,7 @@ function PlannedLocations({
               <SelectItem value={NONE}>Add location…</SelectItem>
               {available.map((l) => (
                 <SelectItem key={l.id} value={l.id}>
-                  {l.name}
+                  {locationOptionLabel(l)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -962,6 +1053,13 @@ function PlannedLocations({
           >
             Add
           </Button>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Checkbox
+              checked={showAll}
+              onCheckedChange={(v) => setShowAll(v === true)}
+            />
+            Show all locations
+          </label>
         </div>
       ) : null}
     </div>
@@ -999,6 +1097,8 @@ function ItemRow({
   dropLine,
   dayOptions,
   onMoveToDay,
+  overlapsPrevious,
+  paymentCounts,
   canEdit,
   categories,
   locations,
@@ -1018,6 +1118,9 @@ function ItemRow({
   dropLine: "before" | "after" | null;
   dayOptions: DayOption[];
   onMoveToDay: (toDayId: string) => void;
+  // This item starts before the previous timed item ends.
+  overlapsPrevious: boolean;
+  paymentCounts: Record<string, number>;
   canEdit: boolean;
   categories: Category[];
   locations: Location[];
@@ -1042,6 +1145,57 @@ function ItemRow({
   // member-location tags below. Drop the chip when the label IS the category.
   const { primary, presentationIsPrimary, labelFromCategory } =
     scheduleItemPrimaryLabel(item);
+  const limitationsFor = (locationId: string) =>
+    locations.find((l) => l.id === locationId)?.scheduleLimitations ?? null;
+
+  // Deleting cascades the item's bookings and their payments, so that case
+  // confirms; a plain item goes in one click with an Undo that re-creates it
+  // (same fields, sites, times, leg) at its old slot.
+  const paymentTotal = item.bookings.reduce(
+    (n, b) => n + (paymentCounts[b.id] ?? 0),
+    0,
+  );
+  const restoreInput = (): ScheduleItemInputData => ({
+    categoryId: item.categoryId ?? undefined,
+    title: item.title ?? undefined,
+    startTime: item.startTime ?? undefined,
+    endTime: item.endTime ?? undefined,
+    notes: item.notes ?? undefined,
+    isBlock: item.isBlock,
+    fixedTime: item.fixedTime,
+    presentationId: item.presentationId ?? undefined,
+    presenterIds: item.presenters.map((p) => p.id),
+    locationIds: item.sites.map((s) => s.locationId),
+    travel: item.travel
+      ? {
+          method: item.travel.method,
+          fromLocationId: item.travel.fromLocation?.id,
+          fromLabel: item.travel.fromLabel ?? undefined,
+          toLocationId: item.travel.toLocation?.id,
+          toLabel: item.travel.toLabel ?? undefined,
+          stops: item.travel.stops.map((st) => ({
+            locationId: st.location?.id,
+            label: st.label ?? undefined,
+            dwellMinutes: st.dwellMinutes ?? undefined,
+          })),
+        }
+      : undefined,
+  });
+  const remove = () =>
+    run(async () => {
+      const res = await deleteScheduleItem(item.id);
+      if (!res.error) {
+        const snapshot = restoreInput();
+        const order = item.order;
+        toast.success("Item removed.", {
+          action: {
+            label: "Undo",
+            onClick: () => run(() => addScheduleItem(dayId, snapshot, { order })),
+          },
+        });
+      }
+      return { ...res, message: undefined };
+    });
 
   return (
     // Anchor target for deep links from the day view's quick-edit ("All options →").
@@ -1122,13 +1276,20 @@ function ItemRow({
             <>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 {/* Fixed-width time gutter so category chips and titles align
-                    across rows whether or not an item carries an end time. */}
-                <time className="inline-flex w-[5.25rem] shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+                    across rows whether or not an item carries an end time; wide
+                    enough for "13:30–14:30" plus a lock / overlap marker. */}
+                <time className="inline-flex w-[6.5rem] shrink-0 items-center gap-1 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
                   {time}
                   {item.fixedTime && item.startTime ? (
                     <Lock
                       className="size-3"
                       aria-label="Fixed time"
+                    />
+                  ) : null}
+                  {overlapsPrevious ? (
+                    <AlertTriangle
+                      className="size-4 text-destructive"
+                      aria-label="Overlaps previous item"
                     />
                   ) : null}
                 </time>
@@ -1155,15 +1316,31 @@ function ItemRow({
               {/* Member locations — the item's "where" (venue is never the heading). */}
               {item.sites.length > 0 ? (
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                  {item.sites.map((s) => (
-                    <span key={s.id} className="inline-flex flex-wrap items-center gap-1.5">
-                      <span className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
-                        {s.location.name}
+                  {item.sites.map((s) => {
+                    const limits = limitationsFor(s.locationId);
+                    return (
+                      <span key={s.id} className="inline-flex max-w-full flex-col gap-0.5">
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <Link
+                            href={`/locations/${s.locationId}`}
+                            className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground link-quiet"
+                          >
+                            {s.location.name}
+                          </Link>
+                          {/* The venue engagement's next step + status. */}
+                          <VenueEngagementStatus locationId={s.locationId} />
+                        </span>
+                        {limits ? (
+                          <span
+                            className="max-w-xs truncate text-xs text-muted-foreground"
+                            title={limits}
+                          >
+                            {limits}
+                          </span>
+                        ) : null}
                       </span>
-                      {/* The venue engagement's next step + status. */}
-                      <VenueEngagementStatus locationId={s.locationId} />
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 
@@ -1253,15 +1430,34 @@ function ItemRow({
             <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
               Edit
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              disabled={pending}
-              onClick={() => run(() => deleteScheduleItem(item.id))}
-            >
-              Delete
-            </Button>
+            {item.bookings.length > 0 ? (
+              <ConfirmButton
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                disabled={pending}
+                title="Delete item?"
+                description={`Deletes its booking${item.bookings.length === 1 ? "" : "s"}${
+                  paymentTotal
+                    ? ` and ${paymentTotal} payment${paymentTotal === 1 ? "" : "s"}`
+                    : ""
+                }.`}
+                confirmLabel="Delete item"
+                onConfirm={remove}
+              >
+                Delete
+              </ConfirmButton>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                disabled={pending}
+                onClick={remove}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
@@ -1426,19 +1622,13 @@ function ItemFields({
     timeToMinutes(endTime) !== null &&
     (timeToMinutes(endTime) as number) < (timeToMinutes(startTime) as number);
 
-  // Moving the start past the end drags the end along, preserving the item's
-  // prior duration — so nudging a start later never inverts the slot.
+  // A start change keeps the slot's length: the end moves by the same delta.
   const onStartChange = (v: string) => {
-    const vMin = v ? timeToMinutes(v) : null;
-    const endMin = endTime ? timeToMinutes(endTime) : null;
-    if (vMin !== null && endMin !== null && vMin > endMin) {
-      const prevStart = startTime ? timeToMinutes(startTime) : null;
-      const prevDuration =
-        prevStart !== null && endMin >= prevStart ? endMin - prevStart : 0;
-      setEndTime(minutesToTime(Math.min(24 * 60 - 1, vMin + prevDuration)));
-    }
+    const end = shiftedEnd(startTime, v, endTime);
+    if (end !== null) setEndTime(end);
     setStartTime(v);
   };
+  const duration = durationLabel(startTime, endTime);
 
   // Only editing a persisted, timed item can ripple the rest of the day.
   const canCascade = !!initial && !!startTime && !selfDescribing;
@@ -1447,7 +1637,8 @@ function ItemFields({
     onSubmit(
       {
         categoryId: categoryId === NONE ? undefined : categoryId,
-        title: selfDescribing ? undefined : title.trim() || undefined,
+        // Always sent: "" clears (an omitted title is left untouched on update).
+        title: selfDescribing ? "" : title.trim(),
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
@@ -1478,7 +1669,7 @@ function ItemFields({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" onKeyDown={escapeCancels(onCancel)}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-xs">Category</Label>
@@ -1523,7 +1714,14 @@ function ItemFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">End time</Label>
+          <Label className="text-xs">
+            End time
+            {duration ? (
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                {duration}
+              </span>
+            ) : null}
+          </Label>
           <Input
             type="time"
             value={endTime}
@@ -1583,25 +1781,36 @@ function ItemFields({
         </div>
 
         {locationIds.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {locationIds.map((id) => (
-              <span
-                key={id}
-                className="inline-flex items-center gap-1 rounded border bg-muted/50 px-2 py-0.5 text-xs"
-              >
-                {locationName(id)}
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label={`Remove ${locationName(id)}`}
-                  onClick={() =>
-                    setLocationIds((prev) => prev.filter((s) => s !== id))
-                  }
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {locationIds.map((id) => {
+              const limits =
+                locations.find((l) => l.id === id)?.scheduleLimitations ?? null;
+              return (
+                <span key={id} className="inline-flex max-w-full flex-col gap-0.5">
+                  <span className="inline-flex items-center gap-1 self-start rounded border bg-muted/50 px-2 py-0.5 text-xs">
+                    {locationName(id)}
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove ${locationName(id)}`}
+                      onClick={() =>
+                        setLocationIds((prev) => prev.filter((s) => s !== id))
+                      }
+                    >
+                      ✕
+                    </button>
+                  </span>
+                  {limits ? (
+                    <span
+                      className="max-w-xs truncate text-xs text-muted-foreground"
+                      title={limits}
+                    >
+                      {limits}
+                    </span>
+                  ) : null}
+                </span>
+              );
+            })}
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
@@ -1617,8 +1826,7 @@ function ItemFields({
             <SelectItem value={NONE}>+ Add location…</SelectItem>
             {availableLocations.map((s) => (
               <SelectItem key={s.id} value={s.id}>
-                {s.name}
-                {s.region ? ` · ${s.region}` : ""}
+                {locationOptionLabel(s)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1874,6 +2082,8 @@ function TravelFields({
     leg?.toLocation?.id ?? NONE,
   );
   const [toLabel, setToLabel] = useState(leg?.toLabel ?? "");
+  // A planner-written label overriding the derived "Coach to X".
+  const [title, setTitle] = useState(initial?.title ?? "");
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
   const [fixedTime, setFixedTime] = useState(initial?.fixedTime ?? false);
@@ -1889,10 +2099,10 @@ function TravelFields({
   );
 
   // The non-system "Travel" category, when the catalog still has one — attached
-  // for its marker colour only; nothing depends on it.
-  const travelCategoryId =
-    initial?.categoryId ??
-    categories.find((c) => c.name === "Travel" && !c.system)?.id;
+  // for its marker colour only on CREATE; an edit keeps whatever the item has.
+  const travelCategoryId = initial
+    ? (initial.categoryId ?? undefined)
+    : categories.find((c) => c.name === "Travel" && !c.system)?.id;
 
   const timesInvalid =
     !!startTime &&
@@ -1901,19 +2111,14 @@ function TravelFields({
     timeToMinutes(endTime) !== null &&
     (timeToMinutes(endTime) as number) < (timeToMinutes(startTime) as number);
 
-  // Same duration-preserving nudge as ItemFields: moving the depart time past
-  // the arrive time drags the arrive time along.
+  // Same duration-preserving nudge as ItemFields: the arrive time moves with
+  // the depart time.
   const onStartChange = (v: string) => {
-    const vMin = v ? timeToMinutes(v) : null;
-    const endMin = endTime ? timeToMinutes(endTime) : null;
-    if (vMin !== null && endMin !== null && vMin > endMin) {
-      const prevStart = startTime ? timeToMinutes(startTime) : null;
-      const prevDuration =
-        prevStart !== null && endMin >= prevStart ? endMin - prevStart : 0;
-      setEndTime(minutesToTime(Math.min(24 * 60 - 1, vMin + prevDuration)));
-    }
+    const end = shiftedEnd(startTime, v, endTime);
+    if (end !== null) setEndTime(end);
     setStartTime(v);
   };
+  const duration = durationLabel(startTime, endTime);
 
   const patchStop = (key: number, part: Partial<StopDraft>) =>
     setStops((prev) => prev.map((s) => (s.key === key ? { ...s, ...part } : s)));
@@ -1939,7 +2144,8 @@ function TravelFields({
     };
     onSubmit(
       {
-        categoryId: travelCategoryId ?? undefined,
+        categoryId: travelCategoryId,
+        title: title.trim(),
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
@@ -1956,6 +2162,7 @@ function TravelFields({
           setFromLabel("");
           setToLocationId(NONE);
           setToLabel("");
+          setTitle("");
           setStartTime("");
           setEndTime("");
           setFixedTime(false);
@@ -1984,8 +2191,7 @@ function TravelFields({
           <SelectItem value={NONE}>— free text —</SelectItem>
           {locations.map((l) => (
             <SelectItem key={l.id} value={l.id}>
-              {l.name}
-              {l.region ? ` · ${l.region}` : ""}
+              {locationOptionLabel(l)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -2001,7 +2207,7 @@ function TravelFields({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" onKeyDown={escapeCancels(onCancel)}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-xs">Method</Label>
@@ -2023,7 +2229,14 @@ function TravelFields({
             </SelectContent>
           </Select>
         </div>
-        <div className="hidden sm:block" />
+        <div className="space-y-1.5">
+          <Label className="text-xs">Label</Label>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Coach to Oxford"
+          />
+        </div>
         {endpointPicker("From", fromLocationId, setFromLocationId, fromLabel, setFromLabel)}
         {endpointPicker("To", toLocationId, setToLocationId, toLabel, setToLabel)}
         <div className="space-y-1.5">
@@ -2035,7 +2248,14 @@ function TravelFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">Arrive</Label>
+          <Label className="text-xs">
+            Arrive
+            {duration ? (
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                {duration}
+              </span>
+            ) : null}
+          </Label>
           <Input
             type="time"
             value={endTime}

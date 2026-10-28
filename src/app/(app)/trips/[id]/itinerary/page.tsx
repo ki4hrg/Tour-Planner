@@ -54,6 +54,9 @@ export default async function ItineraryPage({
                 include: {
                   bookedContact: { select: { id: true, name: true } },
                   priceLines: PRICE_LINES_SELECT,
+                  // Deleting an item cascades its bookings + their payments;
+                  // the confirm names how many.
+                  _count: { select: { payments: true } },
                 },
               },
             },
@@ -71,17 +74,27 @@ export default async function ItineraryPage({
   });
 
   // Location picker defaults to locations tagged with this trip's type;
-  // `tagged` drives the "show all" toggle in the editor.
+  // `tagged` drives the "show all" toggle in the editor. The staff-only
+  // planning facts (schedule limitations, host-site logistics, the go-to
+  // contact) ride along so the editor can show them beside a chosen venue.
   const locations = await prisma.location.findMany({
     where: { archivedAt: null },
     orderBy: { name: "asc" },
     select: {
       id: true,
       name: true,
+      scheduleLimitations: true,
       region: { select: { name: true } },
+      hostSite: { select: { logisticsNotes: true } },
+      primaryContact: { select: { name: true, phone: true, email: true } },
       tripTypes: { where: { id: trip.tripType.id }, select: { id: true } },
     },
   });
+  // Payments per item booking (site-less items only carry bookings).
+  const paymentCounts: Record<string, number> = {};
+  for (const d of trip.days)
+    for (const it of d.scheduleItems)
+      for (const b of it.bookings) paymentCounts[b.id] = b._count.payments;
   const contacts = await prisma.contact.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
@@ -134,7 +147,11 @@ export default async function ItineraryPage({
             name: l.name,
             region: l.region?.name ?? null,
             tagged: l.tripTypes.length > 0,
+            scheduleLimitations: l.scheduleLimitations,
+            logisticsNotes: l.hostSite?.logisticsNotes ?? null,
+            primaryContact: l.primaryContact,
           }))}
+          paymentCounts={paymentCounts}
           contacts={contacts}
           presentations={presentations}
           headcount={tripHeadcount(trip)}

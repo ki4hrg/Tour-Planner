@@ -52,6 +52,7 @@ import {
 import { travelLegCreateData } from "@/lib/travel";
 import {
   cascadeFromEdit,
+  describeShifts,
   fixedTimeOverlaps,
   shiftDayItems,
 } from "@/lib/schedule-shift";
@@ -664,7 +665,9 @@ async function identityError(
 function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
   return {
     categoryId: d.categoryId || null,
-    title: d.title || null,
+    // Omitted ⇒ untouched on update (a travel edit or quick time fix doesn't
+    // round-trip it); "" clears. Nullable on create, so undefined is fine there.
+    title: d.title === undefined ? undefined : d.title || null,
     startTime: d.startTime || null,
     endTime: d.endTime || null,
     notes: d.notes || null,
@@ -691,6 +694,10 @@ function effectiveLocationIds(
 export async function addScheduleItem(
   dayId: string,
   input: ScheduleItemInputData,
+  // `order` (1-based) puts the item at that exact slot instead of its
+  // chronological one — the editor's Undo re-creates a removed item where it
+  // was. Clamped to the day's length.
+  opts: { order?: number } = {},
 ): Promise<FormState> {
   await assertRole("PLANNER");
   const parsed = scheduleItemSchema.safeParse(input);
@@ -705,7 +712,10 @@ export async function addScheduleItem(
       where: { dayId },
       select: { order: true, startTime: true },
     });
-    const insertAt = timedInsertIndex(items, parsed.data.startTime);
+    const insertAt =
+      opts.order != null && Number.isInteger(opts.order)
+        ? Math.max(0, Math.min(opts.order - 1, items.length))
+        : timedInsertIndex(items, parsed.data.startTime);
     await tx.scheduleItem.updateMany({
       where: { dayId, order: { gt: insertAt } },
       data: { order: { increment: 1 } },
@@ -731,7 +741,7 @@ export async function addScheduleItem(
 
   const tripId = await tripIdForDay(dayId);
   if (tripId) revalidateTrip(tripId);
-  return { ok: true, message: "Item added." };
+  return { ok: true, message: opts.order != null ? "Item restored." : "Item added." };
 }
 
 export async function updateScheduleItem(
@@ -763,23 +773,32 @@ export async function updateScheduleItem(
 
   // Replace the location links wholesale (simple + transactional). Reconcile
   // stale item-targeted bookings: null out locationId if the site is unlinked.
-  let overlapsFixed = false;
+  // The toast reports what else moved (the ripple) and which fixed-time item,
+  // if any, the save now collides with.
+  let shiftNote: string | null = null;
+  let overlapNote: string | null = null;
   const item = await prisma.$transaction(async (tx) => {
     // Snapshot the day (with the edited item's OLD times) before mutating, so the
-    // ripple measures against pre-edit spacing.
+    // ripple measures against pre-edit spacing. Loaded even without a cascade:
+    // the edited item's own new times can run into the next anchor.
     const cascade = options?.cascade ?? false;
-    const siblings = cascade
-      ? await tx.scheduleItem.findMany({
-          where: { dayId: existing.dayId },
-          select: {
-            id: true,
-            order: true,
-            startTime: true,
-            endTime: true,
-            fixedTime: true,
-          },
-        })
-      : [];
+    const siblings = await tx.scheduleItem.findMany({
+      where: { dayId: existing.dayId },
+      select: {
+        id: true,
+        order: true,
+        startTime: true,
+        endTime: true,
+        fixedTime: true,
+        title: true,
+        category: { select: { name: true } },
+        sites: {
+          orderBy: { order: "asc" },
+          take: 1,
+          select: { location: { select: { name: true } } },
+        },
+      },
+    });
 
     const updated = await tx.scheduleItem.update({
       where: { id: itemId },
@@ -791,29 +810,38 @@ export async function updateScheduleItem(
       select: { day: { select: { tripId: true } } },
     });
 
-    if (cascade) {
-      const shifts = cascadeFromEdit(
-        siblings,
-        itemId,
-        parsed.data.startTime ?? null,
-        parsed.data.endTime ?? null,
-      );
-      for (const s of shifts) {
-        await tx.scheduleItem.update({
-          where: { id: s.id },
-          data: { startTime: s.startTime, endTime: s.endTime },
-        });
-      }
-      // The edited item's own new times count too — it can run into the anchor.
-      overlapsFixed =
-        fixedTimeOverlaps(siblings, [
-          ...shifts,
-          {
-            id: itemId,
-            startTime: parsed.data.startTime ?? null,
-            endTime: parsed.data.endTime ?? null,
-          },
-        ]).length > 0;
+    const shifts = cascade
+      ? cascadeFromEdit(
+          siblings,
+          itemId,
+          parsed.data.startTime ?? null,
+          parsed.data.endTime ?? null,
+        )
+      : [];
+    for (const s of shifts) {
+      await tx.scheduleItem.update({
+        where: { id: s.id },
+        data: { startTime: s.startTime, endTime: s.endTime },
+      });
+    }
+    shiftNote = describeShifts(siblings, shifts);
+    // The edited item's own new times count too — it can run into the anchor.
+    const hit = fixedTimeOverlaps(siblings, [
+      ...shifts,
+      {
+        id: itemId,
+        startTime: parsed.data.startTime ?? null,
+        endTime: parsed.data.endTime ?? null,
+      },
+    ])[0];
+    const anchor = hit ? siblings.find((s) => s.id === hit) : null;
+    if (anchor) {
+      const label =
+        anchor.title ||
+        anchor.category?.name ||
+        anchor.sites[0]?.location.name ||
+        "a fixed-time item";
+      overlapNote = `Overlaps ${label} ${anchor.startTime}.`;
     }
 
     // A changed start can leave the item out of sequence; slot it back in.
@@ -864,9 +892,7 @@ export async function updateScheduleItem(
   revalidateTrip(item.day.tripId);
   return {
     ok: true,
-    message: overlapsFixed
-      ? "Item saved. It now overlaps a fixed-time item."
-      : "Item saved.",
+    message: ["Saved.", shiftNote, overlapNote].filter(Boolean).join(" "),
   };
 }
 
@@ -948,9 +974,14 @@ export async function shiftDaySchedule(
       fixedTime: true,
     },
   });
-  const fromOrder = fromItemId
-    ? (items.find((it) => it.id === fromItemId)?.order ?? 1)
-    : 1;
+  // The whole day starts at its lowest order (a renumbering race can leave
+  // it above 1); a from-item that isn't on this day is a stale reference.
+  let fromOrder = items.reduce((min, it) => Math.min(min, it.order), Infinity);
+  if (fromItemId) {
+    const from = items.find((it) => it.id === fromItemId);
+    if (!from) return { error: "Item not on this day." };
+    fromOrder = from.order;
+  }
 
   const shifts = shiftDayItems(items, deltaMinutes, fromOrder);
   if (shifts.length === 0) {
