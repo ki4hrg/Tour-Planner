@@ -33,6 +33,7 @@ async function revalidateForTarget(
   }
   if (target === "trip") {
     revalidatePath(`/trips/${targetId}`);
+    revalidatePath(`/trips/${targetId}/documents`);
     return;
   }
   // booking | stay — resolve the owning trip, then revalidate where it shows.
@@ -57,6 +58,7 @@ async function revalidateForTarget(
   if (tripId) {
     revalidatePath(`/trips/${tripId}`);
     revalidatePath(`/trips/${tripId}/booking`);
+    revalidatePath(`/trips/${tripId}/documents`);
   }
 }
 

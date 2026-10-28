@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { CURRENCIES } from "../money";
+import { isCalendarDate } from "./date";
+
+// Empty string → undefined; otherwise a "yyyy-mm-dd" string.
+const optionalDate = z.preprocess(
+  (v) => (v === "" || v == null ? undefined : v),
+  z.string().refine(isCalendarDate, "Enter a valid date.").optional(),
+);
 
 export const costSchema = z.object({
   label: z.string().trim().min(1, "Label is required."),
@@ -13,7 +20,14 @@ export const costSchema = z.object({
     (v) => (v === "" || v == null ? undefined : v),
     z.string().optional(),
   ),
+  // Active dates (yyyy-mm-dd): the line applies to trips starting inside
+  // [validFrom, validTo]; either bound open; both blank = always.
+  validFrom: optionalDate,
+  validTo: optionalDate,
   notes: z.string().trim().optional(),
+}).refine((d) => !d.validFrom || !d.validTo || d.validFrom <= d.validTo, {
+  message: "Valid-to cannot be before valid-from.",
+  path: ["validTo"],
 });
 
 export type CostInput = z.infer<typeof costSchema>;

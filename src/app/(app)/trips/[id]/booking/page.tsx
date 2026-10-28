@@ -31,6 +31,7 @@ export default async function BookingDashboardPage({
       id: true,
       name: true,
       currencies: true,
+      defaultCurrency: true,
       startDate: true,
       participantCount: true,
       capacity: true,
@@ -98,6 +99,7 @@ export default async function BookingDashboardPage({
       },
       stays: {
         select: {
+          id: true,
           locationId: true,
           checkIn: true,
           checkOut: true,
@@ -134,6 +136,7 @@ export default async function BookingDashboardPage({
           bookingNotes: true,
           scheduleLimitations: true,
           defaultWorkflowId: true,
+          region: { select: { name: true } },
           costs: true,
         },
       })
@@ -169,6 +172,7 @@ export default async function BookingDashboardPage({
     locations,
     tripStartDate: trip.startDate,
     headcount: tripHeadcount(trip),
+    defaultCurrency: trip.defaultCurrency,
     workflows: await loadWorkflowCatalog(),
   });
   // A deep link to a site booked via a parent opens the parent's row.

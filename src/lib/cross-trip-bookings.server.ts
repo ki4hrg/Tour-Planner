@@ -51,6 +51,7 @@ const TRIP_SELECT = {
   endDate: true,
   participantCount: true,
   capacity: true,
+  defaultCurrency: true,
   tripType: { select: { name: true } },
   days: {
     orderBy: { dayIndex: "asc" },
@@ -214,6 +215,7 @@ export async function loadCrossTripBookings({
       locations,
       tripStartDate: t.startDate,
       headcount: tripHeadcount(t),
+      defaultCurrency: t.defaultCurrency,
       workflows,
     });
     return { trip, venueRows, itemRows };

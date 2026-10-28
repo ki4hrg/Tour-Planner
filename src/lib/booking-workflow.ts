@@ -1,5 +1,6 @@
-import type { BookingStatus, StepActor } from "@prisma/client";
+import type { BookingStatus, PaymentOffsetUnit, StepActor } from "@prisma/client";
 import { parseDateInput, toDateInput } from "./dates";
+import { addUnits } from "./payment-schedule";
 
 // Booking workflows (admin-defined milestone ladders) → a booking's coarse
 // status + stage. Pure, so the server sync layer (booking-workflow-sync.ts) and
@@ -33,7 +34,39 @@ export type WorkflowStepLike = {
   status: BookingStatus;
   // Who completes the step; absent (a caller that didn't load it) reads as US.
   actor?: StepActor;
+  // When the step falls due: this many units BEFORE the trip's start date
+  // (both or neither). Unset = due as soon as it is the upcoming step.
+  dueOffsetValue?: number | null;
+  dueOffsetUnit?: PaymentOffsetUnit | null;
 };
+
+/** The offset units a step's due date can be measured in. */
+export const STEP_DUE_UNITS = ["DAY", "WEEK", "MONTH"] as const satisfies readonly PaymentOffsetUnit[];
+
+/**
+ * The date a step falls due on a trip — `dueOffsetValue` `dueOffsetUnit`s
+ * before the trip's start. Null when the step has no offset (due whenever
+ * it's next) or the trip has no start date yet (a template).
+ */
+export function stepDueDate(
+  step: Pick<WorkflowStepLike, "dueOffsetValue" | "dueOffsetUnit">,
+  tripStartDate: Date | null | undefined,
+): Date | null {
+  if (step.dueOffsetValue == null || !step.dueOffsetUnit || !tripStartDate) return null;
+  return addUnits(tripStartDate, -step.dueOffsetValue, step.dueOffsetUnit);
+}
+
+/** "2 months before start" / "on start day" — the rule, for the admin UI. */
+export function describeStepDue(step: {
+  dueOffsetValue: number | null;
+  dueOffsetUnit: PaymentOffsetUnit | null;
+}): string | null {
+  if (step.dueOffsetValue == null || !step.dueOffsetUnit) return null;
+  const n = step.dueOffsetValue;
+  if (n === 0) return "on start day";
+  const unit = `${step.dueOffsetUnit.toLowerCase()}${Math.abs(n) === 1 ? "" : "s"}`;
+  return n > 0 ? `${n} ${unit} before start` : `${-n} ${unit} after start`;
+}
 
 export type StepCompletionLike = { stepId: string; completedOn: Date };
 
@@ -105,14 +138,16 @@ export function upcomingStep<S extends WorkflowStepLike>(
 
 /**
  * Whose move a booking is: the upcoming step (see `upcomingStep`), who owns
- * it, and since when the ball has sat there — the latest tick on the booking,
+ * it, since when the ball has sat there — the latest tick on the booking,
  * else `opened` (the booking's bookedOn ?? createdAt; null for an engagement
- * not created yet). Null when nothing is pending.
+ * not created yet) — and when the step falls due (`stepDueDate`; null = now).
+ * Null when nothing is pending.
  */
 export type WaitingState<S extends WorkflowStepLike = WorkflowStepLike> = {
   step: S;
   actor: StepActor;
   since: Date | null;
+  dueOn: Date | null;
 };
 
 export function waitingOn<S extends WorkflowStepLike>(
@@ -120,6 +155,7 @@ export function waitingOn<S extends WorkflowStepLike>(
   completions: StepCompletionLike[],
   status: BookingStatus,
   opened: Date | null,
+  tripStartDate: Date | null = null,
 ): WaitingState<S> | null {
   const step = upcomingStep(steps, completions, status);
   if (!step) return null;
@@ -129,7 +165,12 @@ export function waitingOn<S extends WorkflowStepLike>(
     if (!ids.has(c.stepId)) continue;
     if (!since || c.completedOn.getTime() > since.getTime()) since = c.completedOn;
   }
-  return { step, actor: step.actor ?? "US", since: since ?? opened };
+  return {
+    step,
+    actor: step.actor ?? "US",
+    since: since ?? opened,
+    dueOn: stepDueDate(step, tripStartDate),
+  };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -146,6 +187,11 @@ export type WaitingView = {
   actor: StepActor;
   since: string | null; // "yyyy-mm-dd"
   days: number | null; // days waiting as of the server's today
+  // When the step falls due ("yyyy-mm-dd"; null = no set date) and whether
+  // that is now. A step not yet due is nobody's move yet: "Finalized" on a
+  // trip two years out is information, not a to-do.
+  dueOn: string | null;
+  due: boolean;
 };
 
 export function waitingView(w: WaitingState | null, today: Date): WaitingView | null {
@@ -156,7 +202,14 @@ export function waitingView(w: WaitingState | null, today: Date): WaitingView | 
     actor: w.actor,
     since: w.since ? toDateInput(w.since) : null,
     days: w.since ? daysWaiting(w.since, today) : null,
+    dueOn: w.dueOn ? toDateInput(w.dueOn) : null,
+    due: w.dueOn == null || w.dueOn.getTime() <= today.getTime(),
   };
+}
+
+/** Whether a waiting state is due as of `today` (no date = due now). */
+export function isDue(w: { dueOn: Date | null } | null, today: Date): boolean {
+  return w == null || w.dueOn == null || w.dueOn.getTime() <= today.getTime();
 }
 
 /**
@@ -167,7 +220,10 @@ export function waitingView(w: WaitingState | null, today: Date): WaitingView | 
  */
 export function waitingFromView<S extends WorkflowStepLike>(
   steps: S[],
-  progress: Pick<BookingProgressView, "status" | "completions" | "openedOn">,
+  progress: Pick<
+    BookingProgressView,
+    "status" | "completions" | "openedOn" | "tripStartDate"
+  >,
   today: Date,
   doneIds?: Set<string>,
 ): WaitingState<S> | null {
@@ -179,7 +235,13 @@ export function waitingFromView<S extends WorkflowStepLike>(
     stepId,
     completedOn: dated.get(stepId) ?? today,
   }));
-  return waitingOn(steps, completions, progress.status, parseDateInput(progress.openedOn));
+  return waitingOn(
+    steps,
+    completions,
+    progress.status,
+    parseDateInput(progress.openedOn),
+    parseDateInput(progress.tripStartDate ?? null),
+  );
 }
 
 export type StepGate = { canComplete: boolean; canUndo: boolean };
@@ -238,6 +300,9 @@ export type BookingProgressView = {
   openedOn?: string | null;
   // The venue's default workflow (seeds a not-yet-created engagement).
   locationDefaultWorkflowId?: string | null;
+  // The trip's start date ("yyyy-mm-dd"), which step due offsets count back
+  // from; null/absent (a template) leaves every step due whenever it's next.
+  tripStartDate?: string | null;
 };
 
 /** Prisma booking → BookingProgressView fields (dates as yyyy-mm-dd). */
@@ -252,6 +317,7 @@ export function progressView(
     createdAt?: Date | null;
   } | null,
   locationDefaultWorkflowId?: string | null,
+  tripStartDate?: Date | null,
 ): BookingProgressView {
   return {
     exists: b != null,
@@ -269,6 +335,7 @@ export function progressView(
         ? toDateInput(b.createdAt)
         : null,
     locationDefaultWorkflowId: locationDefaultWorkflowId ?? null,
+    tripStartDate: tripStartDate ? toDateInput(tripStartDate) : null,
   };
 }
 
@@ -291,4 +358,6 @@ export const WORKFLOW_STEP_SELECT = {
   sortOrder: true,
   status: true,
   actor: true,
+  dueOffsetValue: true,
+  dueOffsetUnit: true,
 } as const;

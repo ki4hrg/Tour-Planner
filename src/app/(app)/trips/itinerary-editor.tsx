@@ -132,11 +132,22 @@ const NONE = "__none__";
 // A day as the "Move to day…" menu lists it.
 type DayOption = { id: string; label: string };
 
+// A venue's standing event (LocationEvent) — one click fills the item form.
+type VenueEvent = {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string | null;
+  categoryId: string | null;
+};
+
 type Location = {
   id: string;
   name: string;
   region: string | null;
   tagged: boolean;
+  // Standing events here; optional so inline-created venues stay valid.
+  events?: VenueEvent[];
   // Staff-only planning facts shown beside a chosen venue.
   scheduleLimitations: string | null;
   logisticsNotes: string | null;
@@ -204,7 +215,8 @@ function escapeCancels(onCancel: () => void) {
 const TripPricingContext = createContext<{
   headcount: number | null;
   currencies: string[];
-}>({ headcount: null, currencies: [] });
+  defaultCurrency: string;
+}>({ headcount: null, currencies: [], defaultCurrency: "USD" });
 
 export function ItineraryEditor({
   tripId,
@@ -219,6 +231,7 @@ export function ItineraryEditor({
   cities,
   headcount = null,
   currencies = [],
+  defaultCurrency = "USD",
   paymentCounts = {},
 }: {
   tripId: string;
@@ -234,6 +247,7 @@ export function ItineraryEditor({
   // Trip headcount (participants ?? capacity) for per-person booking prices.
   headcount?: number | null;
   currencies?: string[];
+  defaultCurrency?: string;
   // Payments per item booking — what an item delete would cascade.
   paymentCounts?: Record<string, number>;
 }) {
@@ -420,7 +434,7 @@ export function ItineraryEditor({
   }));
 
   return (
-    <TripPricingContext.Provider value={{ headcount, currencies }}>
+    <TripPricingContext.Provider value={{ headcount, currencies, defaultCurrency }}>
     <ItineraryDndProvider onDrop={onDrop}>
     <div className="space-y-4">
       {!hasStartDate && !isTemplate ? (
@@ -1693,10 +1707,30 @@ function ItemFields({
     setAddPresenter(NONE);
   };
 
+  // Choosing a talk fills the item in from the catalogue: its title becomes
+  // the item title and its default presenters the presenter list — unless the
+  // planner already typed a title / picked presenters of their own (a value
+  // that merely echoes the previously chosen talk is replaced, not kept).
+  const pickTalk = (id: string) => {
+    const prev = selectedTalk;
+    const next =
+      id === NONE ? null : (presentations.find((p) => p.id === id) ?? null);
+    setPresentationId(id);
+    if (!next) return;
+    if (!title.trim() || (prev && title === prev.title)) setTitle(next.title);
+    const prevDefaults = prev?.defaultPresenters.map((p) => p.id) ?? [];
+    const echoesPrev =
+      presenterIds.length === prevDefaults.length &&
+      presenterIds.every((p) => prevDefaults.includes(p));
+    if (presenterIds.length === 0 || echoesPrev) {
+      setPresenterIds(next.defaultPresenters.map((p) => p.id));
+    }
+  };
+
   const handleCreateTalk = async () => {
     const created = await onCreatePresentation(newTalkTitle);
     if (created) {
-      setPresentationId(created.id);
+      pickTalk(created.id);
       setCreatingTalk(false);
       setNewTalkTitle("");
     }
@@ -1712,6 +1746,19 @@ function ItemFields({
       setNewPresenterName("");
       setNewPresenterOrg("");
     }
+  };
+
+  // Standing events at the chosen venues, in time order.
+  const venueEvents: VenueEvent[] = locationIds
+    .flatMap((id) => locations.find((l) => l.id === id)?.events ?? [])
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const applyVenueEvent = (e: VenueEvent) => {
+    setTitle(e.title);
+    setStartTime(e.startTime);
+    setEndTime(e.endTime ?? "");
+    if (e.categoryId && categories.some((c) => c.id === e.categoryId))
+      setCategoryId(e.categoryId);
+    setFixedTime(true);
   };
 
   const locationName = (id: string) =>
@@ -1755,8 +1802,10 @@ function ItemFields({
   };
   const duration = durationLabel(startTime, endTime);
 
-  // Only editing a persisted, timed item can ripple the rest of the day.
-  const canCascade = !!initial && !!startTime && !selfDescribing;
+  // Only editing a persisted item that ALREADY had a start time can ripple
+  // the rest of the day: the ripple is the delta from the stored time, so an
+  // item being timed for the first time has nothing to shift by.
+  const canCascade = !!initial?.startTime && !!startTime && !selfDescribing;
 
   const submit = () => {
     onSubmit(
@@ -1945,6 +1994,27 @@ function ItemFields({
           </p>
         )}
 
+        {/* The chosen venues' standing events (Evensong 17:00): one click
+            fills title, times and category and pins the time — the group
+            doesn't control when the cathedral sings. */}
+        {venueEvents.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Events</span>
+            {venueEvents.map((e) => (
+              <Button
+                key={e.id}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyVenueEvent(e)}
+              >
+                <span className="font-mono text-xs tabular-nums">{e.startTime}</span>
+                {e.title}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+
         <Select value={addLocation} onValueChange={pickLocation}>
           <SelectTrigger size="sm">
             <SelectValue placeholder="+ Add location…" />
@@ -2020,7 +2090,7 @@ function ItemFields({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-xs">Talk</Label>
-            <Select value={presentationId} onValueChange={setPresentationId}>
+            <Select value={presentationId} onValueChange={pickTalk}>
               <SelectTrigger size="sm">
                 <SelectValue placeholder="— none —" />
               </SelectTrigger>
@@ -2266,7 +2336,8 @@ function TravelFields({
   const patchStop = (key: number, part: Partial<StopDraft>) =>
     setStops((prev) => prev.map((s) => (s.key === key ? { ...s, ...part } : s)));
 
-  const canCascade = !!initial && !!startTime;
+  // As in ItemForm: a ripple needs a stored start time to measure from.
+  const canCascade = !!initial?.startTime && !!startTime;
   // A stop needs a location or a label to survive the validator.
   const stopsIncomplete = stops.some(
     (s) => s.locationId === NONE && !s.label.trim(),
@@ -2762,7 +2833,7 @@ function BookingFields({
     draftsFromLines(initial?.priceLines ?? []),
   );
   const [agreedCurrency, setAgreedCurrency] = useState(
-    initial?.agreedCurrency ?? pricing.currencies[0] ?? "USD",
+    initial?.agreedCurrency ?? pricing.defaultCurrency,
   );
 
   const submit = () => {

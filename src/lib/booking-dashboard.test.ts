@@ -107,6 +107,7 @@ describe("buildDashboardRows — planned visits + workflow progress", () => {
       completions: [{ stepId: "s1", completedOn: "2026-10-20" }],
       openedOn: null,
       locationDefaultWorkflowId: null,
+      tripStartDate: null,
     });
     // No workflow catalog passed: whose move stays unresolved.
     expect(venueRows[0].waiting).toBeNull();
@@ -242,5 +243,146 @@ describe("buildDashboardRows — itemized agreed price", () => {
     const none = build([], 40, 0);
     expect(none.agreedTotal).toBeNull();
     expect(none.isMissingCost).toBe(true);
+  });
+});
+
+describe("buildDashboardRows — venue price default, lodging, grouping fields", () => {
+  const cost = (
+    label: string,
+    amount: number,
+    over: Partial<{
+      unit: "PER_PERSON" | "PER_GROUP";
+      currency: string;
+      validFrom: Date | null;
+      validTo: Date | null;
+      confirmedAt: Date | null;
+    }> = {},
+  ) => ({
+    id: label,
+    locationId: "hall",
+    label,
+    amount: amount as unknown as import("@prisma/client").Cost["amount"],
+    currency: over.currency ?? "GBP",
+    unit: over.unit ?? ("PER_PERSON" as const),
+    confirmedAt: over.confirmedAt ?? new Date(),
+    validFrom: over.validFrom ?? null,
+    validTo: over.validTo ?? null,
+    notes: null,
+  });
+
+  it("prices an unagreed engagement at the venue's list price valid for the trip", () => {
+    const { venueRows } = buildDashboardRows({
+      days: [
+        {
+          dayIndex: 1,
+          date: d("2027-07-12"),
+          scheduleItems: [
+            {
+              id: "i1",
+              title: null,
+              startTime: "10:00",
+              endTime: "11:00",
+              category: { name: "Talk" },
+              presentation: null,
+              sites: [{ locationId: "hall" }],
+              bookings: [],
+            },
+          ],
+        },
+      ],
+      engagements: [],
+      stays: [],
+      locations: [
+        {
+          ...loc("hall"),
+          region: { name: "Wiltshire" },
+          costs: [
+            cost("Admission", 10, { validTo: d("2027-06-30") }),
+            cost("Admission", 12, { validFrom: d("2027-07-01") }),
+            cost("Guide", 50, { unit: "PER_GROUP" }),
+          ],
+        },
+      ],
+      tripStartDate: d("2027-07-12"),
+      headcount: 40,
+      defaultCurrency: "GBP",
+    });
+    const row = venueRows[0];
+    expect(row.priceSource).toBe("venue");
+    expect(row.priceLines).toEqual([]);
+    expect(row.effectiveLines.map((l) => [l.label, l.amount])).toEqual([
+      ["Admission", 12],
+      ["Guide", 50],
+    ]);
+    expect(row.agreedTotal).toBe(12 * 40 + 50);
+    expect(row.agreedCurrency).toBe("GBP");
+    expect(row.isMissingCost).toBe(false);
+    // Only the lines in force for the trip's start are offered as list prices.
+    expect(row.costs.map((c) => c.amount)).toEqual([12, 50]);
+    expect(row.regionName).toBe("Wiltshire");
+    expect(row.visitType).toBe("Talk");
+    expect(row.firstDayIndex).toBe(1);
+  });
+
+  it("an agreed price overrides the venue price", () => {
+    const { venueRows } = buildDashboardRows({
+      days: [],
+      engagements: [
+        {
+          id: "b",
+          locationId: "hall",
+          label: null,
+          status: "IN_PROGRESS",
+          confirmationRef: null,
+          notes: null,
+          bookedContactId: null,
+          bookedContact: null,
+          agreedCurrency: "GBP",
+          priceLines: [{ label: "Deal", amount: 300, unit: "PER_GROUP", order: 0 }],
+        },
+      ],
+      stays: [],
+      locations: [{ ...loc("hall"), costs: [cost("Admission", 12)] }],
+      headcount: 40,
+    });
+    expect(venueRows[0].priceSource).toBe("agreed");
+    expect(venueRows[0].agreedTotal).toBe(300);
+    expect(venueRows[0].effectiveLines).toEqual(venueRows[0].priceLines);
+  });
+
+  it("lists the stays an engagement covers and types the venue as lodging", () => {
+    const { venueRows } = buildDashboardRows({
+      days: [
+        { dayIndex: 1, date: d("2027-07-12"), scheduleItems: [] },
+        { dayIndex: 2, date: d("2027-07-13"), scheduleItems: [] },
+        { dayIndex: 3, date: d("2027-07-14"), scheduleItems: [] },
+      ],
+      engagements: [],
+      stays: [
+        {
+          id: "s1",
+          locationId: "hall",
+          checkIn: d("2027-07-13"),
+          checkOut: d("2027-07-14"),
+        },
+      ],
+      locations: [loc("hall")],
+      tripStartDate: d("2027-07-12"),
+    });
+    const row = venueRows[0];
+    expect(row.visitType).toBe("Lodging");
+    expect(row.firstDayIndex).toBe(2);
+    expect(row.stays).toEqual([
+      {
+        id: "s1",
+        checkIn: "2027-07-13",
+        checkOut: "2027-07-14",
+        checkInDayIndex: null,
+        checkOutDayIndex: null,
+        nights: 1,
+        siteName: null,
+      },
+    ]);
+    expect(row.priceSource).toBeNull();
   });
 });

@@ -110,7 +110,9 @@ export function isYourMove(row: {
   return (
     row.bookingId != null &&
     row.status !== "NOT_NEEDED" &&
-    row.waiting?.actor === "US"
+    row.waiting?.actor === "US" &&
+    // A step with a due date isn't our move until that date.
+    row.waiting.due !== false
   );
 }
 
@@ -119,6 +121,8 @@ export function isYourMove(row: {
  *  the NEXT milestone, so "Your move: Menu chosen" read as already done. */
 export function waitingText(w: NonNullable<VenueBookingRow["waiting"]>): string {
   const who = w.actor === "US" ? "Next for you" : "Next (venue)";
+  // Not due yet: say when, instead of how long it has "waited".
+  if (!w.due && w.dueOn) return `${who}: ${w.stepLabel} · from ${formatDate(w.dueOn)}`;
   return `${who}: ${w.stepLabel}${w.days ? ` · ${w.days}d` : ""}`;
 }
 

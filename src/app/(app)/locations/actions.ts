@@ -3,10 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { parseDateInput } from "@/lib/dates";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { locationSchema, type LocationInput } from "@/lib/validators/location";
 import { costSchema, type CostInput } from "@/lib/validators/cost";
+import {
+  locationEventSchema,
+  type LocationEventInput,
+} from "@/lib/validators/location-event";
 import { hostSiteSchema } from "@/lib/validators/hostSite";
 import { paymentScheduleSchema, installmentRows } from "@/lib/validators/booking";
 import type { PaymentScheduleInputData } from "../trips/actions";
@@ -169,6 +174,8 @@ function parseCost(formData: FormData) {
     currency: formData.get("currency"),
     unit: formData.get("unit"),
     confirmedAt: formData.get("confirmedAt") ?? "",
+    validFrom: formData.get("validFrom") ?? "",
+    validTo: formData.get("validTo") ?? "",
     notes: formData.get("notes") || undefined,
   });
 }
@@ -180,6 +187,8 @@ function toCostData(d: CostInput) {
     currency: d.currency,
     unit: d.unit,
     confirmedAt: d.confirmedAt ? new Date(d.confirmedAt) : null,
+    validFrom: parseDateInput(d.validFrom),
+    validTo: parseDateInput(d.validTo),
     notes: d.notes || null,
   };
 }
@@ -465,4 +474,66 @@ export async function setLocationBookedVia(
         ? `Saved. Moved ${res.folded} booking${res.folded === 1 ? "" : "s"}.`
         : "Saved.",
   };
+}
+
+// --- Standing venue events (LocationEvent) ---
+// Direct-call actions (typed args → FormState) for the Location page's events
+// card. Deleting an event never touches schedule items already added from it.
+
+export type LocationEventInputData = {
+  title: string;
+  startTime: string;
+  endTime?: string;
+  categoryId?: string;
+  notes?: string;
+};
+
+function toEventData(d: LocationEventInput) {
+  return {
+    title: d.title,
+    startTime: d.startTime,
+    endTime: d.endTime ?? null,
+    categoryId: d.categoryId ?? null,
+    notes: d.notes || null,
+  };
+}
+
+export async function addLocationEvent(
+  locationId: string,
+  input: LocationEventInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = locationEventSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  await prisma.locationEvent.create({
+    data: { locationId, ...toEventData(parsed.data) },
+  });
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Event added." };
+}
+
+export async function updateLocationEvent(
+  id: string,
+  input: LocationEventInputData,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const parsed = locationEventSchema.safeParse(input);
+  if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
+  const event = await prisma.locationEvent.update({
+    where: { id },
+    data: toEventData(parsed.data),
+    select: { locationId: true },
+  });
+  revalidatePath(`/locations/${event.locationId}`);
+  return { ok: true, message: "Saved." };
+}
+
+export async function deleteLocationEvent(id: string): Promise<FormState> {
+  await assertRole("PLANNER");
+  const event = await prisma.locationEvent.delete({
+    where: { id },
+    select: { locationId: true },
+  });
+  revalidatePath(`/locations/${event.locationId}`);
+  return { ok: true, message: "Event removed." };
 }

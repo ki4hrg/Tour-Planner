@@ -17,8 +17,10 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/dates";
+import { bookingDashboardHref } from "@/lib/documents";
 import { type DayLodgingSummary, type SerializedDay } from "@/lib/trips";
 import { OvernightLine, TimelineGroups } from "./itinerary-timeline";
+import { VenueEngagementStatus } from "./venue-engagements";
 
 // Distinct location names visited across a day's items, in first-seen order.
 function daySites(day: SerializedDay): string[] {
@@ -156,9 +158,14 @@ function DayRow({
 
   // Rough-plan locations (GH #9) not already visited by a timed item — a loose
   // "planned" cluster distinct from the timed route. A note qualifies the name.
-  const plannedNames = (day.plannedLocations ?? [])
-    .filter((p) => !allSites.includes(p.name))
-    .map((p) => (p.note ? `${p.name} (${p.note})` : p.name));
+  const planned = (day.plannedLocations ?? []).filter(
+    (p) => !allSites.includes(p.name),
+  );
+  // Every venue mention links to its booking row on the trip's Bookings tab —
+  // the per-trip detail page for a venue (the location page is global).
+  const overnightHref = lodging?.locationId
+    ? bookingDashboardHref(tripId, lodging.locationId)
+    : null;
 
   return (
     <li className="py-1">
@@ -211,7 +218,17 @@ function DayRow({
                 open ? null : (
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Moon className="size-3 shrink-0" />
-                    {lodging.locationName}
+                    {overnightHref ? (
+                      <Link
+                        href={overnightHref}
+                        onClick={(e) => e.stopPropagation()}
+                        className="link-quiet"
+                      >
+                        {lodging.locationName}
+                      </Link>
+                    ) : (
+                      lodging.locationName
+                    )}
                   </span>
                 )
               ) : hasNight ? (
@@ -238,19 +255,47 @@ function DayRow({
         </div>
         <CollapsibleContent>
           <div className="ml-[7px] space-y-3 border-l pt-1 pb-4 pl-4">
-            {plannedNames.length > 0 ? (
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Planned:</span>{" "}
-                {plannedNames.join(" · ")}
-              </p>
+            {planned.length > 0 ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <span className="font-medium">Planned</span>
+                <ul className="space-y-1">
+                  {planned.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                    >
+                      <Link
+                        href={bookingDashboardHref(tripId, p.locationId)}
+                        className="font-medium text-foreground link-quiet"
+                      >
+                        {p.name}
+                      </Link>
+                      {p.note ? <span>{p.note}</span> : null}
+                      <VenueEngagementStatus locationId={p.locationId} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
             {count === 0 ? (
               <>
                 <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
-                {lodging ? <OvernightLine lodging={lodging} /> : null}
+                {lodging ? (
+                  <OvernightLine lodging={lodging} href={overnightHref} />
+                ) : null}
               </>
             ) : (
-              <TimelineGroups items={day.items} lodging={lodging} linkVenues showGaps />
+              <TimelineGroups
+                items={day.items}
+                lodging={lodging}
+                linkVenues
+                showGaps
+                showBookings
+                overnightHref={overnightHref}
+                renderVenueExtra={(locationId) => (
+                  <VenueEngagementStatus locationId={locationId} />
+                )}
+              />
             )}
           </div>
         </CollapsibleContent>

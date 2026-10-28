@@ -23,10 +23,15 @@ import { cn } from "@/lib/utils";
 import type { SerializedDocument } from "@/lib/documents";
 import { DocumentsPanel } from "../documents/documents-panel";
 import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
-import { formatMoney, isCostStale, COST_UNIT_LABELS, currencyOptions } from "@/lib/money";
+import { formatMoney, isCostStale, currencyOptions } from "@/lib/money";
 import { hasAgreedPrice } from "@/lib/costs";
 import { isBookingSecured } from "@/lib/booking";
-import type { VenueBookingRow, ItemBookingRow } from "@/lib/booking-dashboard";
+import type {
+  CoveredStay,
+  VenueBookingRow,
+  ItemBookingRow,
+} from "@/lib/booking-dashboard";
+import { stayHref } from "@/lib/documents";
 import {
   describeCadence,
   type ResolvedInstallment,
@@ -79,8 +84,9 @@ export function WindowCell({ row }: { row: VenueBookingRow }) {
 export function PriceCell({ row }: { row: VenueBookingRow }) {
   if (!row.bookable)
     return <span className="text-muted-foreground">—</span>;
-  // The negotiated engagement price beats the catalog's asking price.
-  if (hasAgreedPrice(row.priceLines)) {
+  // The engagement's own agreed price (the per-trip override) beats the
+  // venue's list price.
+  if (row.priceSource === "agreed") {
     return (
       <div className="space-y-0.5">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -95,7 +101,7 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
       </div>
     );
   }
-  if (row.costs.length === 0)
+  if (row.priceSource == null)
     return (
       <div className="space-y-0.5">
         <Badge variant="attention">No price</Badge>
@@ -103,30 +109,27 @@ export function PriceCell({ row }: { row: VenueBookingRow }) {
         <PaymentState row={row} />
       </div>
     );
-  // No agreed price yet: fall back to the venue's list prices (its Cost
-  // catalog, edited on the Location page), each named, and tagged "list" so
-  // they read as reference prices, not this trip's deal.
+  // Nothing agreed yet: the venue's list price (its Cost catalog, edited on
+  // the Location page) is the price until one is. A plain caption — not a
+  // pill, which read like a booking status — says where it comes from.
+  const stale = row.costs.some(
+    (c) => c.currency === row.agreedCurrency && isCostStale(c.confirmedAt),
+  );
   return (
     <div className="space-y-0.5">
-      {row.costs.map((c, i) => (
-        <div key={c.id} className="flex flex-wrap items-center gap-x-1.5">
-          <span className="text-muted-foreground">{c.label}</span>
-          <span>
-            {formatMoney(c.amount, c.currency)}
-            <span className="text-muted-foreground"> {COST_UNIT_LABELS[c.unit]}</span>
-          </span>
-          {i === 0 ? (
-            <Badge variant="muted" title="Venue list price">
-              list
-            </Badge>
-          ) : null}
-          {isCostStale(c.confirmedAt) ? (
-            <Badge variant="attention" title="Unconfirmed for 1+ year">
-              stale
-            </Badge>
-          ) : null}
-        </div>
-      ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <AgreedPrice
+          lines={row.effectiveLines}
+          currency={row.agreedCurrency}
+          headcount={row.headcount}
+        />
+        {stale ? (
+          <Badge variant="attention" title="Unconfirmed for 1+ year">
+            stale
+          </Badge>
+        ) : null}
+      </div>
+      <span className="block text-xs text-muted-foreground">Venue price</span>
       <PaymentState row={row} />
     </div>
   );
@@ -163,6 +166,14 @@ function PaymentState({ row }: { row: VenueBookingRow }) {
       </span>
     );
   return <span className="text-xs text-muted-foreground">Unpaid</span>;
+}
+
+// "6 Jul → 9 Jul 2026" on a dated trip, "Days 2–4" on a date-less template.
+function stayRangeLabel(s: CoveredStay): string {
+  if (s.checkIn && s.checkOut) return `${formatDate(s.checkIn)} → ${formatDate(s.checkOut)}`;
+  if (s.checkInDayIndex != null && s.checkOutDayIndex != null)
+    return `Days ${s.checkInDayIndex}–${s.checkOutDayIndex}`;
+  return "Stay";
 }
 
 export function coverageLine(row: VenueBookingRow): string {
@@ -275,6 +286,31 @@ export function VenueDetails({
           </ul>
         )}
         </div>
+        {row.stays.length > 0 ? (
+          <div>
+            <h4 className="mb-1 text-sm font-medium">Lodging</h4>
+            <ul className="space-y-0.5 text-sm">
+              {row.stays.map((s, i) => (
+                <li key={s.id ?? i} className="flex items-baseline gap-2">
+                  <span className="min-w-0">
+                    {s.id ? (
+                      <Link href={stayHref(tripId, s.id)} className="link-quiet">
+                        {stayRangeLabel(s)}
+                      </Link>
+                    ) : (
+                      stayRangeLabel(s)
+                    )}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {s.nights} night{s.nights === 1 ? "" : "s"}
+                      {s.siteName ? ` · ${s.siteName}` : ""}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {row.bookingNotes ? (
           <div>
             <h4 className="mb-1 text-sm font-medium">Booking notes</h4>

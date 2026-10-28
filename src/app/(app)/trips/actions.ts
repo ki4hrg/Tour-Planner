@@ -60,6 +60,7 @@ import {
 } from "@/lib/schedule-shift";
 import { getTodoistAuth } from "@/lib/todoist-sync";
 import { engagementLocationIdFor } from "@/lib/booked-via.server";
+import { tripDefaultCurrencyFor } from "@/lib/trip-mutations";
 import { bookedViaMap, engagementLocationId } from "@/lib/booked-via";
 import {
   seedWorkflowFor,
@@ -82,6 +83,7 @@ function parseTrip(formData: FormData) {
     participantCount: formData.get("participantCount") ?? "",
     status: formData.get("status"),
     currencies: formData.getAll("currencies"),
+    defaultCurrency: formData.get("defaultCurrency") ?? "",
     notes: formData.get("notes") || undefined,
     isTemplate: formData.get("isTemplate") === "on",
   });
@@ -97,6 +99,7 @@ function toTripData(d: TripInput) {
     participantCount: d.participantCount ?? null,
     status: d.status as TripStatus,
     currencies: d.currencies,
+    defaultCurrency: d.defaultCurrency,
     notes: d.notes || null,
   };
 }
@@ -356,6 +359,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       capacity: true,
       participantCount: true,
       currencies: true,
+      defaultCurrency: true,
       notes: true,
       days: { orderBy: { dayIndex: "asc" }, select: TEMPLATE_DAYS_SELECT },
       bookings: { select: TEMPLATE_VENUE_BOOKING_SELECT },
@@ -383,6 +387,7 @@ export async function saveTripAsTemplate(formData: FormData): Promise<void> {
       capacity: source.capacity,
       participantCount: source.participantCount,
       currencies: source.currencies,
+      defaultCurrency: source.defaultCurrency,
       notes: source.notes,
       status: "ACTIVE",
       isTemplate: true,
@@ -1153,6 +1158,8 @@ export async function addBooking(
   await prisma.booking.create({
     data: {
       scheduleItemId: itemId,
+      // A new booking starts in the trip's default currency unless told otherwise.
+      agreedCurrency: await tripDefaultCurrencyFor({ scheduleItemId: itemId }),
       ...toBookingScalars(parsed.data),
       ...priceLinesCreate(parsed.data),
       ...(await seedWorkflowFor(null)),
@@ -1251,6 +1258,7 @@ export async function upsertVenueBooking(
     where: { tripId_locationId: { tripId, locationId } },
     create: {
       tripId,
+      agreedCurrency: await tripDefaultCurrencyFor({ tripId }),
       ...detailScalars,
       ...priceLinesCreate(parsed.data),
       ...workflow,

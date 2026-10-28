@@ -21,9 +21,11 @@ import {
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
 import { stepGate } from "@/lib/booking-workflow";
-import { formatDate, toDateInput, todayUtc } from "@/lib/dates";
+import { formatDate, parseDateInput, toDateInput, todayUtc } from "@/lib/dates";
 import {
   daysWaiting,
+  isDue,
+  stepDueDate,
   upcomingStep,
   waitingFromView,
   waitingView,
@@ -73,6 +75,7 @@ function StepChip({
   done,
   doneOn,
   isNext,
+  notYetDue = false,
   locked = false,
   canEdit,
   pending,
@@ -83,6 +86,9 @@ function StepChip({
   done: boolean;
   doneOn?: string;
   isNext: boolean; // the upcoming step — outlined, amber when it's ours
+  // The upcoming step's due date is still ahead: outlined but not amber (it
+  // isn't a to-do yet), and the title says when it is.
+  notYetDue?: boolean;
   // Steps go in order (stepGate): locked = can't be done yet (an earlier step
   // is open) or undone yet (a later step is done).
   locked?: boolean;
@@ -109,7 +115,7 @@ function StepChip({
         done
           ? badgeVariants({ variant: bookingStatusVariant(step.status) })
           : isNext
-            ? step.actor === "VENUE"
+            ? step.actor === "VENUE" || notYetDue
               ? "border-foreground/30 text-muted-foreground"
               : cn("font-medium", OURS_CHIP_CLASSES)
             : "border-dashed text-muted-foreground",
@@ -129,6 +135,7 @@ export function StepStrip({
   done,
   doneOn,
   status,
+  tripStartDate,
   canEdit,
   pending,
   onToggle,
@@ -138,6 +145,8 @@ export function StepStrip({
   done: Set<string>;
   doneOn: Map<string, string>;
   status: BookingStatus;
+  // "yyyy-mm-dd"; step due offsets count back from it (null = a template).
+  tripStartDate?: string | null;
   canEdit: boolean;
   pending: boolean;
   onToggle: (stepId: string) => void;
@@ -147,6 +156,10 @@ export function StepStrip({
     [...done].map((stepId) => ({ stepId })),
     status,
   );
+  const nextDueOn = next
+    ? stepDueDate(next, parseDateInput(tripStartDate ?? null))
+    : null;
+  const nextDue = isDue({ dueOn: nextDueOn }, todayUtc());
   const gate = stepGate(steps, done);
   return (
     <ol className="flex min-w-0 flex-1 flex-wrap gap-1" aria-label={`${name} steps`}>
@@ -157,6 +170,7 @@ export function StepStrip({
             done={done.has(s.id)}
             doneOn={doneOn.get(s.id)}
             isNext={s.id === next?.id}
+            notYetDue={s.id === next?.id && !nextDue}
             locked={
               !(done.has(s.id) ? gate.get(s.id)?.canUndo : gate.get(s.id)?.canComplete)
             }
@@ -218,6 +232,8 @@ export function CompactProgress({
     : null;
   const next = waiting?.step ?? null;
   const days = waiting?.since ? daysWaiting(waiting.since, today) : 0;
+  // A step whose due date is still ahead isn't anyone's move yet.
+  const due = isDue(waiting, today);
   // Owner-led once the booking exists; an untouched venue just shows "Next".
   const owned = progress.exists && waiting != null;
 
@@ -235,17 +251,22 @@ export function CompactProgress({
           step={next}
           done={false}
           isNext
+          notYetDue={!due}
           canEdit={canEdit}
           pending={pending}
           onToggle={() => tick(next.id)}
         >
           {owned ? (
             <>
-              <span className={cn(waiting.actor === "US" && "font-semibold")}>
+              <span className={cn(waiting.actor === "US" && due && "font-semibold")}>
                 {ACTOR_PREFIX[waiting.actor]}:
               </span>{" "}
               {next.label}
-              {days > 0 ? <span className="opacity-70"> · {days}d</span> : null}
+              {!due && waiting.dueOn ? (
+                <span className="opacity-70"> · from {formatDate(waiting.dueOn)}</span>
+              ) : days > 0 ? (
+                <span className="opacity-70"> · {days}d</span>
+              ) : null}
             </>
           ) : (
             <>
@@ -300,6 +321,7 @@ export function BookingStepStrip({
           done={doneSet}
           doneOn={new Map(progress.completions.map((c) => [c.stepId, c.completedOn]))}
           status={progress.status}
+          tripStartDate={progress.tripStartDate}
           canEdit={canEdit}
           pending={pending}
           onToggle={toggle}
@@ -567,6 +589,7 @@ export function ProgressList({
                 done={done.get(line.key) ?? new Set<string>()}
                 doneOn={doneOn.get(line.key) ?? new Map()}
                 status={line.progress.status}
+                tripStartDate={line.progress.tripStartDate}
                 canEdit={canEdit}
                 pending={pending}
                 onToggle={(stepId) => toggleStep(line, stepId)}

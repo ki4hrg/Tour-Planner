@@ -41,13 +41,29 @@ export const tripSchema = z
           .transform((s) => s.toUpperCase()),
       )
       .min(1, "Pick at least one currency."),
+    // The currency new stays / bookings / price lines start in — one of
+    // `currencies`; omitted = the first one.
+    defaultCurrency: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : v),
+      z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z]{3}$/, "Use a 3-letter currency code.")
+        .transform((s) => s.toUpperCase())
+        .optional(),
+    ),
     notes: z.string().trim().optional(),
     isTemplate: z.coerce.boolean().optional(),
   })
+  .transform((d) => ({ ...d, defaultCurrency: d.defaultCurrency ?? d.currencies[0] }))
   .refine(
     (d) => !d.startDate || !d.endDate || d.endDate >= d.startDate,
     { message: "End date cannot be before start date.", path: ["endDate"] },
-  );
+  )
+  .refine((d) => d.currencies.includes(d.defaultCurrency), {
+    message: "The default currency must be one of the trip's currencies.",
+    path: ["defaultCurrency"],
+  });
 
 export type TripInput = z.infer<typeof tripSchema>;
 

@@ -49,6 +49,7 @@ export function LodgingManager({
   locations,
   stays,
   currencies,
+  defaultCurrency,
   documentsByStay,
   progressByLocation,
   headcount,
@@ -64,6 +65,8 @@ export function LodgingManager({
   stays: SerializedStay[];
   // The trip's currency vocabulary (GH #11) — the stay form picks from these.
   currencies: string[];
+  // The trip's default currency — what a new stay starts in.
+  defaultCurrency: string;
   // Stay-specific paperwork (rooming lists, arrival sheets), keyed by stay id.
   // The lodging CONTRACT belongs to the venue engagement, not here — a stay has
   // no booking of its own (see the booking dashboard).
@@ -94,6 +97,7 @@ export function LodgingManager({
               dayCount={dayCount}
               locations={locations}
               currencies={currencies}
+              defaultCurrency={defaultCurrency}
               documents={documentsByStay[stay.id] ?? []}
               progress={progressByLocation[stay.locationId]}
               tripHeadcount={headcount}
@@ -124,6 +128,7 @@ export function LodgingManager({
               isTemplate={isTemplate}
               dayCount={dayCount}
               currencies={currencies}
+              defaultCurrency={defaultCurrency}
               submitLabel="Add stay"
               onSubmit={(data, done) =>
                 run(() => addStay(tripId, data), () => {
@@ -157,6 +162,7 @@ function StayRow({
   dayCount,
   locations,
   currencies,
+  defaultCurrency,
   documents,
   progress,
   tripHeadcount,
@@ -168,6 +174,8 @@ function StayRow({
   dayCount: number;
   locations: Location[];
   currencies: string[];
+  // The trip's default currency — what a new stay starts in.
+  defaultCurrency: string;
   documents: SerializedDocument[];
   progress: BookingProgressView | undefined;
   tripHeadcount: number | null;
@@ -204,6 +212,7 @@ function StayRow({
             isTemplate={isTemplate}
             dayCount={dayCount}
             currencies={currencies}
+              defaultCurrency={defaultCurrency}
             submitLabel="Save stay"
             onSubmit={(data, done) =>
               run(() => updateStay(stay.id, data), () => {
@@ -219,7 +228,12 @@ function StayRow({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-medium">{stay.location.name}</span>
+                <Link
+                  href={`/locations/${stay.location.id}`}
+                  className="font-medium link-quiet"
+                >
+                  {stay.location.name}
+                </Link>
                 <span className="text-sm text-muted-foreground">{dateSpan}</span>
               </div>
 
@@ -343,6 +357,7 @@ function StayFields({
   isTemplate,
   dayCount,
   currencies,
+  defaultCurrency,
   submitLabel,
   onSubmit,
   onCancel,
@@ -354,6 +369,8 @@ function StayFields({
   isTemplate: boolean;
   dayCount: number;
   currencies: string[];
+  // The trip's default currency — what a new stay starts in.
+  defaultCurrency: string;
   submitLabel: string;
   onSubmit: (data: StayInputData, done: () => void) => void;
   onCancel: () => void;
@@ -382,10 +399,10 @@ function StayFields({
       : "",
   );
   // Offer the trip's currency set (plus the stored value on legacy stays);
-  // default new stays to the trip's first currency.
+  // a new stay starts in the trip's default currency.
   const currencyChoices = currencyOptions(currencies, initial?.currency);
   const [currency, setCurrency] = useState(
-    initial?.currency ?? currencyChoices[0],
+    initial?.currency ?? defaultCurrency,
   );
   const [priority, setPriority] = useState<string>(
     initial?.priority != null ? String(initial.priority) : "0",
@@ -421,7 +438,7 @@ function StayFields({
           setDepartureTime("");
           setHeadcount("");
           setCostPerPersonPerNight("");
-          setCurrency(currencyChoices[0]);
+          setCurrency(defaultCurrency);
           setPriority("0");
           setNotes("");
         }

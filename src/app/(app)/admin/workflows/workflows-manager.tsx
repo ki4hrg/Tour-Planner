@@ -16,7 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { StepActor, StepStatus } from "@/lib/booking-workflow";
+import {
+  STEP_DUE_UNITS,
+  type StepActor,
+  type StepStatus,
+} from "@/lib/booking-workflow";
+import type { PaymentOffsetUnit } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { createWorkflow, saveWorkflow, deleteWorkflow } from "./actions";
 
@@ -26,6 +31,9 @@ type Step = {
   label: string;
   status: StepStatus;
   actor: StepActor;
+  // Due this many units before the trip's start; "" = due whenever it's next.
+  dueValue: string;
+  dueUnit: PaymentOffsetUnit;
 };
 
 export type WorkflowRow = {
@@ -34,7 +42,20 @@ export type WorkflowRow = {
   isDefault: boolean;
   bookingCount: number;
   locationCount: number;
-  steps: { id: string; label: string; status: StepStatus; actor: StepActor }[];
+  steps: {
+    id: string;
+    label: string;
+    status: StepStatus;
+    actor: StepActor;
+    dueOffsetValue: number | null;
+    dueOffsetUnit: PaymentOffsetUnit | null;
+  }[];
+};
+
+const DUE_UNIT_LABELS: Record<PaymentOffsetUnit, string> = {
+  DAY: "days",
+  WEEK: "weeks",
+  MONTH: "months",
 };
 
 const STEP_STATUS_LABELS: Record<StepStatus, string> = {
@@ -100,7 +121,15 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
   const [name, setName] = useState(workflow.name);
   const [isDefault, setIsDefault] = useState(workflow.isDefault);
   const [steps, setSteps] = useState<Step[]>(
-    workflow.steps.map((s) => ({ ...s, key: s.id })),
+    workflow.steps.map((s) => ({
+      id: s.id,
+      key: s.id,
+      label: s.label,
+      status: s.status,
+      actor: s.actor,
+      dueValue: s.dueOffsetValue == null ? "" : String(s.dueOffsetValue),
+      dueUnit: s.dueOffsetUnit ?? "MONTH",
+    })),
   );
 
   const patch = (i: number, p: Partial<Step>) =>
@@ -131,11 +160,13 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
       saveWorkflow(workflow.id, {
         name,
         isDefault,
-        steps: steps.map(({ id, label, status, actor }) => ({
+        steps: steps.map(({ id, label, status, actor, dueValue, dueUnit }) => ({
           id,
           label,
           status,
           actor,
+          dueOffsetValue: dueValue.trim() === "" ? null : Number(dueValue),
+          dueOffsetUnit: dueValue.trim() === "" ? null : dueUnit,
         })),
       }),
     );
@@ -244,6 +275,43 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
                 ))}
               </SelectContent>
             </Select>
+            {/* When the step falls due: N units before the trip starts. Blank
+                = due as soon as it is the next step. Until the date, the step
+                reads muted ("from 12 Mar") and is nobody's move. */}
+            <span className="ml-7 flex items-center gap-1 sm:ml-0">
+              <Label htmlFor={`${workflow.id}-due-${s.key}`} className="text-xs text-muted-foreground">
+                Due
+              </Label>
+              <Input
+                id={`${workflow.id}-due-${s.key}`}
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={s.dueValue}
+                onChange={(e) => patch(i, { dueValue: e.target.value })}
+                className="w-16"
+                aria-label={`Step ${i + 1} due offset`}
+              />
+              <Select
+                value={s.dueUnit}
+                onValueChange={(v) => patch(i, { dueUnit: v as PaymentOffsetUnit })}
+              >
+                <SelectTrigger
+                  className="w-36"
+                  aria-label={`Step ${i + 1} due unit`}
+                  disabled={s.dueValue.trim() === ""}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STEP_DUE_UNITS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {DUE_UNIT_LABELS[u]} before
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </span>
             {/* Below sm the row wraps: label, then owner + status, then these. */}
             <span className="ml-auto flex sm:ml-0">
               <Button
@@ -286,7 +354,14 @@ function WorkflowEditor({ workflow }: { workflow: WorkflowRow }) {
           onClick={() =>
             setSteps((prev) => [
               ...prev,
-              { key: newKey(), label: "", status: "IN_PROGRESS", actor: "US" },
+              {
+                key: newKey(),
+                label: "",
+                status: "IN_PROGRESS",
+                actor: "US",
+                dueValue: "",
+                dueUnit: "MONTH",
+              },
             ])
           }
         >

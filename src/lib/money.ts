@@ -26,9 +26,14 @@ export const COST_UNIT_LABELS: Record<CostUnit, string> = {
 
 // Prisma Decimal doesn't serialize cleanly into Client Components — flatten to a
 // number at the server/client boundary.
-export type SerializedCost = Omit<Cost, "amount" | "confirmedAt"> & {
+export type SerializedCost = Omit<
+  Cost,
+  "amount" | "confirmedAt" | "validFrom" | "validTo"
+> & {
   amount: number;
   confirmedAt: string | null;
+  validFrom: string | null; // "yyyy-mm-dd"
+  validTo: string | null;
 };
 
 export function serializeCost(cost: Cost): SerializedCost {
@@ -36,6 +41,8 @@ export function serializeCost(cost: Cost): SerializedCost {
     ...cost,
     amount: Number(cost.amount),
     confirmedAt: cost.confirmedAt ? cost.confirmedAt.toISOString() : null,
+    validFrom: cost.validFrom ? cost.validFrom.toISOString().slice(0, 10) : null,
+    validTo: cost.validTo ? cost.validTo.toISOString().slice(0, 10) : null,
   };
 }
 

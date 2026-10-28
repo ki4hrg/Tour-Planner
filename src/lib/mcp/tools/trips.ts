@@ -59,6 +59,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           status: deriveTripLifecycle(t, today),
           tripType: t.tripType.name,
           currencies: t.currencies,
+          defaultCurrency: t.defaultCurrency,
           startDate: toDateInput(t.startDate),
           endDate: toDateInput(t.endDate),
           capacity: t.capacity,
@@ -126,6 +127,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
           statusOverride: trip.status,
           tripType: trip.tripType.name,
           currencies: trip.currencies,
+          defaultCurrency: trip.defaultCurrency,
           startDate: toDateInput(trip.startDate),
           endDate: toDateInput(trip.endDate),
           capacity: trip.capacity,
@@ -159,12 +161,13 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Create Trip",
       description:
-        "Create a new trip. Requires a name and tripTypeId. The Planning → In progress → Complete lifecycle is derived from the trip's dates; status is only a manual override (ACTIVE = normal, default; ARCHIVED; CANCELLED). Dates (YYYY-MM-DD), capacity, participant count, and currencies (3-letter codes; the trip-scoped currency vocabulary, defaults to the trip type's default currency) are optional. Use list-trip-types to find available type IDs.",
+        "Create a new trip. Requires a name and tripTypeId. The Planning → In progress → Complete lifecycle is derived from the trip's dates; status is only a manual override (ACTIVE = normal, default; ARCHIVED; CANCELLED). Dates (YYYY-MM-DD), capacity, participant count, currencies (3-letter codes; the trip-scoped currency vocabulary, defaults to the trip type's default currency) and defaultCurrency (what new stays, bookings and price lines start in; must be one of currencies, defaults to the first) are optional. Use list-trip-types to find available type IDs.",
       inputSchema: {
         name: z.string(),
         tripTypeId: z.string(),
         status: statusOverrideEnum.optional(),
         currencies: z.array(z.string().regex(/^[A-Za-z]{3}$/)).optional(),
+        defaultCurrency: z.string().regex(/^[A-Za-z]{3}$/).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),
@@ -183,6 +186,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
       tripTypeId,
       status,
       currencies,
+      defaultCurrency,
       startDate,
       endDate,
       capacity,
@@ -212,6 +216,18 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
                 select: { defaultCurrency: true },
               })
               .then((tt) => [tt.defaultCurrency]);
+        const tripDefault = defaultCurrency?.toUpperCase() ?? tripCurrencies[0];
+        if (!tripCurrencies.includes(tripDefault)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: defaultCurrency must be one of the trip's currencies.",
+              },
+            ],
+            isError: true,
+          };
+        }
 
         const trip = await prisma.trip.create({
           data: {
@@ -219,6 +235,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
             tripTypeId,
             status: status ?? "ACTIVE",
             currencies: tripCurrencies,
+            defaultCurrency: tripDefault,
             startDate: parseDateInput(startDate),
             endDate: parseDateInput(endDate),
             capacity,
@@ -248,12 +265,13 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Trip",
       description:
-        "Update an existing trip's details. Only include fields you want to change. Status is a manual override only (ACTIVE = lifecycle follows the dates; ARCHIVED; CANCELLED) — Planning/In progress/Complete cannot be set directly, they derive from startDate/endDate. Passing currencies REPLACES the trip's currency vocabulary (3-letter codes). Changing startDate (YYYY-MM-DD) recomputes every itinerary day's date and shifts dated stays by the same number of days so lodging stays on the same trip nights.",
+        "Update an existing trip's details. Only include fields you want to change. Status is a manual override only (ACTIVE = lifecycle follows the dates; ARCHIVED; CANCELLED) — Planning/In progress/Complete cannot be set directly, they derive from startDate/endDate. Passing currencies REPLACES the trip's currency vocabulary (3-letter codes); defaultCurrency (one of them) is what new stays, bookings and price lines start in. Changing startDate (YYYY-MM-DD) recomputes every itinerary day's date and shifts dated stays by the same number of days so lodging stays on the same trip nights.",
       inputSchema: {
         tripId: z.string(),
         name: z.string().optional(),
         status: statusOverrideEnum.optional(),
         currencies: z.array(z.string().regex(/^[A-Za-z]{3}$/)).optional(),
+        defaultCurrency: z.string().regex(/^[A-Za-z]{3}$/).optional(),
         startDate: z.string().optional(),
         endDate: z.string().optional(),
         capacity: z.number().optional(),
@@ -272,6 +290,7 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
       name,
       status,
       currencies,
+      defaultCurrency,
       startDate,
       endDate,
       capacity,
@@ -297,6 +316,31 @@ export function registerTripTools(server: McpServer, user: SessionUser) {
         if (status !== undefined) data.status = status;
         if (currencies !== undefined)
           data.currencies = currencies.map((c) => c.toUpperCase());
+        if (defaultCurrency !== undefined)
+          data.defaultCurrency = defaultCurrency.toUpperCase();
+        // The default must stay inside the (possibly replaced) currency set.
+        if (currencies !== undefined || defaultCurrency !== undefined) {
+          const current = await prisma.trip.findUnique({
+            where: { id: tripId },
+            select: { currencies: true, defaultCurrency: true },
+          });
+          const set = (data.currencies as string[] | undefined) ?? current?.currencies ?? [];
+          const def = (data.defaultCurrency as string | undefined) ?? current?.defaultCurrency;
+          if (def && set.length && !set.includes(def)) {
+            if (defaultCurrency !== undefined) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "Error: defaultCurrency must be one of the trip's currencies.",
+                  },
+                ],
+                isError: true,
+              };
+            }
+            data.defaultCurrency = set[0];
+          }
+        }
         if (startDate !== undefined) data.startDate = parseDateInput(startDate);
         if (endDate !== undefined) data.endDate = parseDateInput(endDate);
         if (capacity !== undefined) data.capacity = capacity;

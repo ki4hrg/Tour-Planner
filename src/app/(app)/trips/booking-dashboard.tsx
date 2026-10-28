@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ListChecks, SquareKanban, Table2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -21,6 +29,66 @@ import { BookingBoard } from "./booking-board";
 import { BookingProgress } from "./booking-progress";
 
 export type DashboardView = "table" | "board" | "progress";
+
+// Table order + grouping, both kept in the URL (`?sort=`, `?group=`) like the
+// view. Rows come from the server in booking-window order (earliest-bookable
+// first, no window last), which stays the default.
+export type DashboardSort = "window" | "name" | "day";
+export type DashboardGroup = "none" | "type" | "region";
+
+const SORT_LABELS: Record<DashboardSort, string> = {
+  window: "Booking window",
+  name: "Venue",
+  day: "First visit",
+};
+const GROUP_LABELS: Record<DashboardGroup, string> = {
+  none: "No grouping",
+  type: "Visit type",
+  region: "Region",
+};
+
+function sortVenues(rows: VenueBookingRow[], sort: DashboardSort): VenueBookingRow[] {
+  if (sort === "window") return rows; // server order
+  const copy = [...rows];
+  if (sort === "name")
+    return copy.sort((a, b) => a.locationName.localeCompare(b.locationName));
+  return copy.sort(
+    (a, b) =>
+      (a.firstDayIndex ?? Infinity) - (b.firstDayIndex ?? Infinity) ||
+      a.locationName.localeCompare(b.locationName),
+  );
+}
+
+// Group label per row; "Lodging" leads a type grouping, regions sort A–Z with
+// unregioned venues last.
+function groupOf(row: VenueBookingRow, group: DashboardGroup): string {
+  if (group === "region") return row.regionName ?? "No region";
+  return row.visitType;
+}
+function groupVenues(
+  rows: VenueBookingRow[],
+  group: DashboardGroup,
+): { label: string; rows: VenueBookingRow[] }[] {
+  if (group === "none") return [{ label: "", rows }];
+  const map = new Map<string, VenueBookingRow[]>();
+  for (const r of rows) {
+    const key = groupOf(r, group);
+    map.set(key, [...(map.get(key) ?? []), r]);
+  }
+  const rank = (label: string) =>
+    group === "type"
+      ? label === "Lodging"
+        ? 0
+        : label === "Planned"
+          ? 2
+          : 1
+      : label === "No region"
+        ? 1
+        : 0;
+  return [...map.entries()]
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+    .map(([label, rows]) => ({ label, rows }));
+}
 
 type ContactOption = { id: string; name: string };
 
@@ -84,13 +152,21 @@ export function BookingDashboard({
   const param = searchParams.get("view");
   const view: DashboardView =
     param === "board" || param === "progress" ? param : "table";
-  const switchView = (next: DashboardView) => {
+  const sortParam = searchParams.get("sort");
+  const sort: DashboardSort =
+    sortParam === "name" || sortParam === "day" ? sortParam : "window";
+  const groupParam = searchParams.get("group");
+  const group: DashboardGroup =
+    groupParam === "type" || groupParam === "region" ? groupParam : "none";
+  const setParam = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "table") params.delete("view");
-    else params.set("view", next);
+    if (value == null) params.delete(key);
+    else params.set(key, value);
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
+  const switchView = (next: DashboardView) =>
+    setParam("view", next === "table" ? null : next);
   const docsFor = (bookingId: string | null) =>
     (bookingId && documentsByBooking[bookingId]) || [];
   const focused = focusLocationId != null &&
@@ -128,6 +204,8 @@ export function BookingDashboard({
 
   const total = venueRows.length + itemRows.length;
   const shown = shownVenues.length + shownItems.length;
+  const groups = groupVenues(sortVenues(shownVenues, sort), group);
+  const grouped = group !== "none";
 
   if (total === 0) {
     return (
@@ -213,6 +291,38 @@ export function BookingDashboard({
             : `All ${total} venues`}
         </span>
       </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <label className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Sort</span>
+          <Select value={sort} onValueChange={(v) => setParam("sort", v === "window" ? null : v)}>
+            <SelectTrigger size="sm" className="w-40" aria-label="Sort by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(SORT_LABELS) as DashboardSort[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Group</span>
+          <Select value={group} onValueChange={(v) => setParam("group", v === "none" ? null : v)}>
+            <SelectTrigger size="sm" className="w-36" aria-label="Group by">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(GROUP_LABELS) as DashboardGroup[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {GROUP_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      </div>
 
       {shown === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -233,18 +343,46 @@ export function BookingDashboard({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shownVenues.map((row) => (
-                  <VenueRow
-                    key={row.locationId}
-                    row={row}
-                    tripId={tripId}
-                    canEdit={canEdit}
-                    contacts={contacts}
-                    currencies={currencies}
-                    documents={docsFor(row.bookingId)}
-                    defaultOpen={row.locationId === focusLocationId}
-                  />
+                {groups.map((g) => (
+                  <Fragment key={g.label}>
+                    {grouped ? (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableCell colSpan={5} className="py-1.5">
+                          <h4 className="text-sm font-medium">
+                            {g.label}
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              {g.rows.length}
+                            </span>
+                          </h4>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {g.rows.map((row) => (
+                      <VenueRow
+                        key={row.locationId}
+                        row={row}
+                        tripId={tripId}
+                        canEdit={canEdit}
+                        contacts={contacts}
+                        currencies={currencies}
+                        documents={docsFor(row.bookingId)}
+                        defaultOpen={row.locationId === focusLocationId}
+                      />
+                    ))}
+                  </Fragment>
                 ))}
+                {grouped && shownItems.length > 0 ? (
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableCell colSpan={5} className="py-1.5">
+                      <h4 className="text-sm font-medium">
+                        Item bookings
+                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                          {shownItems.length}
+                        </span>
+                      </h4>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
                 {shownItems.map((row) => (
                   <ItemRow
                     key={row.bookingId}
@@ -258,18 +396,33 @@ export function BookingDashboard({
           </div>
 
           <div className="space-y-2 sm:hidden">
-            {shownVenues.map((row) => (
-              <VenueCard
-                key={row.locationId}
-                row={row}
-                tripId={tripId}
-                canEdit={canEdit}
-                contacts={contacts}
-                currencies={currencies}
-                documents={docsFor(row.bookingId)}
-                defaultOpen={row.locationId === focusLocationId}
-              />
+            {groups.map((g) => (
+              <Fragment key={g.label}>
+                {grouped ? (
+                  <h4 className="pt-2 text-sm font-medium">
+                    {g.label}
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      {g.rows.length}
+                    </span>
+                  </h4>
+                ) : null}
+                {g.rows.map((row) => (
+                  <VenueCard
+                    key={row.locationId}
+                    row={row}
+                    tripId={tripId}
+                    canEdit={canEdit}
+                    contacts={contacts}
+                    currencies={currencies}
+                    documents={docsFor(row.bookingId)}
+                    defaultOpen={row.locationId === focusLocationId}
+                  />
+                ))}
+              </Fragment>
             ))}
+            {grouped && shownItems.length > 0 ? (
+              <h4 className="pt-2 text-sm font-medium">Item bookings</h4>
+            ) : null}
             {shownItems.map((row) => (
               <ItemCard
                 key={row.bookingId}

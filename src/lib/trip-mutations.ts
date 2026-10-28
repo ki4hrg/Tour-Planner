@@ -102,7 +102,7 @@ export async function ensureVenueEngagement(
   const locationId = await engagementLocationIdFor(siteId);
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
-    select: { id: true },
+    select: { id: true, defaultCurrency: true },
   });
   if (!trip) return { error: "Trip not found." };
   const loc = await prisma.location.findUnique({
@@ -123,6 +123,7 @@ export async function ensureVenueEngagement(
       create: {
         tripId,
         locationId,
+        agreedCurrency: trip.defaultCurrency,
         ...workflow,
         ...(schedule ? { paymentSchedule: schedule } : {}),
       },
@@ -305,4 +306,26 @@ export async function deleteItineraryDay(
     );
     return { tripId, collapsedStays };
   });
+}
+
+/**
+ * The currency a NEW booking on a trip starts in (`Trip.defaultCurrency`),
+ * looked up from the engagement's trip or the item's day. USD when the trip
+ * can't be found (the caller's own lookup reports that).
+ */
+export async function tripDefaultCurrencyFor(
+  target: { tripId: string } | { scheduleItemId: string },
+): Promise<string> {
+  if ("tripId" in target) {
+    const t = await prisma.trip.findUnique({
+      where: { id: target.tripId },
+      select: { defaultCurrency: true },
+    });
+    return t?.defaultCurrency ?? "USD";
+  }
+  const item = await prisma.scheduleItem.findUnique({
+    where: { id: target.scheduleItemId },
+    select: { day: { select: { trip: { select: { defaultCurrency: true } } } } },
+  });
+  return item?.day.trip.defaultCurrency ?? "USD";
 }

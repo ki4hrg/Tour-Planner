@@ -64,6 +64,17 @@ export function tripHeadcount(trip: {
   return trip.participantCount ?? trip.capacity ?? null;
 }
 
+/**
+ * The currency a trip's new stays, bookings and price lines start in: its
+ * explicit default, else the first of its currency set, else USD (legacy rows).
+ */
+export function tripDefaultCurrency(trip: {
+  defaultCurrency?: string | null;
+  currencies?: string[] | null;
+}): string {
+  return trip.defaultCurrency ?? trip.currencies?.[0] ?? "USD";
+}
+
 // One line of a booking's agreed price (`BookingPriceLine`), mirroring the
 // venue's Cost lines. Amount is in the booking's `agreedCurrency`.
 export type PriceLine = {
@@ -203,4 +214,35 @@ export function listPriceLines(
       stale: c.confirmedAt !== undefined && isCostStale(c.confirmedAt),
     }));
   return { currency, lines, skipped: costs.length - lines.length };
+}
+
+// --- Validity windows (active-dates table on the venue's price list) ---------
+
+export type CostValidity = {
+  validFrom?: Date | string | null;
+  validTo?: Date | string | null;
+};
+
+const dateMs = (d: Date | string) =>
+  typeof d === "string" ? new Date(`${d.slice(0, 10)}T00:00:00.000Z`).getTime() : d.getTime();
+
+/**
+ * Whether a list price applies on a date: inside [validFrom, validTo] where
+ * set (either bound open). An undated line always applies — the ordinary case.
+ */
+export function costAppliesOn(cost: CostValidity, on: Date): boolean {
+  const t = on.getTime();
+  if (cost.validFrom && dateMs(cost.validFrom) > t) return false;
+  if (cost.validTo && dateMs(cost.validTo) < t) return false;
+  return true;
+}
+
+/**
+ * The venue's price list in force on a date — the trip's start date, or today
+ * for a date-less trip. A future price change is entered as a dated line
+ * (e.g. "Admission £14 from 2027-04-01") beside the current one, so each trip
+ * is estimated and defaulted at the price it will actually pay.
+ */
+export function effectiveCosts<T extends CostValidity>(costs: T[], on: Date): T[] {
+  return costs.filter((c) => costAppliesOn(c, on));
 }

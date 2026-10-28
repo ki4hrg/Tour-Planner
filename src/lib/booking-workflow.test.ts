@@ -9,6 +9,9 @@ import {
   daysWaiting,
   waitingView,
   waitingFromView,
+  stepDueDate,
+  describeStepDue,
+  isDue,
 } from "./booking-workflow";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -151,7 +154,7 @@ describe("waitingOn", () => {
   });
   it("ignores completions from another workflow; a missing actor reads as US", () => {
     const w = waitingOn(steps, [at("stale", "2026-10-25")], "PLANNED", null);
-    expect(w).toEqual({ step: steps[0], actor: "US", since: null });
+    expect(w).toEqual({ step: steps[0], actor: "US", since: null, dueOn: null });
   });
   it("is null when nothing is pending", () => {
     expect(waitingOn(owned, [at("meal", "2026-10-01")], "CONFIRMED", null)).toBeNull();
@@ -168,18 +171,93 @@ describe("daysWaiting / waitingView", () => {
   it("serializes the state against today", () => {
     const step = { ...steps[1], actor: "VENUE" as const };
     expect(
-      waitingView({ step, actor: "VENUE", since: d("2026-10-15") }, d("2026-10-27")),
+      waitingView(
+        { step, actor: "VENUE", since: d("2026-10-15"), dueOn: null },
+        d("2026-10-27"),
+      ),
     ).toEqual({
       stepId: "avail",
       stepLabel: "Availability confirmed",
       actor: "VENUE",
       since: "2026-10-15",
       days: 12,
+      dueOn: null,
+      due: true,
     });
     expect(
-      waitingView({ step, actor: "VENUE", since: null }, d("2026-10-27"))?.days,
+      waitingView(
+        { step, actor: "VENUE", since: null, dueOn: null },
+        d("2026-10-27"),
+      )?.days,
     ).toBeNull();
     expect(waitingView(null, d("2026-10-27"))).toBeNull();
+  });
+  it("says whether the step's due date has arrived", () => {
+    const step = { ...steps[1] };
+    const w = (dueOn: Date | null) =>
+      waitingView({ step, actor: "US", since: null, dueOn }, d("2026-10-27"));
+    expect(w(d("2027-03-01"))).toMatchObject({ dueOn: "2027-03-01", due: false });
+    expect(w(d("2026-10-27"))).toMatchObject({ dueOn: "2026-10-27", due: true });
+    expect(w(d("2026-10-01"))).toMatchObject({ due: true });
+  });
+});
+
+describe("step due offsets", () => {
+  const start = d("2027-07-12");
+  it("resolves a step's due date as the offset before trip start", () => {
+    expect(stepDueDate({ dueOffsetValue: 2, dueOffsetUnit: "MONTH" }, start)).toEqual(
+      d("2027-05-12"),
+    );
+    expect(stepDueDate({ dueOffsetValue: 3, dueOffsetUnit: "WEEK" }, start)).toEqual(
+      d("2027-06-21"),
+    );
+    expect(stepDueDate({ dueOffsetValue: 0, dueOffsetUnit: "DAY" }, start)).toEqual(start);
+    // No offset, or no start date yet (a template): due whenever it's next.
+    expect(stepDueDate({ dueOffsetValue: null, dueOffsetUnit: null }, start)).toBeNull();
+    expect(stepDueDate({ dueOffsetValue: 2, dueOffsetUnit: "MONTH" }, null)).toBeNull();
+  });
+  it("describes the rule for the admin editor", () => {
+    expect(describeStepDue({ dueOffsetValue: 2, dueOffsetUnit: "MONTH" })).toBe(
+      "2 months before start",
+    );
+    expect(describeStepDue({ dueOffsetValue: 1, dueOffsetUnit: "WEEK" })).toBe(
+      "1 week before start",
+    );
+    expect(describeStepDue({ dueOffsetValue: 0, dueOffsetUnit: "DAY" })).toBe("on start day");
+    expect(describeStepDue({ dueOffsetValue: null, dueOffsetUnit: null })).toBeNull();
+  });
+  it("waitingOn carries the upcoming step's due date; isDue compares it to today", () => {
+    const dated = steps.map((s) =>
+      s.id === "form" ? { ...s, dueOffsetValue: 2, dueOffsetUnit: "MONTH" as const } : s,
+    );
+    const w = waitingOn(
+      dated,
+      [
+        { stepId: "contact", completedOn: d("2026-10-01") },
+        { stepId: "avail", completedOn: d("2026-10-05") },
+      ],
+      "IN_PROGRESS",
+      null,
+      start,
+    );
+    expect(w?.step.id).toBe("form");
+    expect(w?.dueOn).toEqual(d("2027-05-12"));
+    expect(isDue(w, d("2026-10-27"))).toBe(false);
+    expect(isDue(w, d("2027-05-12"))).toBe(true);
+    // Without a trip start the offset can't resolve: due now.
+    expect(waitingOn(dated, [], "PLANNED", null, null)?.dueOn).toBeNull();
+    expect(isDue(null, d("2026-10-27"))).toBe(true);
+  });
+  it("waitingFromView reads the start date off the progress view", () => {
+    const dated = steps.map((s) =>
+      s.id === "contact" ? { ...s, dueOffsetValue: 12, dueOffsetUnit: "MONTH" as const } : s,
+    );
+    const w = waitingFromView(
+      dated,
+      { status: "PLANNED", completions: [], openedOn: null, tripStartDate: "2028-07-10" },
+      d("2026-10-27"),
+    );
+    expect(w?.dueOn).toEqual(d("2027-07-10"));
   });
 });
 

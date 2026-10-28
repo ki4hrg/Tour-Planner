@@ -50,6 +50,7 @@ import { todayUtc, toDateInput, formatDate, addDays, isOngoing } from "@/lib/dat
 import { EditableSection } from "@/components/editable-section";
 import { LocationForm } from "../location-form";
 import { CostsManager } from "../costs-manager";
+import { LocationEventsManager } from "../location-events-manager";
 import { LocationPaymentTerms } from "../location-payment-terms";
 import { LocationContactsManager } from "../location-contacts-manager";
 import { LocationTripsPanel, type LocationTripRow } from "../location-trips-panel";
@@ -83,6 +84,10 @@ export default async function LocationDetailPage({
       tripTypes: { select: { id: true, name: true } },
       region: { select: { id: true, name: true, parentId: true } },
       costs: { orderBy: { label: "asc" } },
+      events: {
+        orderBy: [{ startTime: "asc" }, { title: "asc" }],
+        include: { category: { select: { name: true } } },
+      },
       defaultPaymentSchedule: { orderBy: { sortOrder: "asc" } },
       contacts: { orderBy: { name: "asc" } },
       siteNotes: {
@@ -198,6 +203,23 @@ export default async function LocationDetailPage({
   }));
   const defaultCurrency = "USD";
   const referenced = location._count.scheduleItems > 0;
+  // Standing events here, plus the categories the editor offers for them.
+  const eventCategories = canEdit
+    ? await prisma.scheduleItemCategory.findMany({
+        where: { system: false },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: { id: true, name: true },
+      })
+    : [];
+  const events = location.events.map((e) => ({
+    id: e.id,
+    title: e.title,
+    startTime: e.startTime,
+    endTime: e.endTime,
+    categoryId: e.categoryId,
+    categoryName: e.category?.name ?? null,
+    notes: e.notes,
+  }));
 
   // Flag prices unconfirmed or confirmed over a year ago.
   const costs = location.costs.map((c) => ({
@@ -270,7 +292,7 @@ export default async function LocationDetailPage({
       .filter(Boolean)
       .join(" – "),
     ongoing: isOngoing(t.startDate, t.endDate),
-    booking: progressView(t.bookings[0] ?? null, engagementWorkflowId),
+    booking: progressView(t.bookings[0] ?? null, engagementWorkflowId, t.startDate),
     sessionCount: t.days.reduce((n, d) => n + d.scheduleItems.length, 0),
     plannedCount: t.days.reduce((n, d) => n + d.plannedLocations.length, 0),
     hasLodging: t.stays.length > 0,
@@ -319,7 +341,7 @@ export default async function LocationDetailPage({
     href: bookingDashboardHref(t.id, engagementId),
     detail: t.startDate ? formatDate(t.startDate) : "No dates",
     target: { tripId: t.id, locationId: id },
-    progress: progressView(t.bookings[0] ?? null, engagementWorkflowId),
+    progress: progressView(t.bookings[0] ?? null, engagementWorkflowId, t.startDate),
   }));
 
   // Visit history: every slot this venue holds on a non-template trip, grouped
@@ -978,6 +1000,22 @@ export default async function LocationDetailPage({
           />
         </CardContent>
       </Card>
+
+      {events.length > 0 || canEdit ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Events</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LocationEventsManager
+              locationId={location.id}
+              events={events}
+              categories={eventCategories}
+              canEdit={canEdit}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {location.bookable && !parent ? (
         <Card>

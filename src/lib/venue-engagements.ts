@@ -26,6 +26,11 @@ export async function loadVenueEngagements(
 ): Promise<Record<string, VenueEngagementView>> {
   const ids = [...new Set(locationIds)];
   if (ids.length === 0) return {};
+  // Step due offsets count back from the trip's start.
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    select: { startDate: true },
+  });
   const locations = await prisma.location.findMany({
     where: { id: { in: ids } },
     select: {
@@ -55,6 +60,7 @@ export async function loadVenueEngagements(
       progress: progressView(
         byLocation.get(venueId) ?? null,
         parent ? parent.defaultWorkflowId : l.defaultWorkflowId,
+        trip?.startDate,
       ),
       via: parent ? { id: parent.id, name: parent.name } : null,
     };

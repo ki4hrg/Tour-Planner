@@ -761,6 +761,9 @@ type StayRow = Stay & {
 // the itinerary read views show as the "overnight" line (GH #15).
 export type DayLodgingSummary = {
   locationName: string;
+  // The venue's id when the caller's query selected it — app surfaces link
+  // the overnight line through to the venue's booking row with it.
+  locationId?: string | null;
 };
 
 type LodgingStayRow = {
@@ -769,7 +772,7 @@ type LodgingStayRow = {
   checkInDayIndex?: number | null;
   checkOutDayIndex?: number | null;
   priority?: number;
-  location: { name: string };
+  location: { id?: string; name: string };
 };
 
 /**
@@ -784,7 +787,9 @@ export function summarizeDayLodging(
   const byDay = lodgingForDays(days, stays);
   const out: Record<string, DayLodgingSummary | null> = {};
   for (const [id, s] of byDay) {
-    out[id] = s ? { locationName: s.location.name } : null;
+    out[id] = s
+      ? { locationName: s.location.name, locationId: s.location.id ?? null }
+      : null;
   }
   return out;
 }

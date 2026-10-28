@@ -5,6 +5,7 @@ import {
   WORKFLOW_STEP_SELECT,
   waitingOn,
   waitingView,
+  describeStepDue,
 } from "@/lib/booking-workflow";
 import { BOOKING_STATUSES } from "@/lib/trips";
 import {
@@ -14,6 +15,7 @@ import {
   setBookingWorkflow,
 } from "@/lib/booking-workflow-sync";
 import { prisma } from "@/lib/db";
+import { tripDefaultCurrencyFor } from "@/lib/trip-mutations";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
 import { todayUtc, parseDateInput, toDateInput } from "@/lib/dates";
@@ -92,12 +94,19 @@ function workflowProgress(b: {
     }[];
   } | null;
   stepCompletions: { stepId: string; completedOn: Date }[];
-}) {
+}, tripStartDate: Date | null = null) {
   if (!b.workflow) return { workflow: null, waiting: null };
   const done = new Map(b.stepCompletions.map((c) => [c.stepId, c.completedOn]));
-  // Whose move: the upcoming step, its owner, and how long it has waited.
+  // Whose move: the upcoming step, its owner, how long it has waited, and
+  // whether it is due yet (step due offsets count back from trip start).
   const w = waitingView(
-    waitingOn(b.workflow.steps, b.stepCompletions, b.status, b.bookedOn ?? b.createdAt),
+    waitingOn(
+      b.workflow.steps,
+      b.stepCompletions,
+      b.status,
+      b.bookedOn ?? b.createdAt,
+      tripStartDate,
+    ),
     todayUtc(),
   );
   return {
@@ -110,6 +119,8 @@ function workflowProgress(b: {
           nextStep: { id: w.stepId, label: w.stepLabel },
           since: w.since,
           daysWaiting: w.days,
+          dueOn: w.dueOn,
+          due: w.due,
         }
       : null,
     steps: b.workflow.steps.map((s) => ({
@@ -160,7 +171,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Bookings",
       description:
-        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with its owner — actor US = us, VENUE = the venue — and whether and when it was done; step IDs feed set-booking-step), whose move it is (waiting: { actor US|VENUE, nextStep {id,label}, since, daysWaiting } — the upcoming step's owner and how long since the last step was ticked, or since the booking was made; null when nothing is pending or no workflow), location, contact, confirmation reference, and money: priceLines (the itemized agreed price — [{label, amount, unit}], unit PER_PERSON or PER_GROUP) + agreedCurrency, agreedTotal (per-person lines × headcount + per-group lines; null with no lines, or per-person lines and no headcount), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
+        "List all bookings for a trip. A 'venue' booking is one engagement with a location that covers every schedule item visiting that location plus any lodging there — including sites booked via it (a child location whose bookedVia is this venue; listed as location.coveredSites). A 'schedule_item' booking is a site-less reservation (e.g. a coach) tied to one item. Shows status, workflow progress (the workflow, its current stage, and each step with its owner — actor US = us, VENUE = the venue — and whether and when it was done; step IDs feed set-booking-step), whose move it is (waiting: { actor US|VENUE, nextStep {id,label}, since, daysWaiting, dueOn, due } — the upcoming step's owner, how long since the last step was ticked (or since the booking was made), and when the step falls due: dueOn is the step's due offset counted back from the trip start (null = no set date) and due is false while that date is still ahead — such a step is not yet anyone's move; null when nothing is pending or no workflow), location, contact, confirmation reference, and money: priceLines (the itemized agreed price — [{label, amount, unit}], unit PER_PERSON or PER_GROUP) + agreedCurrency, agreedTotal (per-person lines × headcount + per-group lines; null with no lines, or per-person lines and no headcount), headcount, paidTotal, unpaidBalance and settled (both measured against agreedTotal). Venues the itinerary visits that have no booking yet are not listed (add-booking creates one). Useful for checking which reservations still need attention.",
       inputSchema: {
         tripId: z.string(),
         status: z.enum(BOOKING_STATUSES_TUPLE).optional(),
@@ -224,12 +235,14 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           },
         });
 
-        // Per-person price lines multiply by the trip headcount.
+        // Per-person price lines multiply by the trip headcount; step due
+        // offsets count back from the start date.
         const trip = await prisma.trip.findUnique({
           where: { id: tripId },
-          select: { participantCount: true, capacity: true },
+          select: { participantCount: true, capacity: true, startDate: true },
         });
         const headcount = trip ? tripHeadcount(trip) : null;
+        const tripStartDate = trip?.startDate ?? null;
 
         // Agreed price + running payment total (details via list-payments).
         const money = (b: {
@@ -261,7 +274,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             id: b.id,
             label: b.label,
             status: b.status,
-            ...workflowProgress(b),
+            ...workflowProgress(b, tripStartDate),
             confirmationRef: b.confirmationRef,
             notes: b.notes,
             location: b.location,
@@ -273,7 +286,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             id: b.id,
             label: b.label,
             status: b.status,
-            ...workflowProgress(b),
+            ...workflowProgress(b, tripStartDate),
             confirmationRef: b.confirmationRef,
             notes: b.notes,
             scheduleItem: b.scheduleItem
@@ -428,6 +441,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
             },
             create: {
               tripId,
+              agreedCurrency: await tripDefaultCurrencyFor({ tripId: tripId! }),
               ...scalars,
               ...priceLinesCreate(priceLines),
               ...workflow,
@@ -463,6 +477,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           booking = await prisma.booking.create({
             data: {
               scheduleItemId,
+              agreedCurrency: await tripDefaultCurrencyFor({
+                scheduleItemId: scheduleItemId!,
+              }),
               ...scalars,
               ...priceLinesCreate(priceLines),
               ...(await seedWorkflowFor(null)),
@@ -597,7 +614,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
     {
       title: "List Booking Workflows",
       description:
-        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED) and its owner (actor: US = our move, e.g. 'Sign agreement'; VENUE = waiting on the venue, e.g. 'Availability confirmed'). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
+        "List the admin-defined booking workflows (e.g. 'Booking agreement', 'Tickets only') with their ordered steps. Each step names the coarse status a booking reaches once it is done (IN_PROGRESS or CONFIRMED) and its owner (actor: US = our move, e.g. 'Sign agreement'; VENUE = waiting on the venue, e.g. 'Availability confirmed'), and optionally when it falls due (dueOffsetValue dueOffsetUnits — DAY|WEEK|MONTH — before the trip's start date, described in `due`; a step with no offset is due as soon as it is next). Returns workflow IDs for set-booking-workflow and step IDs for set-booking-step; isDefault marks the workflow new bookings start on when their venue names none.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -613,7 +630,7 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
           isDefault: true,
           steps: {
             orderBy: { sortOrder: "asc" },
-            select: { id: true, label: true, status: true, actor: true },
+            select: WORKFLOW_STEP_SELECT,
           },
         },
       });
@@ -629,6 +646,9 @@ export function registerBookingTools(server: McpServer, user: SessionUser) {
                   label: st.label,
                   reachesStatus: st.status,
                   actor: st.actor,
+                  dueOffsetValue: st.dueOffsetValue,
+                  dueOffsetUnit: st.dueOffsetUnit,
+                  due: describeStepDue(st),
                 })),
               })),
               null,
