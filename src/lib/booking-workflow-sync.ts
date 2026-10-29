@@ -12,6 +12,7 @@ import { prisma } from "@/lib/db";
 import {
   resolveBookingProgress,
   stepGateError,
+  stepsThrough,
   WORKFLOW_STEP_SELECT,
 } from "@/lib/booking-workflow";
 import { isBookingOff } from "@/lib/booking";
@@ -136,6 +137,20 @@ export async function setBookingStep(
       create: { bookingId, stepId, completedOn, completedById: userId ?? null },
       update: { completedOn },
     });
+    // Ticking a later step takes every earlier step as done: fill in the
+    // open ones, same date (existing ticks keep theirs).
+    const earlier = stepsThrough(booking.workflow.steps, stepId).filter((id) => id !== stepId);
+    if (earlier.length) {
+      await db.bookingStepCompletion.createMany({
+        data: earlier.map((id) => ({
+          bookingId,
+          stepId: id,
+          completedOn,
+          completedById: userId ?? null,
+        })),
+        skipDuplicates: true,
+      });
+    }
   } else {
     await db.bookingStepCompletion.deleteMany({ where: { bookingId, stepId } });
   }

@@ -286,9 +286,10 @@ export function waitingFromView<S extends WorkflowStepLike>(
 export type StepGate = { canComplete: boolean; canUndo: boolean };
 
 /**
- * What each step allows given the steps already done: complete = not done and
- * every earlier step done (the prerequisites); undo = done and no later step
- * done (undo from the top down). Re-dating a done step is always allowed.
+ * What each step allows given the steps already done: complete = not done
+ * (ticking a later step marks every earlier open step done with it — see
+ * `stepsThrough`); undo = done and no later step done (undo from the top
+ * down). Re-dating a done step is always allowed.
  */
 export function stepGate<S extends { id: string; sortOrder: number }>(
   steps: S[],
@@ -299,11 +300,25 @@ export function stepGate<S extends { id: string; sortOrder: number }>(
   ordered.forEach((s, i) => {
     const isDone = done.has(s.id);
     gate.set(s.id, {
-      canComplete: !isDone && ordered.slice(0, i).every((p) => done.has(p.id)),
+      canComplete: !isDone,
       canUndo: isDone && ordered.slice(i + 1).every((n) => !done.has(n.id)),
     });
   });
   return gate;
+}
+
+/**
+ * The step ids from the first step through `stepId`, in order — what ticking
+ * `stepId` marks done (earlier steps are taken as done). Empty for a step
+ * outside the workflow.
+ */
+export function stepsThrough<S extends { id: string; sortOrder: number }>(
+  steps: S[],
+  stepId: string,
+): string[] {
+  const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
+  const i = ordered.findIndex((s) => s.id === stepId);
+  return i < 0 ? [] : ordered.slice(0, i + 1).map((s) => s.id);
 }
 
 /** Why a step can't be set — null when it can (client + server share it). */
@@ -316,11 +331,8 @@ export function stepGateError<S extends { id: string; label: string; sortOrder: 
   const ordered = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
   const i = ordered.findIndex((s) => s.id === stepId);
   if (i < 0) return "That step isn't part of this booking's workflow.";
-  if (markDone) {
-    if (done.has(stepId)) return null; // re-dating
-    const open = ordered.slice(0, i).find((p) => !done.has(p.id));
-    return open ? `"${open.label}" isn't done yet.` : null;
-  }
+  // Completing is always allowed: earlier open steps are marked done with it.
+  if (markDone) return null;
   const later = ordered.slice(i + 1).findLast((n) => done.has(n.id));
   return later ? `"${later.label}" is done — undo it first.` : null;
 }

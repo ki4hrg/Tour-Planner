@@ -4,6 +4,7 @@ import {
   nextStep,
   stepGate,
   stepGateError,
+  stepsThrough,
   upcomingStep,
   waitingOn,
   waitingAgeText,
@@ -317,28 +318,34 @@ describe("waitingFromView", () => {
 describe("stepGate", () => {
   const done = new Set(["contact", "avail"]);
   const gate = stepGate(steps, done);
-  it("opens only the next step for completion", () => {
-    expect(steps.filter((s) => gate.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["form"]);
+  it("opens every open step for completion (earlier ones fill in)", () => {
+    expect(steps.filter((s) => gate.get(s.id)!.canComplete).map((s) => s.id)).toEqual(
+      steps.filter((s) => !done.has(s.id)).map((s) => s.id),
+    );
   });
   it("opens only the last done step for undo", () => {
     expect(steps.filter((s) => gate.get(s.id)!.canUndo).map((s) => s.id)).toEqual(["avail"]);
   });
   it("opens the first step on a fresh booking, nothing to undo", () => {
     const fresh = stepGate(steps, new Set());
-    expect(steps.filter((s) => fresh.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["contact"]);
+    expect(fresh.get("contact")!.canComplete).toBe(true);
     expect(steps.some((s) => fresh.get(s.id)!.canUndo)).toBe(false);
   });
   it("lets a gap (a step inserted after bookings moved on) be filled", () => {
     const gap = stepGate(steps, new Set(["contact", "form"]));
     expect(gap.get("avail")!.canComplete).toBe(true);
-    expect(gap.get("conf")!.canComplete).toBe(false);
+    expect(gap.get("form")!.canComplete).toBe(false); // already done
   });
 });
 
 describe("stepGateError", () => {
   const done = new Set(["contact"]);
-  it("names the first open prerequisite", () => {
-    expect(stepGateError(steps, done, "conf", true)).toBe('"Availability confirmed" isn\'t done yet.');
+  it("lets a later step be completed past open earlier ones", () => {
+    expect(stepGateError(steps, done, "conf", true)).toBeNull();
+    expect(stepsThrough(steps, "form")).toEqual(
+      steps.slice(0, steps.findIndex((s) => s.id === "form") + 1).map((s) => s.id),
+    );
+    expect(stepsThrough(steps, "nope")).toEqual([]);
   });
   it("names the latest later step done when undoing", () => {
     expect(stepGateError(steps, new Set(["contact", "avail", "form"]), "contact", false)).toBe(

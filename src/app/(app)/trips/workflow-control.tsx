@@ -25,6 +25,7 @@ import { daysSince, formatDate, toDateInput, todayUtc } from "@/lib/dates";
 import {
   resolveBookingProgress,
   stepGate,
+  stepsThrough,
   type BookingProgressView,
 } from "@/lib/booking-workflow";
 import {
@@ -157,9 +158,14 @@ export function WorkflowControl({
     const completedOn = on ?? toDateInput(todayUtc());
     run(
       {
+        // Completing a step takes the earlier open ones as done too (the
+        // server fills them in with the same date).
         completions: done
           ? [
               ...state.completions.filter((c) => c.stepId !== stepId),
+              ...stepsThrough(workflow?.steps ?? [], stepId)
+                .filter((id) => id !== stepId && !state.completions.some((c) => c.stepId === id))
+                .map((id) => ({ stepId: id, completedOn })),
               { stepId, completedOn },
             ]
           : state.completions.filter((c) => c.stepId !== stepId),

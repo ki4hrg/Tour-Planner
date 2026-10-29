@@ -20,7 +20,7 @@ import {
   type WorkflowStepOption,
 } from "@/components/booking-workflows";
 import { cn } from "@/lib/utils";
-import { stepGate } from "@/lib/booking-workflow";
+import { stepGate, stepsThrough } from "@/lib/booking-workflow";
 import { formatDate, parseDateInput, toDateInput, todayUtc } from "@/lib/dates";
 import {
   daysUntilDue,
@@ -93,8 +93,8 @@ function StepChip({
   // The upcoming step's due date is still ahead: outlined but not amber (it
   // isn't a to-do yet), and the title says when it is.
   notYetDue?: boolean;
-  // Steps go in order (stepGate): locked = can't be done yet (an earlier step
-  // is open) or undone yet (a later step is done).
+  // Steps undo top-down (stepGate): locked = can't be undone yet (a later
+  // step is done). Completing any open step fills in the earlier ones.
   locked?: boolean;
   canEdit: boolean;
   pending: boolean;
@@ -207,6 +207,18 @@ function useDoneSteps(lines: { key: string; progress: BookingProgressView }[]) {
   );
 }
 
+// The optimistic patch for one tick: completing a step takes every earlier
+// step as done too (the server fills them in), unticking clears just it.
+function tickPatch(
+  key: string,
+  steps: { id: string; sortOrder: number }[],
+  stepId: string,
+  on: boolean,
+): { key: string; stepId: string; on: boolean }[] {
+  const ids = on ? stepsThrough(steps, stepId) : [stepId];
+  return (ids.length ? ids : [stepId]).map((id) => ({ key, stepId: id, on }));
+}
+
 /**
  * Compact single-line progress: the upcoming step as a one-click chip led by
  * its owner ("Next for you: Sign agreement · due in 12d", "Next (venue): Confirm
@@ -248,7 +260,7 @@ export function CompactProgress({
 
   const tick = (stepId: string) =>
     start(async () => {
-      patchDone([{ key: "b", stepId, on: true }]);
+      patchDone(tickPatch("b", workflow?.steps ?? [], stepId, true));
       const res = await setBookingStepAction(target, stepId, true, toDateInput(todayUtc()));
       if (res.error) toast.error(res.error);
     });
@@ -321,7 +333,7 @@ export function BookingStepStrip({
   const toggle = (stepId: string) => {
     const on = !doneSet.has(stepId);
     start(async () => {
-      patchDone([{ key: "b", stepId, on }]);
+      patchDone(tickPatch("b", workflow?.steps ?? [], stepId, on));
       const res = await setBookingStepAction(target, stepId, on, toDateInput(todayUtc()));
       if (res.error) toast.error(res.error);
     });
@@ -394,7 +406,7 @@ export function ProgressList({
   const toggleStep = (line: ProgressLine, stepId: string) => {
     const on = !done.get(line.key)?.has(stepId);
     start(async () => {
-      patchDone([{ key: line.key, stepId, on }]);
+      patchDone(tickPatch(line.key, workflowByKey.get(line.key)?.steps ?? [], stepId, on));
       const res = await setBookingStepAction(
         line.target,
         stepId,
@@ -418,7 +430,7 @@ export function ProgressList({
     ? bulkLabel
     : "";
   const runBulk = (on: boolean) => {
-    const entries: { line: ProgressLine; stepId: string }[] = [];
+    const entries: { line: ProgressLine; stepId: string; steps: { id: string; sortOrder: number }[] }[] = [];
     let lacking = 0;
     let blocked = 0;
     for (const l of chosen) {
@@ -430,19 +442,19 @@ export function ProgressList({
       }
       const rowDone = done.get(l.key) ?? new Set<string>();
       if (rowDone.has(step.id) === on) continue; // already there
-      // Steps go in order: skip rows whose earlier steps are open (done) or
-      // whose later steps are done (clear).
+      // Completing a later step marks the earlier open ones done with it;
+      // clearing skips rows whose later steps are done.
       const g = stepGate(steps, rowDone).get(step.id);
       if (!(on ? g?.canComplete : g?.canUndo)) {
         blocked++;
         continue;
       }
-      entries.push({ line: l, stepId: step.id });
+      entries.push({ line: l, stepId: step.id, steps });
     }
     const notes = [
       lacking ? `${lacking} ${lacking === 1 ? "has" : "have"} no "${label}" step.` : "",
       blocked
-        ? `${blocked} skipped: ${on ? "earlier steps not done" : "later steps done"}.`
+        ? `${blocked} skipped: later steps done.`
         : "",
     ];
     const lackingNote = notes.filter(Boolean).map((n) => ` ${n}`).join("");
@@ -451,7 +463,7 @@ export function ProgressList({
       return;
     }
     start(async () => {
-      patchDone(entries.map((e) => ({ key: e.line.key, stepId: e.stepId, on })));
+      patchDone(entries.flatMap((e) => tickPatch(e.line.key, e.steps, e.stepId, on)));
       const res = await setBookingStepsBulk(
         entries.map((e) => ({ target: e.line.target, stepId: e.stepId })),
         on,
