@@ -94,6 +94,7 @@ export default async function TripPrintPage({
               },
               presenters: { select: { id: true, name: true } },
               travel: TRAVEL_LEG_INCLUDE,
+              mealProvider: { select: { id: true, name: true } },
               sites: {
                 orderBy: { order: "asc" },
                 include: {

@@ -151,7 +151,7 @@ describe("buildTripEvents", () => {
                   toLocation: null,
                   toLabel: "Bristol",
                   stops: [
-                    { id: "st1", location: null, label: "M5 services", dwellMinutes: 15, order: 0 },
+                    { id: "st1", location: null, label: "M5 services", dwellMinutes: 15, mealKind: null, mealProvision: null, order: 0 },
                   ],
                 },
               }),

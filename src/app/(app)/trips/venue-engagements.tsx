@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import { FileSignature } from "lucide-react";
 import type { VenueEngagementView } from "@/lib/venue-engagements";
 import { BookingStepStrip, CompactProgress } from "./booking-progress";
 
@@ -40,17 +41,43 @@ export function useVenueEngagementVia(
 }
 
 /** The venue's engagement status control, or nothing (no provider / not bookable). */
-export function VenueEngagementStatus({ locationId }: { locationId: string }) {
+export function VenueEngagementStatus({
+  locationId,
+  labelled = false,
+}: {
+  locationId: string;
+  // Lead with "Booking" where the row also shows an item's own status, so the
+  // venue's booking progress isn't mistaken for it.
+  labelled?: boolean;
+}) {
   const ctx = useContext(VenueEngagementsContext);
   const view = ctx?.engagements[locationId];
   if (!ctx || !view) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <CompactProgress
-        target={{ tripId: ctx.tripId, locationId }}
-        progress={view.progress}
-        canEdit={ctx.canEdit}
-      />
+      {labelled ? (
+        // The label travels with the chip it names when the row wraps.
+        // Never wraps itself: the progress beside it shrinks and wraps instead.
+        <span className="inline-flex min-w-0 items-start gap-1.5">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap pt-0.5 text-xs text-muted-foreground">
+            <FileSignature className="size-3.5" aria-hidden />
+            Booking
+          </span>
+          <span className="min-w-0">
+            <CompactProgress
+              target={{ tripId: ctx.tripId, locationId }}
+              progress={view.progress}
+              canEdit={ctx.canEdit}
+            />
+          </span>
+        </span>
+      ) : (
+        <CompactProgress
+          target={{ tripId: ctx.tripId, locationId }}
+          progress={view.progress}
+          canEdit={ctx.canEdit}
+        />
+      )}
       {view.via ? (
         <span className="text-xs text-muted-foreground">via {view.via.name}</span>
       ) : null}

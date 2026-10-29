@@ -42,6 +42,7 @@ const DAY_ITEMS_INCLUDE = {
     },
     presenters: { select: { id: true, name: true } },
               travel: TRAVEL_LEG_INCLUDE,
+              mealProvider: { select: { id: true, name: true } },
     sites: {
       orderBy: { order: "asc" },
       include: { location: { select: { id: true, name: true } } },

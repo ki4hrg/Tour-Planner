@@ -49,6 +49,11 @@ export default async function BookingDashboardPage({
               title: true,
               startTime: true,
               endTime: true,
+              mealKind: true,
+              mealProvision: true,
+              mealProviderId: true,
+              confirmation: true,
+              confirmedOn: true,
               category: { select: { name: true } },
               presentation: { select: { title: true } },
               // Label derivation for a travel item's site-less booking row.
@@ -119,6 +124,10 @@ export default async function BookingDashboardPage({
         d.scheduleItems.flatMap((i) => i.sites.map((s) => s.locationId)),
       ),
       ...trip.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
+      // Takeaway packers: their engagement lists the meal.
+      ...trip.days.flatMap((d) =>
+        d.scheduleItems.flatMap((i) => (i.mealProviderId ? [i.mealProviderId] : [])),
+      ),
       ...trip.stays.map((s) => s.locationId),
       ...trip.bookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
     ]),

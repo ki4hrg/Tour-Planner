@@ -1,7 +1,7 @@
 // Pure export builder for the WP plugin API.
 // Takes structured trip/itinerary data and produces a deterministic JSON payload.
 
-import type { TripStatus } from "@prisma/client";
+import type { MealKind, TripStatus } from "@prisma/client";
 import { toDateInput } from "@/lib/dates";
 import {
   lodgingForDays,
@@ -114,6 +114,8 @@ type ScheduleItemRow = {
   startTime: string | null;
   endTime: string | null;
   category: { name: string } | null;
+  // Set ⇒ the item is a meal (optional so older callers stay valid).
+  mealKind?: MealKind | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   travel: any; // TravelLeg or null; complex union with nested relations
   sites: Array<{ order: number; location: LocationRow }>;
@@ -192,6 +194,11 @@ export function buildExportPayload(
     // Collect stops from schedule items, skip travel legs.
     const stops: ExportStop[] = [];
     const seenLocationIds = new Set<string>();
+    // Stops that so far only came from a meal at the venue: a later visit
+    // there takes the stop over (same position), so "lunch, then the museum"
+    // exports the museum visit rather than the lunch — the guidebook may
+    // filter meals out, which would otherwise drop the venue from the day.
+    const mealOnly = new Map<string, ExportStop>();
 
     // Process schedule items (preserving order).
     for (const item of day.scheduleItems) {
@@ -199,22 +206,25 @@ export function buildExportPayload(
       if (item.travel) continue;
 
       // Process sites within this item (by order).
+      const isMeal = item.mealKind != null;
       for (const site of item.sites) {
         const locationId = site.location.id;
+        const itemTitle =
+          item.title && item.title !== site.location.name ? item.title : null;
+        const fields = {
+          startTime: item.startTime,
+          endTime: item.endTime,
+          category: item.category?.name ?? null,
+          itemTitle,
+        };
         if (!seenLocationIds.has(locationId)) {
           seenLocationIds.add(locationId);
-          const itemTitle =
-            item.title && item.title !== site.location.name
-              ? item.title
-              : null;
-          stops.push({
-            locationId,
-            source: "schedule",
-            startTime: item.startTime,
-            endTime: item.endTime,
-            category: item.category?.name ?? null,
-            itemTitle,
-          });
+          const stop: ExportStop = { locationId, source: "schedule", ...fields };
+          stops.push(stop);
+          if (isMeal) mealOnly.set(locationId, stop);
+        } else if (!isMeal && mealOnly.has(locationId)) {
+          Object.assign(mealOnly.get(locationId)!, fields);
+          mealOnly.delete(locationId);
         }
       }
     }

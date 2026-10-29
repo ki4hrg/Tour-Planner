@@ -246,6 +246,58 @@ describe("buildExportPayload", () => {
     });
   });
 
+  it("lets a later visit take over a stop that only came from a meal", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const day: any = {
+      id: "day1",
+      dayIndex: 0,
+      date: d("2026-06-01"),
+      title: null,
+      participantNotes: null,
+      primaryLocationId: null,
+      scheduleItems: [
+        {
+          order: 0,
+          title: "Lunch",
+          startTime: "12:00",
+          endTime: "13:00",
+          category: { name: "Meal" },
+          mealKind: "LUNCH",
+          travel: null,
+          sites: [{ order: 0, location: baseLoc("loc-m", "Museum", null) }],
+        },
+        {
+          order: 1,
+          title: "Other",
+          startTime: "12:30",
+          endTime: "13:00",
+          category: { name: "Visit" },
+          travel: null,
+          sites: [{ order: 0, location: baseLoc("loc-x", "Garden", null) }],
+        },
+        {
+          order: 2,
+          title: null,
+          startTime: "13:00",
+          endTime: "15:00",
+          category: { name: "Visit" },
+          travel: null,
+          sites: [{ order: 0, location: baseLoc("loc-m", "Museum", null) }],
+        },
+      ],
+      plannedLocations: [],
+    };
+
+    const payload = buildExportPayload(baseTrip, [day], [], [], []);
+    expect(payload.days[0].stops.map((s) => s.locationId)).toEqual(["loc-m", "loc-x"]);
+    expect(payload.days[0].stops[0]).toMatchObject({
+      category: "Visit",
+      itemTitle: null,
+      startTime: "13:00",
+      endTime: "15:00",
+    });
+  });
+
   it("includes itemTitle when it differs from location name", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const day: any = {

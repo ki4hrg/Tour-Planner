@@ -32,6 +32,7 @@ import type {
   ItemBookingRow,
 } from "@/lib/booking-dashboard";
 import { stayHref } from "@/lib/documents";
+import { ItemConfirmationControl } from "./item-confirmation";
 import {
   describeCadence,
   type ResolvedInstallment,
@@ -179,8 +180,12 @@ function stayRangeLabel(s: CoveredStay): string {
 export function coverageLine(row: VenueBookingRow): string {
   const planned = row.sessions.filter((s) => s.planned).length;
   const timed = row.sessions.length - planned;
+  // "2/3 times confirmed" — the per-session arrangements inside the booking.
+  const tracked = row.sessions.filter((s) => !s.planned && s.confirmation !== undefined);
+  const confirmed = tracked.filter((s) => s.confirmation === "CONFIRMED").length;
   return [
     timed ? `${timed} session${timed === 1 ? "" : "s"}` : null,
+    tracked.length ? `${confirmed}/${tracked.length} times confirmed` : null,
     planned ? `${planned} planned` : null,
     row.nightCount
       ? `${row.nightCount} night${row.nightCount === 1 ? "" : "s"}`
@@ -281,6 +286,17 @@ export function VenueDetails({
                       : " · no time set"}
                   </span>
                 </span>
+                {/* Each session's own arrangement with the venue (its time
+                    agreed), within the engagement's overall status. */}
+                {!s.planned && s.confirmation !== undefined ? (
+                  <ItemConfirmationControl
+                    itemId={s.id}
+                    confirmation={s.confirmation}
+                    confirmedOn={s.confirmedOn ?? null}
+                    canEdit={canEdit}
+                    className="ml-auto shrink-0"
+                  />
+                ) : null}
               </li>
             ))}
           </ul>

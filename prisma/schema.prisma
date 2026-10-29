@@ -252,6 +252,7 @@ model Location {
   bookedViaId            String?
   coveredSites           Location[]                    @relation("LocationBookedVia") // child sites booked through this one
   events                 LocationEvent[] // standing events here (Evensong 17:00)
+  mealsProvided          ScheduleItem[]                @relation("MealProvider") // takeaway meals packed here, eaten elsewhere
   createdAt              DateTime                      @default(now())
   updatedAt              DateTime                      @updatedAt
 
@@ -382,16 +383,38 @@ model ItineraryDayLocation {
 // A configurable kind of schedule item (Visit, Presentation, Meal, Travel…).
 // Admin-managed alongside trip types; drives the itinerary label/marker.
 model ScheduleItemCategory {
-  id             String          @id @default(cuid())
-  name           String          @unique
+  id             String           @id @default(cuid())
+  name           String           @unique
   color          String? // hex; tints the route-line marker
-  sortOrder      Int             @default(0)
-  // Built-in, self-describing kinds (Free time, Break): protected from
-  // edit/delete and special-cased in the item form (times + notes only).
-  system         Boolean         @default(false)
+  sortOrder      Int              @default(0)
+  // What the item IS, which decides the item form's fields: a MEAL shows the
+  // meal fields, a PRESENTATION the talk + presenters, FREE (Free time,
+  // Break) only times + notes. Admin-created categories pick one.
+  kind           ScheduleItemKind @default(OTHER)
+  // Built-in (Visit, Meal, Presentation, Travel, Free time, Break): can be
+  // renamed / recoloured but never deleted, and its kind is fixed.
+  system         Boolean          @default(false)
   items          ScheduleItem[]
   locationEvents LocationEvent[]
-  createdAt      DateTime        @default(now())
+  createdAt      DateTime         @default(now())
+}
+
+// The kind behind a schedule-item category (see ScheduleItemCategory.kind).
+enum ScheduleItemKind {
+  VISIT
+  MEAL
+  PRESENTATION
+  TRAVEL
+  FREE
+  OTHER
+}
+
+// Where an item's own arrangement with its venue stands — the time of a
+// lunch or reception agreed — separate from the venue engagement's booking
+// status, which covers the whole visit. Null = not raised yet.
+enum ItemConfirmation {
+  REQUESTED
+  CONFIRMED
 }
 
 // A standing event at a venue — "Evensong, 17:00" at a cathedral, a daily
@@ -433,6 +456,13 @@ model ScheduleItem {
   room           String? // where within the venue ("Refectory", "Chapel"); free text, suggested from the venue's past rooms
   mealKind       MealKind? // set ⇒ this item is a meal (breakfast / lunch / dinner / refreshments)
   mealProvision  MealProvision? // how that meal is provided (venue, takeaway, restaurant, on own)
+  // Who packs a TAKEAWAY meal when it isn't where it's eaten (a packed lunch
+  // collected from last night's host at breakfast, eaten at the next site).
+  // Null ⇒ the item's venue, else the previous night's lodging.
+  mealProvider   Location?             @relation("MealProvider", fields: [mealProviderId], references: [id], onDelete: SetNull)
+  mealProviderId String?
+  confirmation   ItemConfirmation? // this item's time/arrangement agreed with the venue (not the booking status)
+  confirmedOn    DateTime?             @db.Date // when `confirmation` last changed
   presentation   Presentation?         @relation(fields: [presentationId], references: [id], onDelete: SetNull)
   presentationId String? // the catalogued talk this item delivers (optional)
   presenters     Contact[]             @relation("Presenting") // this occurrence's speaker(s); empty ⇒ presentation.defaultPresenters
@@ -443,6 +473,7 @@ model ScheduleItem {
   @@index([dayId])
   @@index([categoryId])
   @@index([presentationId])
+  @@index([mealProviderId])
 }
 
 // Which meal a schedule item is.
@@ -503,14 +534,17 @@ model TravelLeg {
 // catalogued location or free text, with an optional dwell time. Lives inside
 // the leg so it no longer pollutes venue-run grouping as its own item.
 model TravelStop {
-  id           String    @id @default(cuid())
-  travelLeg    TravelLeg @relation(fields: [travelLegId], references: [id], onDelete: Cascade)
-  travelLegId  String
-  location     Location? @relation("TravelStopLocation", fields: [locationId], references: [id], onDelete: SetNull)
-  locationId   String?
-  label        String?
-  dwellMinutes Int?
-  order        Int       @default(0)
+  id            String         @id @default(cuid())
+  travelLeg     TravelLeg      @relation(fields: [travelLegId], references: [id], onDelete: Cascade)
+  travelLegId   String
+  location      Location?      @relation("TravelStopLocation", fields: [locationId], references: [id], onDelete: SetNull)
+  locationId    String?
+  label         String?
+  dwellMinutes  Int?
+  // A meal taken during the stop ("dinner on own at the services").
+  mealKind      MealKind?
+  mealProvision MealProvision?
+  order         Int            @default(0)
 
   @@index([travelLegId])
   @@index([locationId])

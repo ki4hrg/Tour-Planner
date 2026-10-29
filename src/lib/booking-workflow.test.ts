@@ -4,8 +4,12 @@ import {
   nextStep,
   stepGate,
   stepGateError,
+  stepsThrough,
   upcomingStep,
   waitingOn,
+  waitingAgeText,
+  waitingAgeTitle,
+  daysUntilDue,
   daysWaiting,
   waitingView,
   waitingFromView,
@@ -182,6 +186,7 @@ describe("daysWaiting / waitingView", () => {
       since: "2026-10-15",
       days: 12,
       dueOn: null,
+      daysUntilDue: null,
       due: true,
     });
     expect(
@@ -196,9 +201,40 @@ describe("daysWaiting / waitingView", () => {
     const step = { ...steps[1] };
     const w = (dueOn: Date | null) =>
       waitingView({ step, actor: "US", since: null, dueOn }, d("2026-10-27"));
-    expect(w(d("2027-03-01"))).toMatchObject({ dueOn: "2027-03-01", due: false });
-    expect(w(d("2026-10-27"))).toMatchObject({ dueOn: "2026-10-27", due: true });
-    expect(w(d("2026-10-01"))).toMatchObject({ due: true });
+    expect(w(d("2027-03-01"))).toMatchObject({
+      dueOn: "2027-03-01",
+      daysUntilDue: 125,
+      due: false,
+    });
+    expect(w(d("2026-10-27"))).toMatchObject({ dueOn: "2026-10-27", daysUntilDue: 0, due: true });
+    expect(w(d("2026-10-01"))).toMatchObject({ daysUntilDue: -26, due: true });
+  });
+});
+
+describe("waitingAgeText", () => {
+  it("counts down to a due date", () => {
+    expect(waitingAgeText({ daysUntilDue: 45, days: 110 })).toBe("due in 45d");
+    expect(waitingAgeText({ daysUntilDue: 0, days: 110 })).toBe("due today");
+    expect(waitingAgeText({ daysUntilDue: -3, days: 110 })).toBe("3d overdue");
+  });
+  it("falls back to time on the step without a due date", () => {
+    expect(waitingAgeText({ daysUntilDue: null, days: 110 })).toBe("waiting 110d");
+    expect(waitingAgeText({ daysUntilDue: null, days: 0 })).toBeNull();
+    expect(waitingAgeText({ daysUntilDue: null, days: null })).toBeNull();
+  });
+  it("titles the due date, else the wait's start", () => {
+    expect(waitingAgeTitle({ dueOn: "2027-03-12", since: "2026-10-01" })).toBe(
+      "Due Fri, 12 Mar 2027",
+    );
+    expect(waitingAgeTitle({ dueOn: null, since: "2026-10-01" })).toBe(
+      "Waiting since Thu, 1 Oct 2026",
+    );
+    expect(waitingAgeTitle({ dueOn: null, since: null })).toBeUndefined();
+  });
+  it("daysUntilDue is signed", () => {
+    expect(daysUntilDue(d("2026-10-30"), d("2026-10-27"))).toBe(3);
+    expect(daysUntilDue(d("2026-10-24"), d("2026-10-27"))).toBe(-3);
+    expect(daysUntilDue(null, d("2026-10-27"))).toBeNull();
   });
 });
 
@@ -282,28 +318,34 @@ describe("waitingFromView", () => {
 describe("stepGate", () => {
   const done = new Set(["contact", "avail"]);
   const gate = stepGate(steps, done);
-  it("opens only the next step for completion", () => {
-    expect(steps.filter((s) => gate.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["form"]);
+  it("opens every open step for completion (earlier ones fill in)", () => {
+    expect(steps.filter((s) => gate.get(s.id)!.canComplete).map((s) => s.id)).toEqual(
+      steps.filter((s) => !done.has(s.id)).map((s) => s.id),
+    );
   });
   it("opens only the last done step for undo", () => {
     expect(steps.filter((s) => gate.get(s.id)!.canUndo).map((s) => s.id)).toEqual(["avail"]);
   });
   it("opens the first step on a fresh booking, nothing to undo", () => {
     const fresh = stepGate(steps, new Set());
-    expect(steps.filter((s) => fresh.get(s.id)!.canComplete).map((s) => s.id)).toEqual(["contact"]);
+    expect(fresh.get("contact")!.canComplete).toBe(true);
     expect(steps.some((s) => fresh.get(s.id)!.canUndo)).toBe(false);
   });
   it("lets a gap (a step inserted after bookings moved on) be filled", () => {
     const gap = stepGate(steps, new Set(["contact", "form"]));
     expect(gap.get("avail")!.canComplete).toBe(true);
-    expect(gap.get("conf")!.canComplete).toBe(false);
+    expect(gap.get("form")!.canComplete).toBe(false); // already done
   });
 });
 
 describe("stepGateError", () => {
   const done = new Set(["contact"]);
-  it("names the first open prerequisite", () => {
-    expect(stepGateError(steps, done, "conf", true)).toBe('"Availability confirmed" isn\'t done yet.');
+  it("lets a later step be completed past open earlier ones", () => {
+    expect(stepGateError(steps, done, "conf", true)).toBeNull();
+    expect(stepsThrough(steps, "form")).toEqual(
+      steps.slice(0, steps.findIndex((s) => s.id === "form") + 1).map((s) => s.id),
+    );
+    expect(stepsThrough(steps, "nope")).toEqual([]);
   });
   it("names the latest later step done when undoing", () => {
     expect(stepGateError(steps, new Set(["contact", "avail", "form"]), "contact", false)).toBe(

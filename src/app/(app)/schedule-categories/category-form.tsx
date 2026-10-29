@@ -1,12 +1,24 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ColorField } from "@/components/color-field";
 import type { FormState } from "@/lib/forms";
+import type { ScheduleItemKind } from "@prisma/client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  SCHEDULE_ITEM_KINDS,
+  SCHEDULE_ITEM_KIND_LABELS,
+} from "@/lib/schedule-kinds";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
@@ -21,11 +33,28 @@ export function CategoryForm({
     name: string;
     color: string | null;
     sortOrder: number;
+    kind: ScheduleItemKind;
+    // Built-in: the kind is fixed.
+    system?: boolean;
   };
   submitLabel: string;
 }) {
+  // Controlled, because React resets a form after its action runs: an
+  // uncontrolled Radix Select's hidden input would snap back to OTHER while
+  // the trigger still showed the old pick, and a refused save would lose the
+  // typed name. A successful create clears them deliberately.
+  const [name, setName] = useState(initial?.name ?? "");
+  const [kind, setKind] = useState<ScheduleItemKind>(initial?.kind ?? "OTHER");
+
   const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
+    async (prev, formData) => {
+      const res = await action(prev, formData);
+      if (res.ok && !initial?.id) {
+        setName("");
+        setKind("OTHER");
+      }
+      return res;
+    },
     {},
   );
 
@@ -39,7 +68,13 @@ export function CategoryForm({
       {initial?.id ? <input type="hidden" name="id" value={initial.id} /> : null}
       <div className="space-y-1.5 sm:col-span-3">
         <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" defaultValue={initial?.name} required />
+        <Input
+          id="name"
+          name="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
       </div>
       <ColorField
         name="color"
@@ -47,6 +82,29 @@ export function CategoryForm({
         defaultValue={initial?.color ?? ""}
         className="sm:col-span-2"
       />
+      {/* The kind decides which fields an item of this category offers. */}
+      <input type="hidden" name="kind" value={kind} />
+      <div className="space-y-1.5 sm:col-span-3">
+        <Label htmlFor="kind">Kind</Label>
+        {initial?.system ? (
+          <p id="kind" className="text-sm">
+            {SCHEDULE_ITEM_KIND_LABELS[initial.kind]}
+          </p>
+        ) : (
+          <Select value={kind} onValueChange={(v) => setKind(v as ScheduleItemKind)}>
+            <SelectTrigger id="kind" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SCHEDULE_ITEM_KINDS.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SCHEDULE_ITEM_KIND_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       <div className="space-y-1.5">
         <Label htmlFor="sortOrder">Order</Label>
         <Input

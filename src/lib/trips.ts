@@ -2,6 +2,7 @@ import type {
   BookingStatus,
   Booking,
   ItineraryDay,
+  ItemConfirmation,
   MealKind,
   MealProvision,
   Prisma,
@@ -14,6 +15,7 @@ import type {
 import { toDateInput } from "@/lib/dates";
 import { lodgingForDays } from "@/lib/stays";
 import { serializePriceLines, type PriceLine } from "@/lib/costs";
+import { MEAL_KIND_LABELS } from "@/lib/meals";
 
 // The STORED status is a manual override only; the day-to-day lifecycle
 // (Planning → In progress → Complete) is derived from dates — see
@@ -303,6 +305,9 @@ export type SerializedTravelStop = {
   location: { id: string; name: string } | null;
   label: string | null;
   dwellMinutes: number | null;
+  // A meal taken during the stop ("dinner on own at the services").
+  mealKind: MealKind | null;
+  mealProvision: MealProvision | null;
   order: number;
 };
 
@@ -356,7 +361,18 @@ export function travelDetailLine(travel: SerializedTravelLeg): string | null {
     .map((s) => {
       const name = s.location?.name ?? s.label;
       if (!name) return null;
-      return s.dwellMinutes ? `${name} (${s.dwellMinutes} min)` : name;
+      const meal = s.mealKind
+        ? [
+            MEAL_KIND_LABELS[s.mealKind].toLowerCase(),
+            s.mealProvision === "ON_OWN" ? "on own" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : null;
+      const extra = [s.dwellMinutes ? `${s.dwellMinutes} min` : null, meal]
+        .filter(Boolean)
+        .join(", ");
+      return extra ? `${name} (${extra})` : name;
     })
     .filter(Boolean);
   return (
@@ -381,6 +397,13 @@ export type SerializedScheduleItem = {
   room: string | null; // where within the venue ("Refectory")
   mealKind: MealKind | null; // set ⇒ a meal
   mealProvision: MealProvision | null;
+  // Who packs a takeaway eaten elsewhere (null ⇒ the item's venue / last
+  // night's lodging). The name rides along only when the query loaded it.
+  mealProviderId: string | null;
+  mealProvider?: { id: string; name: string } | null;
+  // This item's own arrangement with its venue — separate from the booking.
+  confirmation: ItemConfirmation | null;
+  confirmedOn: string | null; // yyyy-mm-dd
   presentationId: string | null;
   presentation: SerializedItemPresentation | null;
   presenters: SerializedPerson[]; // per-occurrence override; empty ⇒ use presentation.defaultPresenters
@@ -395,7 +418,8 @@ export type SerializedScheduleItem = {
 //   1. an explicit title override on the item,
 //   2. the linked talk's title,
 //   3. a travel leg's derived label — "Coach to Bristol" (method + destination;
-//      bare method label when the destination isn't set yet),
+//      bare method label when the destination isn't set yet), then a meal's
+//      kind ("Lunch"),
 //   4. the category name, qualified by the venue(s) when placed — a bare "Visit"
 //      is uninformative, so a located category-labelled item reads
 //      "Visit: The Old Rectory" (self-describing kinds like Free time / Break are
@@ -416,6 +440,7 @@ export function scheduleItemPrimaryLabel(item: {
   presentation: { title: string } | null;
   category: { name: string } | null;
   notes?: string | null;
+  mealKind?: MealKind | null;
   sites?: { location: { name: string } }[];
   travel?: {
     method: TravelMethod;
@@ -447,6 +472,14 @@ export function scheduleItemPrimaryLabel(item: {
     const to = travelEndpointName(item.travel.toLocation, item.travel.toLabel);
     return {
       primary: to ? `${method} to ${to}` : method,
+      presentationIsPrimary: false,
+      labelFromCategory: false,
+    };
+  }
+  // A meal's default name is its meal ("Lunch").
+  if (item.mealKind) {
+    return {
+      primary: MEAL_KIND_LABELS[item.mealKind],
       presentationIsPrimary: false,
       labelFromCategory: false,
     };
@@ -630,11 +663,15 @@ type TravelLegRow = {
     location: { id: string; name: string } | null;
     label: string | null;
     dwellMinutes: number | null;
+    mealKind?: MealKind | null;
+    mealProvision?: MealProvision | null;
     order: number;
   }[];
 };
 
 type ScheduleItemWithRelations = ScheduleItem & {
+  // Optional: present only when the caller's query loaded the relation.
+  mealProvider?: { id: string; name: string } | null;
   category: { id: string; name: string; color: string | null } | null;
   presentation: {
     id: string;
@@ -688,6 +725,10 @@ export function serializeScheduleItem(
     room: item.room ?? null,
     mealKind: item.mealKind ?? null,
     mealProvision: item.mealProvision ?? null,
+    mealProviderId: item.mealProviderId ?? null,
+    ...(item.mealProvider !== undefined ? { mealProvider: item.mealProvider } : {}),
+    confirmation: item.confirmation ?? null,
+    confirmedOn: item.confirmedOn ? toDateInput(item.confirmedOn) : null,
     presentationId: item.presentationId,
     presentation: item.presentation
       ? {
@@ -744,6 +785,8 @@ export function serializeScheduleItem(
                 location: s.location,
                 label: s.label,
                 dwellMinutes: s.dwellMinutes,
+                mealKind: s.mealKind ?? null,
+                mealProvision: s.mealProvision ?? null,
                 order: s.order,
               })),
           },

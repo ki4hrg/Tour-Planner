@@ -1,11 +1,16 @@
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/dates";
-import type { StepActor, WaitingView } from "@/lib/booking-workflow";
+import {
+  waitingAgeText,
+  waitingAgeTitle,
+  type StepActor,
+  type WaitingView,
+} from "@/lib/booking-workflow";
 
 // Whose move a booking is. Each workflow step has an owner
 // (BookingWorkflowStep.actor); the booking's upcoming step decides who holds
-// the ball. Ours reads prominent (amber), the venue's muted with how long
-// we've been waiting. Plain presentational pieces — no hooks, so both Server
+// the ball. Ours reads prominent (amber), the venue's muted. The time half
+// counts down to the step's due date when it has one, else says how long it
+// has waited (`waitingAgeText`). Plain presentational pieces — no hooks, so both Server
 // and Client Components render them. The prefix says "next", not "done":
 // step labels are past-tense milestones ("Menu chosen"), so "Your move: Menu
 // chosen" would read as finished.
@@ -21,7 +26,7 @@ export const OURS_CHIP_CLASSES =
 
 /**
  * Read-only owner line from a resolved `WaitingView` — "Next for you: Sign
- * agreement · 3d" / "Next (venue): Confirm availability · 12d".
+ * agreement · due in 3d" / "Next (venue): Confirm availability · waiting 12d".
  */
 export function WaitingNote({
   waiting,
@@ -34,7 +39,7 @@ export function WaitingNote({
   // Ours AND due reads as the to-do it is; a step with a future due date is
   // just information until then, so it stays muted and says when.
   const ours = waiting.actor === "US" && waiting.due;
-  const notYet = !waiting.due && waiting.dueOn;
+  const age = waitingAgeText(waiting);
   return (
     <span
       className={cn(
@@ -44,20 +49,10 @@ export function WaitingNote({
           : "text-muted-foreground",
         className,
       )}
-      title={
-        notYet
-          ? `Due ${formatDate(waiting.dueOn)}`
-          : waiting.since
-            ? `Since ${formatDate(waiting.since)}`
-            : undefined
-      }
+      title={waitingAgeTitle(waiting)}
     >
       {ACTOR_PREFIX[waiting.actor]}: {waiting.stepLabel}
-      {notYet
-        ? ` · from ${formatDate(waiting.dueOn)}`
-        : waiting.days
-          ? ` · ${waiting.days}d`
-          : ""}
+      {age ? ` · ${age}` : ""}
     </span>
   );
 }

@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-dialog";
+import type { ScheduleItemKind } from "@prisma/client";
+import { SCHEDULE_ITEM_KIND_LABELS } from "@/lib/schedule-kinds";
 import { CategoryForm } from "./category-form";
 import {
   updateCategory,
@@ -20,6 +22,7 @@ type Category = {
   color: string | null;
   sortOrder: number;
   system: boolean;
+  kind: ScheduleItemKind;
   itemCount: number;
 };
 
@@ -74,6 +77,9 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                   </Badge>
                 ) : null}
                 <span className="text-xs text-muted-foreground">
+                  {SCHEDULE_ITEM_KIND_LABELS[c.kind]}
+                </span>
+                <span className="text-xs text-muted-foreground">
                   · {c.itemCount} item{c.itemCount === 1 ? "" : "s"}
                 </span>
               </div>
@@ -96,18 +102,18 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 >
                   <ArrowDown />
                 </Button>
-                {/* Built-ins are protected: no edit/delete (only reorder). */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setEditingId((id) => (id === c.id ? null : c.id))
+                  }
+                >
+                  {editingId === c.id ? "Close" : "Edit"}
+                </Button>
+                {/* Built-ins can be renamed / recoloured but never deleted. */}
                 {c.system ? null : (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setEditingId((id) => (id === c.id ? null : c.id))
-                      }
-                    >
-                      {editingId === c.id ? "Close" : "Edit"}
-                    </Button>
                     <form id={`delete-category-${c.id}`} action={deleteCategory}>
                       <input type="hidden" name="id" value={c.id} />
                       <ConfirmButton
@@ -130,7 +136,7 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 )}
               </div>
             </div>
-            {editingId === c.id && !c.system ? (
+            {editingId === c.id ? (
               <div className="mt-3">
                 <CategoryForm
                   action={updateCategory}
@@ -140,6 +146,8 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                     name: c.name,
                     color: c.color,
                     sortOrder: c.sortOrder,
+                    kind: c.kind,
+                    system: c.system,
                   }}
                 />
               </div>

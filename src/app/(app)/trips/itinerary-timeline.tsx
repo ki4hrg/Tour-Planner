@@ -524,10 +524,17 @@ export function MealProvisionBadge({
   item,
   className,
 }: {
-  item: { mealKind: MealKind | null; mealProvision: MealProvision | null };
+  item: {
+    mealKind: MealKind | null;
+    mealProvision: MealProvision | null;
+    // A takeaway packed somewhere other than where it's eaten.
+    mealProvider?: { name: string } | null;
+  };
   className?: string;
 }) {
   if (!item.mealKind || !item.mealProvision) return null;
+  const from =
+    item.mealProvision === "TAKEAWAY" && item.mealProvider ? item.mealProvider.name : null;
   return (
     <Badge
       variant={item.mealProvision === "VENUE" ? "muted" : "outline"}
@@ -535,6 +542,7 @@ export function MealProvisionBadge({
     >
       <Utensils aria-hidden />
       {MEAL_PROVISION_LABELS[item.mealProvision]}
+      {from ? ` from ${from}` : null}
     </Badge>
   );
 }

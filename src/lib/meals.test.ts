@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultMealTitle,
   buildMealPlan,
   guessMealKind,
   isMealCategoryName,
@@ -88,7 +89,7 @@ describe("buildMealPlan", () => {
     const plan = buildMealPlan(days, lodging);
     expect(plan.total).toBe(5);
     expect(plan.days[0].meals.map((m) => m.itemId)).toEqual(["i1", "i2"]);
-    expect(plan.days[1].meals[0]).toEqual({
+    expect(plan.days[1].meals[0]).toMatchObject({
       itemId: "i4",
       kind: "BREAKFAST",
       provision: "TAKEAWAY",
@@ -112,9 +113,71 @@ describe("buildMealPlan", () => {
     expect(plan.unset).toBe(1);
   });
 
+  it("credits a takeaway to its packer, eaten elsewhere", () => {
+    const oxford = { id: "oxford", name: "Wesley Memorial" };
+    const plan = buildMealPlan([
+      {
+        ...days[1],
+        items: [
+          meal("t1", {
+            mealKind: "LUNCH",
+            mealProvision: "TAKEAWAY",
+            mealProvider: sarum,
+            sites: [{ location: oxford }],
+          }),
+        ],
+      },
+    ]);
+    expect(plan.days[0].meals[0]).toMatchObject({ venue: sarum, at: "Wesley Memorial" });
+    expect(plan.byVenue[0].venue).toEqual(sarum);
+  });
+
+  it("counts a meal taken at an en-route travel stop", () => {
+    const plan = buildMealPlan([
+      {
+        ...days[1],
+        items: [
+          meal("c1", {
+            mealKind: null,
+            travel: {
+              stops: [
+                {
+                  id: "st1",
+                  location: null,
+                  label: "Leigh Delamere services",
+                  mealKind: "DINNER",
+                  mealProvision: "ON_OWN",
+                },
+              ],
+            },
+          }),
+        ],
+      },
+    ]);
+    expect(plan.total).toBe(1);
+    expect(plan.days[0].meals[0]).toMatchObject({
+      itemId: "c1",
+      stopId: "st1",
+      kind: "DINNER",
+      provision: "ON_OWN",
+      venue: null,
+      at: "Leigh Delamere services",
+    });
+    expect(plan.byVenue).toEqual([]);
+  });
+
   it("is empty without meal items", () => {
     const plan = buildMealPlan([{ ...days[0], items: [meal("x", { mealKind: null })] }]);
     expect(plan.total).toBe(0);
     expect(plan.byVenue).toEqual([]);
+  });
+});
+
+describe("defaultMealTitle", () => {
+  it("names a blank meal after its kind", () => {
+    expect(defaultMealTitle("", "LUNCH")).toBe("Lunch");
+    expect(defaultMealTitle(null, "DINNER")).toBe("Dinner");
+    expect(defaultMealTitle("Sunday roast", "LUNCH")).toBeNull();
+    expect(defaultMealTitle("", null)).toBeNull();
   });
 });

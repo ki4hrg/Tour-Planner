@@ -40,6 +40,12 @@ const TRIP_SELECT = {
           endTime: true,
           category: { select: { name: true } },
           presentation: { select: { title: true } },
+          // Per-item confirmation + takeaway packer (its engagement lists the meal).
+          mealKind: true,
+          mealProvision: true,
+          mealProviderId: true,
+          confirmation: true,
+          confirmedOn: true,
           sites: { select: { locationId: true } },
           bookings: {
             select: {
@@ -105,6 +111,9 @@ export default async function CompareYearsPage({
           d.scheduleItems.flatMap((i) => i.sites.map((s) => s.locationId)),
         ),
         ...t.days.flatMap((d) => d.plannedLocations.map((p) => p.locationId)),
+        ...t.days.flatMap((d) =>
+          d.scheduleItems.flatMap((i) => (i.mealProviderId ? [i.mealProviderId] : [])),
+        ),
         ...t.stays.map((s) => s.locationId),
         ...t.bookings.flatMap((b) => (b.locationId ? [b.locationId] : [])),
       ]),

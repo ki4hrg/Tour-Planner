@@ -33,6 +33,12 @@ function MealCell({ tripId, meal }: { tripId: string; meal: MealEntry }) {
           {meal.venue.name}
         </span>
       ) : null}
+      {/* Eaten somewhere else: a takeaway's next site, a coach stop. */}
+      {meal.at ? (
+        <span className="block truncate text-xs text-muted-foreground">
+          at {meal.at}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -81,7 +87,7 @@ export function MealPlanCard({ tripId, plan }: { tripId: string; plan: MealPlan 
                           <span className="text-muted-foreground">—</span>
                         ) : (
                           meals.map((m) => (
-                            <MealCell key={m.itemId} tripId={tripId} meal={m} />
+                            <MealCell key={m.stopId ?? m.itemId} tripId={tripId} meal={m} />
                           ))
                         )}
                       </td>

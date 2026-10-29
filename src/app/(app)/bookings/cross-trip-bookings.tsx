@@ -230,6 +230,8 @@ function VenueCardGroup({
             >
               <a
                 href={email.href}
+                target="_blank"
+                rel="noopener noreferrer"
                 title={
                   email.to.length
                     ? `Email ${email.to.join(", ")}`

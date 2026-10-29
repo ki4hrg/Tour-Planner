@@ -3,6 +3,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
+import {
+  ContactMergeError,
+  mergeContacts,
+  previewContactMerge,
+} from "@/lib/contact-merge";
 
 export function registerContactTools(server: McpServer, user: SessionUser) {
   // ── search-contacts (VIEWER+) ──────────────────────────────────────────
@@ -191,6 +196,68 @@ export function registerContactTools(server: McpServer, user: SessionUser) {
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `Error: ${String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── merge-contacts (PLANNER+) ──────────────────────────────────────────
+  server.registerTool(
+    "merge-contacts",
+    {
+      title: "Merge Contacts",
+      description:
+        "Merge a duplicate contact (sourceContactId) into the one to keep (targetContactId), then DELETE the source. Every reference moves to the target: linked locations (a venue both were linked to keeps one link), primary-contact designations, bookings (booked-with contact), contact-log notes, presenter slots on itinerary items, and default-presenter links on presentations. The target's values win; the source only fills empty fields, notes are concatenated, and a differing source email/phone is kept as an 'Also:' line in the notes. Use search-contacts to find both IDs. Pass dryRun: true first to see what would move without changing anything. Returns counts of what was (or would be) moved.",
+      inputSchema: {
+        sourceContactId: z.string(),
+        targetContactId: z.string(),
+        dryRun: z.boolean().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ sourceContactId, targetContactId, dryRun }) => {
+      if (!hasRole(user.role, "PLANNER")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Requires PLANNER role or above",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      try {
+        const result = dryRun
+          ? await previewContactMerge(sourceContactId, targetContactId)
+          : await mergeContacts(sourceContactId, targetContactId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { success: true, dryRun: dryRun ?? false, ...result },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${err instanceof ContactMergeError ? err.message : String(err)}`,
+            },
+          ],
           isError: true,
         };
       }

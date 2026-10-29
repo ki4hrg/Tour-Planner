@@ -332,14 +332,43 @@ export default async function LocationDetailPage({
             where: { locationId: engagementId },
             select: BOOKING_PROGRESS_SELECT,
           },
+          // When the trip is actually here: the days with a session or a
+          // rough-plan assignment at the venue, plus any stay's check-in.
+          days: {
+            where: {
+              OR: [
+                { scheduleItems: { some: { sites: { some: atSite } } } },
+                { plannedLocations: { some: atSite } },
+              ],
+            },
+            orderBy: { dayIndex: "asc" },
+            select: { date: true },
+          },
+          stays: { where: atSite, select: { checkIn: true } },
         },
       })
     : [];
+  // "Wed, 26 May 2027" — or the first → last visit when it spans several days.
+  // The trip's own start would misdate a venue visited mid-trip.
+  const visitDates = (t: (typeof progressTripRows)[number]): string => {
+    const dates = [
+      ...t.days.map((d) => d.date),
+      ...t.stays.map((st) => st.checkIn),
+    ]
+      .filter((d): d is Date => d != null)
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (dates.length === 0) return t.startDate ? formatDate(t.startDate) : "No dates";
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    return first.getTime() === last.getTime()
+      ? formatDate(first)
+      : `${formatDate(first)} → ${formatDate(last)}`;
+  };
   const progressLines: ProgressLine[] = progressTripRows.map((t) => ({
     key: t.id,
     name: t.name,
     href: bookingDashboardHref(t.id, engagementId),
-    detail: t.startDate ? formatDate(t.startDate) : "No dates",
+    detail: visitDates(t),
     target: { tripId: t.id, locationId: id },
     progress: progressView(t.bookings[0] ?? null, engagementWorkflowId, t.startDate),
   }));
@@ -504,6 +533,7 @@ export default async function LocationDetailPage({
                 b.stepCompletions,
                 b.status,
                 b.bookedOn ?? b.createdAt,
+                b.trip!.startDate,
               ),
               today,
             )
