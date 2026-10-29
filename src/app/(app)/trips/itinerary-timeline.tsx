@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { BookingStatusPill } from "@/components/booking-status-pill";
 import { Fragment } from "react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import {
   Bus,
   CarTaxiFront,
@@ -169,9 +170,15 @@ function breakAfterSlashes(text: string): React.ReactNode {
 
 // A muted gap line showing free time after the item row it follows. Rendered
 // inside the run's <ul>, so it's a list item.
-function GapLine({ gap }: { gap: { durationMinutes: number } }) {
+export function GapLine({
+  gap,
+  className,
+}: {
+  gap: { durationMinutes: number };
+  className?: string;
+}) {
   return (
-    <li className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
+    <li className={cn("flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground", className)}>
       <span className="font-light">·</span>
       <span>{formatDuration(gap.durationMinutes)}</span>
     </li>
@@ -214,8 +221,9 @@ export function OvernightLine({
 }
 
 // The venue subheader for a run: simply the venue name(s). Location-less
-// (leading / post-block) runs render no heading at all.
-function RunHeader({
+// (leading / post-block) runs render no heading at all. Shared with the
+// itinerary editor, so both read the same.
+export function RunHeader({
   run,
   linkVenues,
   showVenueContacts,
