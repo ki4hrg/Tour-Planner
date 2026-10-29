@@ -67,8 +67,9 @@ export function TimelineGroups({
   // inline quick-edit here. The timeline itself stays a read component.
   renderItemExtra?: (item: SerializedScheduleItem) => React.ReactNode;
   // Per-venue slot beside each venue subheader name — planner surfaces mount
-  // the engagement's booking progress here.
-  renderVenueExtra?: (locationId: string) => React.ReactNode;
+  // the engagement's booking progress here. `choice` = one of several venues
+  // in a free-choice block.
+  renderVenueExtra?: (locationId: string, choice: boolean) => React.ReactNode;
   // Opt-in: link each item row to `${itemLinkBase}#item-{id}` (dashboard → the
   // trip's day view). A plain string so Server Components can pass it; share
   // and print views stay non-interactive by simply not passing it.
@@ -227,7 +228,7 @@ function RunHeader({
   // Offer "Add contact" for a venue with no primary contact — planner surfaces
   // only (the location page's contact form is PLANNER-gated).
   canAddContacts?: boolean;
-  renderVenueExtra?: (locationId: string) => React.ReactNode;
+  renderVenueExtra?: (locationId: string, choice: boolean) => React.ReactNode;
 }) {
   if (run.venues.length === 0) return null;
   return (
@@ -262,7 +263,7 @@ function RunHeader({
               ) : null}
               {renderVenueExtra ? (
                 <span className="ml-2 inline-flex align-middle font-sans text-xs font-normal tracking-normal">
-                  {renderVenueExtra(v.id)}
+                  {renderVenueExtra(v.id, run.kind === "multi")}
                 </span>
               ) : null}
             </span>

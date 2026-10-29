@@ -447,7 +447,13 @@ export function scheduleItemPrimaryLabel(item: {
     toLocation: { name: string } | null;
     toLabel: string | null;
   } | null;
-}, opts: { venueInHeading?: boolean; categoryChip?: boolean } = {}): {
+}, opts: {
+  venueInHeading?: boolean;
+  categoryChip?: boolean;
+  // With categoryChip: head an untitled visit by its venue(s) — for rows that
+  // aren't grouped under a venue header (the itinerary editor).
+  venueFallback?: boolean;
+} = {}): {
   primary: string;
   presentationIsPrimary: boolean;
   labelFromCategory: boolean;
@@ -488,9 +494,14 @@ export function scheduleItemPrimaryLabel(item: {
     ? (item.sites ?? []).map((s) => s.location.name)
     : [];
   // A surface that always renders the category chip doesn't repeat it as
-  // the heading: an untitled item reads as its chip alone.
+  // the heading: an untitled item reads as its chip alone, or as its
+  // venue(s) ("Old Sarum") where asked.
   if (item.category && opts.categoryChip) {
-    return { primary: "", presentationIsPrimary: false, labelFromCategory: false };
+    return {
+      primary: opts.venueFallback ? venues.join(", ") : "",
+      presentationIsPrimary: false,
+      labelFromCategory: false,
+    };
   }
   if (item.category) {
     return {

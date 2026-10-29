@@ -73,6 +73,25 @@ describe("scheduleItemPrimaryLabel", () => {
     });
   });
 
+  it("with the category chip, heads an untitled visit by its venue only when asked", () => {
+    const visit = {
+      title: null,
+      presentation: null,
+      category: { name: "Visit" },
+      sites: [{ location: { name: "Old Sarum" } }, { location: { name: "Cathedral Close" } }],
+    };
+    expect(scheduleItemPrimaryLabel(visit, { categoryChip: true }).primary).toBe("");
+    expect(
+      scheduleItemPrimaryLabel(visit, { categoryChip: true, venueFallback: true }).primary,
+    ).toBe("Old Sarum, Cathedral Close");
+    expect(
+      scheduleItemPrimaryLabel(
+        { ...visit, sites: [] },
+        { categoryChip: true, venueFallback: true },
+      ).primary,
+    ).toBe("");
+  });
+
   it("falls back to the talk title, flagging it primary", () => {
     const r = scheduleItemPrimaryLabel({
       title: null,

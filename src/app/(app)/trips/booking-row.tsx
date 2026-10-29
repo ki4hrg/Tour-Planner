@@ -180,12 +180,12 @@ function stayRangeLabel(s: CoveredStay): string {
 export function coverageLine(row: VenueBookingRow): string {
   const planned = row.sessions.filter((s) => s.planned).length;
   const timed = row.sessions.length - planned;
-  // "2/3 times confirmed" — the per-session arrangements inside the booking.
+  // "2/3 sessions confirmed" — the per-session arrangements inside the booking.
   const tracked = row.sessions.filter((s) => !s.planned && s.confirmation !== undefined);
   const confirmed = tracked.filter((s) => s.confirmation === "CONFIRMED").length;
   return [
     timed ? `${timed} session${timed === 1 ? "" : "s"}` : null,
-    tracked.length ? `${confirmed}/${tracked.length} times confirmed` : null,
+    tracked.length ? `${confirmed}/${tracked.length} confirmed` : null,
     planned ? `${planned} planned` : null,
     row.nightCount
       ? `${row.nightCount} night${row.nightCount === 1 ? "" : "s"}`

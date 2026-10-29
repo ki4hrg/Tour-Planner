@@ -40,43 +40,63 @@ export function useVenueEngagementVia(
   return useContext(VenueEngagementsContext)?.engagements[locationId]?.via ?? null;
 }
 
+/**
+ * A booking with nothing happening on it yet: no engagement, or one still
+ * PENDING with no step ticked — or one marked not needed.
+ */
+export function isIdleEngagement(view: VenueEngagementView): boolean {
+  const p = view.progress;
+  if (!p.exists || p.status === "NOT_NEEDED") return true;
+  return p.status === "PENDING" && p.completions.length === 0;
+}
+
 /** The venue's engagement status control, or nothing (no provider / not bookable). */
 export function VenueEngagementStatus({
   locationId,
-  labelled = false,
+  name,
+  compact = false,
+  hideIdle = false,
 }: {
   locationId: string;
-  // Lead with "Booking" where the row also shows an item's own status, so the
-  // venue's booking progress isn't mistaken for it.
-  labelled?: boolean;
+  // The venue's name, heading the status popover so it's clear which venue's
+  // booking it is (several venues can sit on one row).
+  name?: string;
+  // Itinerary rows: a booking icon instead of a word, and the next-step chip
+  // only when it's our move — the step-by-step detail is on the Bookings tab.
+  compact?: boolean;
+  // Free-choice blocks: the sites are options, usually walk-ins, so a venue
+  // shows its booking only once something has actually happened on it.
+  hideIdle?: boolean;
 }) {
   const ctx = useContext(VenueEngagementsContext);
   const view = ctx?.engagements[locationId];
   if (!ctx || !view) return null;
+  if (hideIdle && isIdleEngagement(view)) return null;
+  const title = `Booking · ${view.via ? view.via.name : (name ?? "venue")}`;
+  const progress = (
+    <CompactProgress
+      target={{ tripId: ctx.tripId, locationId }}
+      progress={view.progress}
+      canEdit={ctx.canEdit}
+      onlyOurMove={compact}
+      title={name || view.via ? title : undefined}
+    />
+  );
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      {labelled ? (
-        // The label travels with the chip it names when the row wraps.
-        // Never wraps itself: the progress beside it shrinks and wraps instead.
+      {compact ? (
+        // The icon travels with the chips it labels when the row wraps; the
+        // progress beside it shrinks and wraps instead.
         <span className="inline-flex min-w-0 items-start gap-1.5">
-          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap pt-0.5 text-xs text-muted-foreground">
-            <FileSignature className="size-3.5" aria-hidden />
-            Booking
-          </span>
-          <span className="min-w-0">
-            <CompactProgress
-              target={{ tripId: ctx.tripId, locationId }}
-              progress={view.progress}
-              canEdit={ctx.canEdit}
-            />
-          </span>
+          <FileSignature
+            className="mt-1 size-3.5 shrink-0 text-muted-foreground"
+            role="img"
+            aria-label="Booking"
+          />
+          <span className="min-w-0">{progress}</span>
         </span>
       ) : (
-        <CompactProgress
-          target={{ tripId: ctx.tripId, locationId }}
-          progress={view.progress}
-          canEdit={ctx.canEdit}
-        />
+        progress
       )}
       {view.via ? (
         <span className="text-xs text-muted-foreground">via {view.via.name}</span>

@@ -932,6 +932,16 @@ function DayCard({
                 tripId={day.tripId}
                 dayId={day.id}
                 item={item}
+                // A venue's booking shows once a day, on its first item there
+                // (a free-choice block may hide it, so it doesn't count).
+                bookingShownEarlier={
+                  new Set(
+                    day.items
+                      .slice(0, si)
+                      .filter((prev) => !prev.isBlock)
+                      .flatMap((prev) => prev.sites.map((x) => x.locationId)),
+                  )
+                }
                 index={si}
                 total={day.items.length}
                 dropLine={
@@ -963,7 +973,9 @@ function DayCard({
             showBookings
             linkVenues
             showGaps
-            renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
+            renderVenueExtra={(id, choice) => (
+              <VenueEngagementStatus locationId={id} hideIdle={choice} />
+            )}
           />
         )}
         {/* Where the group sleeps tonight; links to the venue's booking row. */}
@@ -1210,6 +1222,7 @@ function ItemRow({
   tripId,
   dayId,
   item,
+  bookingShownEarlier,
   index,
   total,
   dropLine,
@@ -1230,6 +1243,9 @@ function ItemRow({
   tripId: string;
   dayId: string;
   item: SerializedScheduleItem;
+  // Venues already shown on an earlier item this day: their booking (one per
+  // venue for the whole trip) isn't repeated on every session.
+  bookingShownEarlier: Set<string>;
   index: number;
   total: number;
   // Drop indicator for an item being dragged here (above / below this row).
@@ -1260,11 +1276,12 @@ function ItemRow({
 
   const time = [item.startTime, item.endTime].filter(Boolean).join("–");
   const speakers = effectivePresenters(item);
-  // Heading is the "what" (title → talk); the venue is listed as
-  // member-location tags below. The category chip always shows, so an
-  // untitled item reads as its chip alone.
+  // Heading is the "what" (title → talk → meal); an untitled visit is
+  // headed by its venue, which the member-location tags below repeat with
+  // its booking. The category chip always shows beside it.
   const { primary, presentationIsPrimary } = scheduleItemPrimaryLabel(item, {
     categoryChip: true,
+    venueFallback: true,
   });
   const limitationsFor = (locationId: string) =>
     locations.find((l) => l.id === locationId)?.scheduleLimitations ?? null;
@@ -1441,37 +1458,46 @@ function ItemRow({
                       : null,
                   }}
                 />
-                {/* This item's own arrangement (the lunch time agreed) — not
-                    the venue booking, whose status sits by the venue below. */}
-                {item.sites.length > 0 ? (
+                {/* This item's own arrangement with its venue (the lunch time
+                    agreed, the meal actually taken there) — not the venue
+                    booking, whose status sits by the venue below. A free-choice
+                    block has nothing to arrange unless someone raised it. */}
+                {item.sites.length > 0 && (!item.isBlock || item.confirmation) ? (
                   <ItemConfirmationControl
                     itemId={item.id}
                     confirmation={item.confirmation}
                     confirmedOn={item.confirmedOn}
                     canEdit={canEdit}
+                    compact
                   />
                 ) : null}
               </div>
 
-              {/* Member locations — the item's "where" (venue is never the heading). */}
+              {/* Member locations — the item's "where" (venue is never the
+                  heading). Each venue and its booking share one outlined
+                  capsule, so a status reads as that venue's. */}
               {item.sites.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                <div className="mt-1 flex flex-wrap items-start gap-x-2 gap-y-1">
                   {item.sites.map((s, si) => {
                     const limits = limitationsFor(s.locationId);
                     return (
                       <span key={s.id} className="inline-flex max-w-full flex-col gap-0.5">
-                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded border bg-muted/30 px-1.5 py-0.5">
                           <Link
                             href={`/locations/${s.locationId}`}
-                            className="rounded border bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground link-quiet"
+                            className="text-xs text-muted-foreground link-quiet"
                           >
                             {s.location.name}
                           </Link>
                           {si === 0 && item.room ? <RoomLabel room={item.room} /> : null}
-                          {/* The venue engagement's next step + status — the
-                              whole visit's booking, labelled so it isn't read
-                              as this item's own status. */}
-                          <VenueEngagementStatus locationId={s.locationId} labelled />
+                          {bookingShownEarlier.has(s.locationId) ? null : (
+                            <VenueEngagementStatus
+                              locationId={s.locationId}
+                              name={s.location.name}
+                              compact
+                              hideIdle={item.isBlock}
+                            />
+                          )}
                         </span>
                         {limits ? (
                           <span
@@ -1522,61 +1548,9 @@ function ItemRow({
 
         {canEdit && !editing ? (
           <>
-            {/* Below `sm` one menu holds every row action, so the content
-                column keeps the width; the inline toolbar is for wide screens. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="-my-1 size-10 shrink-0 sm:hidden"
-                  aria-label="Item actions"
-                >
-                  <Ellipsis />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto min-w-40">
-                <DropdownMenuItem onSelect={() => setEditing(true)}>
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={pending || index === 0}
-                  onSelect={() => onMove(index, -1)}
-                >
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={pending || index === total - 1}
-                  onSelect={() => onMove(index, 1)}
-                >
-                  Move down
-                </DropdownMenuItem>
-                {otherDays.length > 0 ? (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Move to day…</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="max-w-64">
-                      {otherDays.map((d) => (
-                        <DropdownMenuItem
-                          key={d.id}
-                          onSelect={() => onMoveToDay(d.id)}
-                        >
-                          <span className="truncate">{d.label}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={pending}
-                  onSelect={requestRemove}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="hidden shrink-0 items-center gap-1 sm:flex">
+            {/* Wide screens keep the drag grip and Edit inline; every other
+                row action lives in one menu (all of them below `sm`). */}
+            <div className="flex shrink-0 items-center gap-1">
               <span
                 draggable
                 onDragStart={(e) =>
@@ -1592,50 +1566,66 @@ function ItemRow({
               </span>
               <Button
                 variant="ghost"
-                size="icon-sm"
-                disabled={pending || index === 0}
-                onClick={() => onMove(index, -1)}
-                aria-label="Move item up"
+                size="sm"
+                className="hidden sm:inline-flex"
+                onClick={() => setEditing(true)}
               >
-                <ArrowUp />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={pending || index === total - 1}
-                onClick={() => onMove(index, 1)}
-                aria-label="Move item down"
-              >
-                <ArrowDown />
-              </Button>
-              {otherDays.length > 0 ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      Move
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-auto max-w-72">
-                    {otherDays.map((d) => (
-                      <DropdownMenuItem key={d.id} onSelect={() => onMoveToDay(d.id)}>
-                        <span className="truncate">{d.label}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-              <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                 Edit
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                disabled={pending}
-                onClick={requestRemove}
-              >
-                Delete
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="-my-1 size-10 shrink-0 sm:size-7"
+                    aria-label="Item actions"
+                  >
+                    <Ellipsis />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto min-w-40">
+                  <DropdownMenuItem className="sm:hidden" onSelect={() => setEditing(true)}>
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={pending || index === 0}
+                    onSelect={() => onMove(index, -1)}
+                  >
+                    <ArrowUp />
+                    Move up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={pending || index === total - 1}
+                    onSelect={() => onMove(index, 1)}
+                  >
+                    <ArrowDown />
+                    Move down
+                  </DropdownMenuItem>
+                  {otherDays.length > 0 ? (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Move to day…</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-w-64">
+                        {otherDays.map((d) => (
+                          <DropdownMenuItem
+                            key={d.id}
+                            onSelect={() => onMoveToDay(d.id)}
+                          >
+                            <span className="truncate">{d.label}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={pending}
+                    onSelect={requestRemove}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <ConfirmDialog
               open={confirmDelete}
