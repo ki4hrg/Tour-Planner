@@ -233,11 +233,17 @@ export function CompactProgress({
   progress,
   canEdit,
   showAge = false,
+  onlyOurMove = false,
+  title,
 }: {
   target: BookingTarget;
   progress: BookingProgressView;
   canEdit: boolean;
   showAge?: boolean;
+  // Show the next-step chip only when it's due and ours (the amber to-do).
+  onlyOurMove?: boolean;
+  // Heads the status popover (which booking this is).
+  title?: string;
 }) {
   const workflow = useWorkflowFor()(progress);
   const [pending, start] = useTransition();
@@ -259,6 +265,7 @@ export function CompactProgress({
   const due = isDue(waiting, today);
   // Owner-led once the booking exists; an untouched venue just shows "Next".
   const owned = progress.exists && waiting != null;
+  const showNext = onlyOurMove ? owned && waiting.actor === "US" && due : true;
 
   const tick = (stepId: string) =>
     start(async () => {
@@ -269,7 +276,7 @@ export function CompactProgress({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      {next ? (
+      {next && showNext ? (
         <StepChip
           step={next}
           done={false}
@@ -309,7 +316,8 @@ export function CompactProgress({
         progress={progress}
         canEdit={canEdit}
         // The owner chip already says how long it's been waiting.
-        showAge={showAge && !owned}
+        showAge={showAge && !(owned && showNext)}
+        title={title}
       />
     </span>
   );

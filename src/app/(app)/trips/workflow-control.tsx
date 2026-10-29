@@ -77,11 +77,15 @@ export function WorkflowControl({
   progress,
   canEdit,
   showAge = true,
+  title,
 }: {
   target: BookingTarget;
   progress: BookingProgressView;
   canEdit: boolean;
   showAge?: boolean;
+  // Names the booking at the top of the popover ("Booking · Lincoln College")
+  // where the row alone doesn't make that plain.
+  title?: string;
 }) {
   const workflows = useBookingWorkflows();
   const uid = useId();
@@ -213,6 +217,7 @@ export function WorkflowControl({
           <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
         </PopoverTrigger>
         <PopoverContent className="w-80 space-y-3">
+          {title ? <h4 className="text-sm font-medium">{title}</h4> : null}
           <Select
             value={state.workflowId ?? NONE}
             onValueChange={setWorkflow}
@@ -278,12 +283,17 @@ export function WorkflowControl({
               <p className="text-sm text-muted-foreground">No steps.</p>
             )
           ) : (
+            // No workflow: the booking's status is set by hand.
+            <div className="flex items-center gap-2">
+              <Label htmlFor={`${uid}-status`} className="shrink-0 text-sm font-normal">
+                Status
+              </Label>
             <Select
               value={off ? "PENDING" : state.status}
               onValueChange={(v) => setStatus(v as BookingStatus)}
               disabled={pending || off}
             >
-              <SelectTrigger size="sm" className="w-full" aria-label="Status">
+              <SelectTrigger id={`${uid}-status`} size="sm" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -294,6 +304,7 @@ export function WorkflowControl({
                 ))}
               </SelectContent>
             </Select>
+            </div>
           )}
 
           {/* The off-ladder overrides: either one, or neither (back in play —

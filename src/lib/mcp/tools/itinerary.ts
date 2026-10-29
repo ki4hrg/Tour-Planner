@@ -260,7 +260,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Schedule Item",
       description:
-        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it. `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed — separately from the venue booking's status; null clears.",
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it. `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue — the default when omitted, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed, or that a meal the host includes is actually being taken there — separately from the venue booking's status; null clears.",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
@@ -340,7 +340,12 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               fixedTime: fixedTime ?? false,
               room: room || null,
               mealKind: mealKind ?? null,
-              mealProvision: mealKind ? (mealProvision ?? null) : null,
+              // Served by the venue unless told otherwise (null = left unset).
+              mealProvision: mealKind
+                ? mealProvision === undefined
+                  ? "VENUE"
+                  : mealProvision
+                : null,
               mealProviderId:
                 mealKind && mealProvision === "TAKEAWAY" ? (mealProviderId ?? null) : null,
               confirmation: confirmation ?? null,
@@ -394,7 +399,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Schedule Item",
       description:
-        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples). `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). Pass mealKind: null to un-mark a meal; room: empty string clears the room. A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed — separately from the venue booking's status; null clears.",
+        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples). `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue — the default when omitted, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). Pass mealKind: null to un-mark a meal; room: empty string clears the room. A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed, or that a meal the host includes is actually being taken there — separately from the venue booking's status; null clears.",
       inputSchema: {
         itemId: z.string(),
         title: z.string().optional(),
@@ -499,6 +504,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         if (room !== undefined) updateData.room = room || null;
         if (mealKind !== undefined) updateData.mealKind = mealKind;
         if (mealProvision !== undefined) updateData.mealProvision = mealProvision;
+        // Becoming a meal: served by the venue unless told otherwise.
+        else if (mealKind && !existing.mealKind) updateData.mealProvision = "VENUE";
         if (mealProviderId !== undefined) updateData.mealProviderId = mealProviderId;
         // A provision only means something on a meal; a provider on a takeaway.
         if (mealKind === null) {

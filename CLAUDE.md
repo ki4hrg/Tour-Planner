@@ -589,7 +589,12 @@ npm test                          # vitest
   it's provided — the form shows both for a MEAL-kind category (see Schedule-item
   kinds) or an item already a meal. A blank meal is named after its meal
   (`defaultMealTitle` — "Lunch", stored on save, web + MCP; the form fills the title
-  when the kind is picked). A TAKEAWAY packed by one venue and eaten at another (a
+  when the kind is picked). A new meal is VENUE-provided by default (the form preselects it; MCP
+  `add-schedule-item` / an update that makes an item a meal default an omitted
+  `mealProvision` to VENUE — explicit null leaves it unset). A visit's title is
+  seeded the same way from its venue(s) (`changeLocations` in the item form: fills a
+  blank title or one echoing the previous venues; a meal kind or talk replaces that
+  echo, typed text is kept); a blank title's placeholder is the default the row shows. A TAKEAWAY packed by one venue and eaten at another (a
   packed lunch collected from last night's host at breakfast) sets
   `ScheduleItem.mealProviderId` ("Packed by"); the item's sites are where it's eaten,
   and the packer's venue engagement lists it as a "Takeaway:" session. A meal at an
@@ -613,15 +618,24 @@ npm test                          # vitest
 - **Item confirmation vs booking status**: the venue engagement's `BookingStatus`
   covers the whole visit; each item at the venue tracks its OWN arrangement in
   `ScheduleItem.confirmation` (`ItemConfirmation` REQUESTED | CONFIRMED, null = not
-  raised; `confirmedOn` dated on change) — "has the lunch time been agreed".
-  `ItemConfirmationControl` (`trips/item-confirmation.tsx`, calendar icon + "Time
-  unconfirmed" amber / "Time requested" / "Time confirmed" emerald, never a status
-  pill) sits on the item's title line in the itinerary editor and on each session in
-  the booking row ("2/3 times confirmed" in `coverageLine`); the venue's booking
-  progress beside the venue chip is labelled "Booking" (`VenueEngagementStatus
-  labelled`). `setItemConfirmation` action; MCP item tools take `confirmation`.
-  Instance state: resets through templates; stripped by `redactDaysForShare` for
-  audiences that don't see bookings.
+  raised; `confirmedOn` dated on change) — whatever has to be agreed for that
+  session: the lunch time, or that a meal the host includes as standard is actually
+  being taken there. `ItemConfirmationControl` (`trips/item-confirmation.tsx`, circle
+  icon + "Unconfirmed" amber / "Requested" / "Confirmed" emerald, never a status
+  pill; `compact` drops the word once raised) sits on the item's title line in the
+  itinerary editor (hidden on a free-choice block until raised) and on each session
+  in the booking row ("2/3 confirmed" in `coverageLine`). Instance state: resets
+  through templates; stripped by `redactDaysForShare` for audiences that don't see
+  bookings. `setItemConfirmation` action; MCP item tools take `confirmation`.
+- **Venue booking on itinerary rows**: `VenueEngagementStatus` beside a venue. In
+  the editor row it is `compact` (booking icon, inside the venue's outlined capsule;
+  the next-step chip only when it's our due move) and names the venue atop the
+  status popover. A free-choice block (multi-venue item/run) passes `hideIdle`
+  (`isIdleEngagement`): its sites show a booking only once something happened on it
+  (not untouched PENDING, not NOT_NEEDED). A venue's booking shows once per day, on
+  its first non-block item there; an untitled visit is headed by its venue
+  (`venueFallback`). Item rows keep drag + Edit inline; the
+  rest (move up/down/to day, delete) is one `⋯` menu at every width.
 - **Category chip**: the itinerary editor + timeline always show an item's category
   chip (`scheduleItemPrimaryLabel(item, { categoryChip: true })`): an untitled item
   reads as its chip alone instead of a "Visit: Venue" heading. Text-only surfaces

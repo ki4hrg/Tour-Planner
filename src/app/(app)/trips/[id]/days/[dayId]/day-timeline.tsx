@@ -101,7 +101,9 @@ export function DayTimeline({
           linkVenues
           showVenueContacts
           showGaps
-          renderVenueExtra={(id) => <VenueEngagementStatus locationId={id} />}
+          renderVenueExtra={(id, choice) => (
+              <VenueEngagementStatus locationId={id} hideIdle={choice} />
+            )}
           renderItemExtra={
             canEdit
               ? (item) => (
