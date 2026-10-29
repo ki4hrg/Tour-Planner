@@ -589,7 +589,12 @@ npm test                          # vitest
   it's provided — the form shows both for a MEAL-kind category (see Schedule-item
   kinds) or an item already a meal. A blank meal is named after its meal
   (`defaultMealTitle` — "Lunch", stored on save, web + MCP; the form fills the title
-  when the kind is picked). A TAKEAWAY packed by one venue and eaten at another (a
+  when the kind is picked). A new meal is VENUE-provided by default (the form preselects it; MCP
+  `add-schedule-item` / an update that makes an item a meal default an omitted
+  `mealProvision` to VENUE — explicit null leaves it unset). A visit's title is
+  seeded the same way from its venue(s) (`changeLocations` in the item form: fills a
+  blank title or one echoing the previous venues; a meal kind or talk replaces that
+  echo, typed text is kept); a blank title's placeholder is the default the row shows. A TAKEAWAY packed by one venue and eaten at another (a
   packed lunch collected from last night's host at breakfast) sets
   `ScheduleItem.mealProviderId` ("Packed by"); the item's sites are where it's eaten,
   and the packer's venue engagement lists it as a "Takeaway:" session. A meal at an

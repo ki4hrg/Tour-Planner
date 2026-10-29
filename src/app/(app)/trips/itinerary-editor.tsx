@@ -1702,8 +1702,10 @@ function ItemFields({
   const [mealKind, setMealKind] = useState<MealKind | typeof NONE>(
     initial?.mealKind ?? NONE,
   );
+  // A new meal is served by the venue — the common case; the rest are
+  // exceptions picked by hand. An existing meal keeps its (possibly unset) value.
   const [mealProvision, setMealProvision] = useState<MealProvision | typeof NONE>(
-    initial?.mealProvision ?? NONE,
+    initial?.mealKind ? (initial.mealProvision ?? NONE) : "VENUE",
   );
   // Who packs a takeaway eaten elsewhere (NONE ⇒ the venue / last night's host).
   const [mealProviderId, setMealProviderId] = useState<string>(
@@ -1759,12 +1761,39 @@ function ItemFields({
   // An existing title survives a switch to Free time / Break.
   const showTitle = !selfDescribing || !!initial?.title;
   const isMeal = fields.meal;
+  // A visit's default name is its venue(s), seeded the same way: picking or
+  // removing a venue fills a blank title, or one that only echoed the previous
+  // venues — unless a meal kind or talk names the item. What's in the field is
+  // what the row shows; a blank one shows its placeholder (the same default).
+  const venueTitle = (ids: string[], extra?: CreatedLocation) =>
+    ids
+      .map((id) =>
+        id === extra?.id ? extra.name : (locations.find((l) => l.id === id)?.name ?? ""),
+      )
+      .filter(Boolean)
+      .join(", ");
+  // Blank, or still just the venue echo (a meal kind / talk may replace it).
+  const isSeededTitle = (t: string) => !t.trim() || t === venueTitle(locationIds);
+  const changeLocations = (next: string[], created?: CreatedLocation) => {
+    setLocationIds(next);
+    if (
+      !selfDescribing &&
+      mealKind === NONE &&
+      presentationId === NONE &&
+      (!title.trim() || title === venueTitle(locationIds))
+    ) {
+      setTitle(venueTitle(next, created));
+    }
+  };
   // A meal's default name is its meal: picking the kind fills a blank title,
   // or one that only echoed the previous kind ("Lunch" → "Dinner").
   const pickMealKind = (v: MealKind | typeof NONE) => {
     const prevLabel = mealKind === NONE ? null : MEAL_KIND_LABELS[mealKind];
     setMealKind(v);
-    if (v !== NONE && (!title.trim() || title === prevLabel)) setTitle(MEAL_KIND_LABELS[v]);
+    // Becoming a meal: served by the venue unless picked otherwise.
+    if (v !== NONE && mealKind === NONE && mealProvision === NONE) setMealProvision("VENUE");
+    if (v !== NONE && (isSeededTitle(title) || title === prevLabel))
+      setTitle(MEAL_KIND_LABELS[v]);
   };
   // Rooms used before at the chosen venues, for the room field's suggestions.
   const roomSuggestions = [
@@ -1800,7 +1829,7 @@ function ItemFields({
       id === NONE ? null : (presentations.find((p) => p.id === id) ?? null);
     setPresentationId(id);
     if (!next) return;
-    if (!title.trim() || (prev && title === prev.title)) setTitle(next.title);
+    if (isSeededTitle(title) || (prev && title === prev.title)) setTitle(next.title);
     const prevDefaults = prev?.defaultPresenters.map((p) => p.id) ?? [];
     const echoesPrev =
       presenterIds.length === prevDefaults.length &&
@@ -1853,16 +1882,15 @@ function ItemFields({
 
   const pickLocation = (id: string) => {
     if (id === NONE || locationIds.includes(id)) return;
-    setLocationIds((prev) => [...prev, id]);
+    changeLocations([...locationIds, id]);
     setAddLocation(NONE);
   };
 
   const handleCreate = async () => {
     const created = await onCreateLocation(newName);
     if (created) {
-      setLocationIds((prev) =>
-        prev.includes(created.id) ? prev : [...prev, created.id],
-      );
+      if (!locationIds.includes(created.id))
+        changeLocations([...locationIds, created.id], created);
       setCreatingLocation(false);
       setNewName("");
     }
@@ -1932,7 +1960,7 @@ function ItemFields({
           setPresenterIds([]);
           setRoom("");
           setMealKind(NONE);
-          setMealProvision(NONE);
+          setMealProvision("VENUE");
           setMealProviderId(NONE);
           // Re-seed the day's primary so a run of items at one venue stays pre-filled.
           setLocationIds(defaultLocationId ? [defaultLocationId] : []);
@@ -1970,12 +1998,15 @@ function ItemFields({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              // Blank shows the default the row will show.
               placeholder={
-                locationIds.length === 0
-                  ? isMeal && mealKind !== NONE
-                    ? MEAL_KIND_LABELS[mealKind]
-                    : "e.g. Lunch, Transit, Talk"
-                  : "Override label"
+                isMeal && mealKind !== NONE
+                  ? MEAL_KIND_LABELS[mealKind]
+                  : selectedTalk
+                    ? selectedTalk.title
+                    : locationIds.length > 0
+                      ? venueTitle(locationIds)
+                      : "e.g. Lunch, Transit, Talk"
               }
             />
           </div>
@@ -2072,7 +2103,7 @@ function ItemFields({
                       className="-my-1 -mr-1.5 text-muted-foreground hover:text-destructive"
                       aria-label={`Remove ${locationName(id)}`}
                       onClick={() =>
-                        setLocationIds((prev) => prev.filter((s) => s !== id))
+                        changeLocations(locationIds.filter((s) => s !== id))
                       }
                     >
                       <X />
