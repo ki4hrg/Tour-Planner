@@ -56,16 +56,25 @@ export function VenueEngagementStatus({
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       {labelled ? (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <FileSignature className="size-3.5" aria-hidden />
-          Booking
+        // The label travels with the chip it names when the row wraps.
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+            <FileSignature className="size-3.5" aria-hidden />
+            Booking
+          </span>
+          <CompactProgress
+            target={{ tripId: ctx.tripId, locationId }}
+            progress={view.progress}
+            canEdit={ctx.canEdit}
+          />
         </span>
-      ) : null}
-      <CompactProgress
-        target={{ tripId: ctx.tripId, locationId }}
-        progress={view.progress}
-        canEdit={ctx.canEdit}
-      />
+      ) : (
+        <CompactProgress
+          target={{ tripId: ctx.tripId, locationId }}
+          progress={view.progress}
+          canEdit={ctx.canEdit}
+        />
+      )}
       {view.via ? (
         <span className="text-xs text-muted-foreground">via {view.via.name}</span>
       ) : null}

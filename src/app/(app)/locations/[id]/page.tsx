@@ -533,6 +533,7 @@ export default async function LocationDetailPage({
                 b.stepCompletions,
                 b.status,
                 b.bookedOn ?? b.createdAt,
+                b.trip!.startDate,
               ),
               today,
             )

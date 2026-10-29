@@ -19,6 +19,14 @@ describe("kindFields", () => {
 
   it("strips Free time to times + notes", () => {
     expect(kindFields("FREE")).toEqual({ venue: false, block: false, meal: false, talk: false });
+    // …but never hides what an existing item already holds.
+    expect(kindFields("FREE", { meal: true, venue: true, talk: true })).toEqual({
+      venue: true,
+      block: false,
+      meal: true,
+      talk: true,
+    });
+    expect(kindFields("TRAVEL", { talk: true }).talk).toBe(true);
     expect(isSelfDescribingKind("FREE")).toBe(true);
     expect(isSelfDescribingKind("MEAL")).toBe(false);
     expect(isSelfDescribingKind(null)).toBe(false);

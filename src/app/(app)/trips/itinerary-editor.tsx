@@ -1761,8 +1761,13 @@ function ItemFields({
   const fields = kindFields(selectedCategory?.kind ?? null, {
     meal: mealKind !== NONE,
     talk: presentationId !== NONE || presenterIds.length > 0,
+    // Judged on the saved item, so removing the last venue mid-edit doesn't
+    // yank the section away.
+    venue: (initial?.sites.length ?? 0) > 0,
   });
   const selfDescribing = !fields.venue;
+  // An existing title survives a switch to Free time / Break.
+  const showTitle = !selfDescribing || !!initial?.title;
   const isMeal = fields.meal;
   // A meal's default name is its meal: picking the kind fills a blank title,
   // or one that only echoed the previous kind ("Lunch" → "Dinner").
@@ -1900,7 +1905,7 @@ function ItemFields({
       {
         categoryId: categoryId === NONE ? undefined : categoryId,
         // Always sent: "" clears (an omitted title is left untouched on update).
-        title: selfDescribing ? "" : title.trim(),
+        title: showTitle ? title.trim() : "",
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
@@ -1967,10 +1972,10 @@ function ItemFields({
           </Select>
         </div>
 
-        {selfDescribing ? null : (
+        {!showTitle ? null : (
           <div className="space-y-1.5">
             <Label className="text-xs">
-              {locationIds.length === 0 ? "Title *" : "Title"}
+              {locationIds.length === 0 && !selfDescribing ? "Title *" : "Title"}
             </Label>
             <Input
               value={title}
@@ -2278,7 +2283,7 @@ function ItemFields({
                       : "Last night's lodging"}
                   </SelectItem>
                   {locations
-                    .filter((l) => l.tagged || l.id === mealProviderId)
+                    .filter((l) => showAll || l.tagged || l.id === mealProviderId)
                     .map((l) => (
                       <SelectItem key={l.id} value={l.id}>
                         {locationOptionLabel(l)}

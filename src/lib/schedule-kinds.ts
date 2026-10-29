@@ -34,16 +34,17 @@ export type KindFields = {
 
 /**
  * The item form's field set for a kind. `null` = uncategorized (everything
- * general). A meal / talk already set on the item keeps its section showing
- * whatever the category, so changing category never hides data silently.
+ * general). A meal / talk / venue already on the item keeps its section
+ * showing whatever the category, so changing category never clears data
+ * silently (the form drops what a hidden section holds on save).
  */
 export function kindFields(
   kind: ScheduleItemKind | null,
-  has: { meal?: boolean; talk?: boolean } = {},
+  has: { meal?: boolean; talk?: boolean; venue?: boolean } = {},
 ): KindFields {
   switch (kind) {
     case "FREE":
-      return { venue: false, block: false, meal: false, talk: false };
+      return { venue: !!has.venue, block: false, meal: !!has.meal, talk: !!has.talk };
     case "MEAL":
       return { venue: true, block: false, meal: true, talk: !!has.talk };
     case "PRESENTATION":
@@ -51,7 +52,7 @@ export function kindFields(
     case "VISIT":
       return { venue: true, block: true, meal: !!has.meal, talk: !!has.talk };
     case "TRAVEL":
-      return { venue: true, block: false, meal: !!has.meal, talk: false };
+      return { venue: true, block: false, meal: !!has.meal, talk: !!has.talk };
     default:
       return { venue: true, block: true, meal: !!has.meal, talk: true };
   }

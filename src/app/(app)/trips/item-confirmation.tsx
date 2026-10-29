@@ -102,7 +102,17 @@ export function ItemConfirmationControl({
           variant="ghost"
           size="sm"
           disabled={pending}
-          className={cn("-my-1 h-6 gap-1 px-1.5 text-xs", tone, className)}
+          // The tone is the state: keep it through hover / open.
+          className={cn(
+            "-my-1 h-6 gap-1 px-1.5 text-xs",
+            tone,
+            value === "CONFIRMED"
+              ? "hover:text-emerald-800 aria-expanded:text-emerald-800 dark:hover:text-emerald-300"
+              : value === "REQUESTED"
+                ? "hover:text-foreground"
+                : "hover:text-amber-900 aria-expanded:text-amber-900 dark:hover:text-amber-200",
+            className,
+          )}
           aria-label={`${ITEM_CONFIRMATION_LABELS[value ?? "NONE"]} with the venue`}
         >
           <Face value={value} confirmedOn={confirmedOn} pending={pending} />

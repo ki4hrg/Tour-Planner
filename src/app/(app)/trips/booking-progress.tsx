@@ -127,7 +127,9 @@ function StepChip({
       )}
     >
       {done ? <Check className="size-3" aria-hidden /> : null}
-      {children ?? step.label}
+      {/* One inline run, so a narrow chip wraps as text rather than as
+          side-by-side columns. */}
+      <span>{children ?? step.label}</span>
     </button>
   );
 }
