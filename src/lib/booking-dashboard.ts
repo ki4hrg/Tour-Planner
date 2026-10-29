@@ -1,6 +1,9 @@
 import type {
   BookingStatus,
   Cost,
+  ItemConfirmation,
+  MealKind,
+  MealProvision,
   Payment,
   PaymentScheduleItem,
   TravelMethod,
@@ -63,6 +66,12 @@ export type CoveredSession = {
   // A rough-plan day assignment (GH #9), not a timed schedule item — the venue
   // is on the itinerary but the visit has no slot yet.
   planned?: boolean;
+  // The item's own arrangement with the venue (the lunch time agreed), apart
+  // from the engagement's status. Undefined when the query didn't load it.
+  confirmation?: ItemConfirmation | null;
+  confirmedOn?: string | null;
+  // A takeaway this venue packs, eaten at another site.
+  takeaway?: boolean;
 };
 
 // A stay covered by a venue's engagement (lodging there), as the row lists it.
@@ -180,6 +189,12 @@ type ItemInput = {
   endTime: string | null;
   category: { name: string } | null;
   presentation: { title: string } | null;
+  // Optional: per-item confirmation + takeaway provider, when loaded.
+  mealKind?: MealKind | null;
+  mealProvision?: MealProvision | null;
+  mealProviderId?: string | null;
+  confirmation?: ItemConfirmation | null;
+  confirmedOn?: Date | null;
   // Travel leg (GH #80) — feeds the row label ("Coach to Bristol") for a
   // site-less booking on a travel item; optional so callers whose queries
   // don't load it stay valid.
@@ -425,8 +440,41 @@ export function buildDashboardRows(data: DashboardData): {
           startTime: item.startTime,
           endTime: item.endTime,
           label: withSite(sessionLabel, site.locationId, venueId),
+          ...(item.confirmation !== undefined
+            ? {
+                confirmation: item.confirmation,
+                confirmedOn: item.confirmedOn ? toDateInput(item.confirmedOn) : null,
+              }
+            : {}),
         });
         if (day.date) v.dates.push(day.date);
+      }
+      // A takeaway packed by another venue (collected at breakfast, eaten at
+      // the next site) is part of the packer's engagement too: it needs the
+      // numbers. Labelled so it doesn't read as a visit there.
+      if (item.mealKind && item.mealProvision === "TAKEAWAY" && item.mealProviderId) {
+        const venueId = venueOf(item.mealProviderId);
+        const v = ensure(venueId);
+        if (!v.itemIds.has(item.id)) {
+          v.itemIds.add(item.id);
+          v.sessions.push({
+            id: item.id,
+            dayId: day.id ?? null,
+            dayIndex: day.dayIndex,
+            date: day.date ? toDateInput(day.date) : null,
+            startTime: item.startTime,
+            endTime: item.endTime,
+            label: `Takeaway: ${sessionLabel}`,
+            takeaway: true,
+            ...(item.confirmation !== undefined
+              ? {
+                  confirmation: item.confirmation,
+                  confirmedOn: item.confirmedOn ? toDateInput(item.confirmedOn) : null,
+                }
+              : {}),
+          });
+          if (day.date) v.dates.push(day.date);
+        }
       }
       // Site-less / one-off item bookings stay their own rows.
       for (const b of item.bookings) {

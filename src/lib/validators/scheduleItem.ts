@@ -23,6 +23,9 @@ const travelStopSchema = z
       (v) => (v === "" || v == null ? undefined : Number(v)),
       z.number().int().nonnegative().optional(),
     ),
+    // A meal taken during the stop ("dinner on own at the services").
+    mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullish(),
+    mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullish(),
   })
   .refine((s) => s.locationId || s.label, {
     message: "Each stop needs a location or a label.",
@@ -66,6 +69,11 @@ export const scheduleItemSchema = z
     // Omitted ⇒ untouched on update.
     mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullish(),
     mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullish(),
+    // Who packs a takeaway eaten elsewhere. Omitted ⇒ untouched; null / "" clears.
+    mealProviderId: z.preprocess((v) => (v === "" ? null : v), z.string().min(1).nullish()),
+    // This item's own arrangement with its venue (the lunch time agreed) —
+    // not the booking status. Omitted ⇒ untouched; null clears.
+    confirmation: z.enum(["REQUESTED", "CONFIRMED"]).nullish(),
     // The catalogued talk this item delivers (optional).
     presentationId: optionalId,
     // Per-occurrence speaker override; empty ⇒ use the talk's default presenters.

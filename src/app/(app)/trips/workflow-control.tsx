@@ -55,8 +55,11 @@ function StageAge({ status, stageOn }: { status: BookingStatus; stageOn: string 
   const days = status === "IN_PROGRESS" ? daysSince(stageOn) : null;
   if (days == null || days < 1) return null;
   return (
-    <span className="text-xs text-muted-foreground" title={`Since ${formatDate(stageOn)}`}>
-      {days}d
+    <span
+      className="text-xs text-muted-foreground"
+      title={`At this stage since ${formatDate(stageOn)}`}
+    >
+      {days}d at stage
     </span>
   );
 }

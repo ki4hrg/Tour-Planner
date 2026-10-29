@@ -9,6 +9,7 @@ import {
 import { CategoryForm } from "./category-form";
 import { CategoriesManager } from "./categories-manager";
 import { createCategory } from "./actions";
+import { SCHEDULE_ITEM_KIND_LABELS } from "@/lib/schedule-kinds";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function ScheduleCategoriesPage() {
     color: c.color,
     sortOrder: c.sortOrder,
     system: c.system,
+    kind: c.kind,
     itemCount: c._count.items,
   }));
 
@@ -57,6 +59,9 @@ export default async function ScheduleCategoriesPage() {
                 aria-hidden
               />
               <span className="font-medium">{c.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {SCHEDULE_ITEM_KIND_LABELS[c.kind]}
+              </span>
             </li>
           ))}
         </ul>

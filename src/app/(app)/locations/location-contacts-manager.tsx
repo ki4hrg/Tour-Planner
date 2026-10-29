@@ -80,7 +80,12 @@ export function LocationContactsManager({
                     </a>
                   ) : null}
                   {c.email ? (
-                    <a href={`mailto:${c.email}`} className="link-quiet break-all">
+                    <a
+                      href={`mailto:${c.email}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-quiet break-all"
+                    >
                       {c.email}
                     </a>
                   ) : null}

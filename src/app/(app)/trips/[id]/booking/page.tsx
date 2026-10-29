@@ -49,6 +49,11 @@ export default async function BookingDashboardPage({
               title: true,
               startTime: true,
               endTime: true,
+              mealKind: true,
+              mealProvision: true,
+              mealProviderId: true,
+              confirmation: true,
+              confirmedOn: true,
               category: { select: { name: true } },
               presentation: { select: { title: true } },
               // Label derivation for a travel item's site-less booking row.

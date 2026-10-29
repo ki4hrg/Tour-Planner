@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type ScheduleItemKind } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -43,13 +43,14 @@ async function main() {
     color: string | null;
     sortOrder: number;
     system?: boolean;
+    kind?: ScheduleItemKind;
   }[] = [
-    { name: "Visit", color: "#2e5e4e", sortOrder: 10 },
-    { name: "Presentation", color: "#a9762f", sortOrder: 20 },
-    { name: "Meal", color: "#9b342b", sortOrder: 30 },
-    { name: "Travel", color: "#6b7269", sortOrder: 40 },
-    { name: "Free time", color: "#46685c", sortOrder: 50, system: true },
-    { name: "Break", color: "#5f7a6a", sortOrder: 55, system: true },
+    { name: "Visit", color: "#2e5e4e", sortOrder: 10, system: true, kind: "VISIT" },
+    { name: "Presentation", color: "#a9762f", sortOrder: 20, system: true, kind: "PRESENTATION" },
+    { name: "Meal", color: "#9b342b", sortOrder: 30, system: true, kind: "MEAL" },
+    { name: "Travel", color: "#6b7269", sortOrder: 40, system: true, kind: "TRAVEL" },
+    { name: "Free time", color: "#46685c", sortOrder: 50, system: true, kind: "FREE" },
+    { name: "Break", color: "#5f7a6a", sortOrder: 55, system: true, kind: "FREE" },
     { name: "Reception", color: "#7c5a9e", sortOrder: 60 },
     { name: "Worship", color: "#3b6ea5", sortOrder: 70 },
     { name: "Accommodation", color: "#8a6d3b", sortOrder: 80 },
@@ -58,10 +59,10 @@ async function main() {
   for (const c of categories) {
     await prisma.scheduleItemCategory.upsert({
       where: { name: c.name },
-      // Backfill the `system` flag on the two built-ins for DBs that already
+      // Backfill the `system` flag + kind on the built-ins for DBs that already
       // had these rows from an earlier seed; leave user-editable rows untouched.
-      update: c.system ? { system: true } : {},
-      create: { ...c, system: c.system ?? false },
+      update: c.system ? { system: true, kind: c.kind } : {},
+      create: { ...c, system: c.system ?? false, kind: c.kind ?? "OTHER" },
     });
   }
   console.log(`Seeded ${categories.length} schedule-item categories.`);

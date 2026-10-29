@@ -1,5 +1,5 @@
 import type { BookingStatus, PaymentOffsetUnit, StepActor } from "@prisma/client";
-import { parseDateInput, toDateInput } from "./dates";
+import { formatDate, parseDateInput, toDateInput } from "./dates";
 import { addUnits } from "./payment-schedule";
 import { isBookingOff } from "./booking";
 
@@ -186,6 +186,35 @@ export function daysWaiting(since: Date, today: Date): number {
   return Math.max(0, Math.round((today.getTime() - since.getTime()) / DAY_MS));
 }
 
+/** Signed whole days from `today` to `dueOn` (negative = overdue); null = no date. */
+export function daysUntilDue(dueOn: Date | null, today: Date): number | null {
+  return dueOn ? Math.round((dueOn.getTime() - today.getTime()) / DAY_MS) : null;
+}
+
+/**
+ * The time half of an owner line. A step with a due date counts down to it
+ * ("due in 45d" / "due today" / "3d overdue"); one without says how long it
+ * has sat ("waiting 110d" — days since the last tick, else since the booking
+ * opened). Null when there's nothing to say (no date, waiting under a day).
+ */
+export function waitingAgeText(w: {
+  daysUntilDue: number | null;
+  days: number | null;
+}): string | null {
+  const d = w.daysUntilDue;
+  if (d != null) return d > 0 ? `due in ${d}d` : d === 0 ? "due today" : `${-d}d overdue`;
+  return w.days ? `waiting ${w.days}d` : null;
+}
+
+/** Tooltip for `waitingAgeText`: "Due 12 Mar 2027" / "Waiting since 1 Oct 2026". */
+export function waitingAgeTitle(w: {
+  dueOn: string | null;
+  since: string | null;
+}): string | undefined {
+  if (w.dueOn) return `Due ${formatDate(w.dueOn)}`;
+  return w.since ? `Waiting since ${formatDate(w.since)}` : undefined;
+}
+
 /** Client-safe waiting state as the dashboard rows / MCP carry it. */
 export type WaitingView = {
   stepId: string;
@@ -197,6 +226,9 @@ export type WaitingView = {
   // that is now. A step not yet due is nobody's move yet: "Finalized" on a
   // trip two years out is information, not a to-do.
   dueOn: string | null;
+  // Signed days until dueOn as of the server's today (negative = overdue;
+  // null = no set date).
+  daysUntilDue: number | null;
   due: boolean;
 };
 
@@ -209,6 +241,7 @@ export function waitingView(w: WaitingState | null, today: Date): WaitingView | 
     since: w.since ? toDateInput(w.since) : null,
     days: w.since ? daysWaiting(w.since, today) : null,
     dueOn: w.dueOn ? toDateInput(w.dueOn) : null,
+    daysUntilDue: daysUntilDue(w.dueOn, today),
     due: w.dueOn == null || w.dueOn.getTime() <= today.getTime(),
   };
 }

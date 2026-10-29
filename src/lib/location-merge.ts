@@ -357,6 +357,7 @@ export async function previewLocationMerge(
     travelStops,
     primaryDays,
     shareLinks,
+    mealsProvided,
   ] = await Promise.all([
     prisma.scheduleItemSite.count({ where: s }),
     prisma.itineraryDayLocation.count({ where: s }),
@@ -379,6 +380,7 @@ export async function previewLocationMerge(
     prisma.travelStop.count({ where: s }),
     prisma.itineraryDay.count({ where: { primaryLocationId: sourceId } }),
     prisma.shareLink.count({ where: s }),
+    prisma.scheduleItem.count({ where: { mealProviderId: sourceId } }),
   ]);
 
   return {
@@ -396,7 +398,7 @@ export async function previewLocationMerge(
     costs,
     events,
     contacts: source.contacts.filter((c) => !targetContactIds.has(c.id)).length,
-    travelReferences: travelFrom + travelTo + travelStops + primaryDays,
+    travelReferences: travelFrom + travelTo + travelStops + primaryDays + mealsProvided,
     shareLinks,
     coveredSites: source.coveredSites.filter((c) => c.id !== targetId).length,
     hostSite: !source.hostSite ? "none" : target.hostSite ? "merged" : "moved",
@@ -464,6 +466,11 @@ export async function mergeLocations(
     await tx.locationEvent.updateMany({ ...fromSource, ...toTarget });
     await tx.shareLink.updateMany({ ...fromSource, ...toTarget });
     await tx.travelStop.updateMany({ ...fromSource, ...toTarget });
+    // Takeaway meals the source packs.
+    await tx.scheduleItem.updateMany({
+      where: { mealProviderId: sourceId },
+      data: { mealProviderId: targetId },
+    });
     await tx.travelLeg.updateMany({
       where: { fromLocationId: sourceId },
       data: { fromLocationId: targetId },

@@ -76,14 +76,15 @@ import {
   type OvernightLodging,
 } from "./itinerary-timeline";
 import { bookingDashboardHref } from "@/lib/documents";
-import type { MealKind, MealProvision, TravelMethod } from "@prisma/client";
+import type { MealKind, MealProvision, ScheduleItemKind, TravelMethod } from "@prisma/client";
+import { kindFields } from "@/lib/schedule-kinds";
+import { ItemConfirmationControl } from "./item-confirmation";
 import {
   MEAL_KINDS,
   MEAL_KIND_LABELS,
   MEAL_PROVISIONS,
   MEAL_PROVISION_LABELS,
   guessMealKind,
-  isMealCategoryName,
 } from "@/lib/meals";
 import type { FormState } from "@/lib/forms";
 import {
@@ -182,6 +183,7 @@ type Category = {
   name: string;
   color: string | null;
   system: boolean;
+  kind: ScheduleItemKind;
 };
 type Presentation = {
   id: string;
@@ -1285,6 +1287,8 @@ function ItemRow({
     room: item.room ?? undefined,
     mealKind: item.mealKind,
     mealProvision: item.mealProvision,
+    mealProviderId: item.mealProviderId,
+    confirmation: item.confirmation,
     presentationId: item.presentationId ?? undefined,
     presenterIds: item.presenters.map((p) => p.id),
     locationIds: item.sites.map((s) => s.locationId),
@@ -1299,6 +1303,8 @@ function ItemRow({
             locationId: st.location?.id,
             label: st.label ?? undefined,
             dwellMinutes: st.dwellMinutes ?? undefined,
+            mealKind: st.mealKind,
+            mealProvision: st.mealProvision,
           })),
         }
       : undefined,
@@ -1427,7 +1433,24 @@ function ItemRow({
                   </span>
                 ) : null}
                 {primary ? <span className="font-medium">{primary}</span> : null}
-                <MealProvisionBadge item={item} />
+                <MealProvisionBadge
+                  item={{
+                    ...item,
+                    mealProvider: item.mealProviderId
+                      ? (locations.find((l) => l.id === item.mealProviderId) ?? null)
+                      : null,
+                  }}
+                />
+                {/* This item's own arrangement (the lunch time agreed) — not
+                    the venue booking, whose status sits by the venue below. */}
+                {item.sites.length > 0 ? (
+                  <ItemConfirmationControl
+                    itemId={item.id}
+                    confirmation={item.confirmation}
+                    confirmedOn={item.confirmedOn}
+                    canEdit={canEdit}
+                  />
+                ) : null}
               </div>
 
               {/* Member locations — the item's "where" (venue is never the heading). */}
@@ -1445,8 +1468,10 @@ function ItemRow({
                             {s.location.name}
                           </Link>
                           {si === 0 && item.room ? <RoomLabel room={item.room} /> : null}
-                          {/* The venue engagement's next step + status. */}
-                          <VenueEngagementStatus locationId={s.locationId} />
+                          {/* The venue engagement's next step + status — the
+                              whole visit's booking, labelled so it isn't read
+                              as this item's own status. */}
+                          <VenueEngagementStatus locationId={s.locationId} labelled />
                         </span>
                         {limits ? (
                           <span
@@ -1690,6 +1715,10 @@ function ItemFields({
   const [mealProvision, setMealProvision] = useState<MealProvision | typeof NONE>(
     initial?.mealProvision ?? NONE,
   );
+  // Who packs a takeaway eaten elsewhere (NONE ⇒ the venue / last night's host).
+  const [mealProviderId, setMealProviderId] = useState<string>(
+    initial?.mealProviderId ?? NONE,
+  );
   const [presentationId, setPresentationId] = useState<string>(
     initial?.presentationId ?? NONE,
   );
@@ -1721,17 +1750,27 @@ function ItemFields({
   const [newPresenterName, setNewPresenterName] = useState("");
   const [newPresenterOrg, setNewPresenterOrg] = useState("");
 
-  // Self-describing built-ins (Free time / Break) carry only times + notes; the
-  // rest of the form is hidden and those fields are cleared on submit.
+  // The category's kind decides the fields: a meal shows the meal fields, a
+  // presentation the talk, Free time / Break only times + notes (the rest is
+  // hidden and cleared on submit). A meal or talk already on the item keeps
+  // its section, so switching category never hides data.
   const selectedCategory =
     categoryId === NONE
       ? null
       : (categories.find((c) => c.id === categoryId) ?? null);
-  const selfDescribing = !!selectedCategory?.system;
-  // Meal fields show for a meal-like category (or an item already marked a meal).
-  const isMeal =
-    !selfDescribing &&
-    (isMealCategoryName(selectedCategory?.name) || mealKind !== NONE);
+  const fields = kindFields(selectedCategory?.kind ?? null, {
+    meal: mealKind !== NONE,
+    talk: presentationId !== NONE || presenterIds.length > 0,
+  });
+  const selfDescribing = !fields.venue;
+  const isMeal = fields.meal;
+  // A meal's default name is its meal: picking the kind fills a blank title,
+  // or one that only echoed the previous kind ("Lunch" → "Dinner").
+  const pickMealKind = (v: MealKind | typeof NONE) => {
+    const prevLabel = mealKind === NONE ? null : MEAL_KIND_LABELS[mealKind];
+    setMealKind(v);
+    if (v !== NONE && (!title.trim() || title === prevLabel)) setTitle(MEAL_KIND_LABELS[v]);
+  };
   // Rooms used before at the chosen venues, for the room field's suggestions.
   const roomSuggestions = [
     ...new Set(
@@ -1865,11 +1904,11 @@ function ItemFields({
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         notes: notes.trim() || undefined,
-        isBlock: selfDescribing ? false : isBlock,
+        isBlock: fields.block ? isBlock : false,
         fixedTime: !!startTime && fixedTime,
         presentationId:
-          selfDescribing || presentationId === NONE ? undefined : presentationId,
-        presenterIds: selfDescribing ? [] : presenterIds,
+          !fields.talk || presentationId === NONE ? undefined : presentationId,
+        presenterIds: fields.talk ? presenterIds : [],
         locationIds: selfDescribing ? [] : locationIds,
         // A room belongs to a venue: no venue, no room.
         room: selfDescribing || locationIds.length === 0 ? "" : room.trim(),
@@ -1880,6 +1919,10 @@ function ItemFields({
             : guessMealKind(title)
           : null,
         mealProvision: isMeal && mealProvision !== NONE ? mealProvision : null,
+        mealProviderId:
+          isMeal && mealProvision === "TAKEAWAY" && mealProviderId !== NONE
+            ? mealProviderId
+            : null,
       },
       () => {
         if (!initial) {
@@ -1895,6 +1938,7 @@ function ItemFields({
           setRoom("");
           setMealKind(NONE);
           setMealProvision(NONE);
+          setMealProviderId(NONE);
           // Re-seed the day's primary so a run of items at one venue stays pre-filled.
           setLocationIds(defaultLocationId ? [defaultLocationId] : []);
         }
@@ -1933,7 +1977,9 @@ function ItemFields({
               onChange={(e) => setTitle(e.target.value)}
               placeholder={
                 locationIds.length === 0
-                  ? "e.g. Lunch, Transit, Talk"
+                  ? isMeal && mealKind !== NONE
+                    ? MEAL_KIND_LABELS[mealKind]
+                    : "e.g. Lunch, Transit, Talk"
                   : "Override label"
               }
             />
@@ -2152,13 +2198,15 @@ function ItemFields({
         )}
 
         {/* The free-choice block toggle governs the locations above it. */}
-        <label className="flex items-center gap-2 border-t pt-2 text-sm">
-          <Checkbox
-            checked={isBlock}
-            onCheckedChange={(v) => setIsBlock(v === true)}
-          />
-          Free-choice block
-        </label>
+        {fields.block ? (
+          <label className="flex items-center gap-2 border-t pt-2 text-sm">
+            <Checkbox
+              checked={isBlock}
+              onCheckedChange={(v) => setIsBlock(v === true)}
+            />
+            Free-choice block
+          </label>
+        ) : null}
       </div>
       )}
 
@@ -2173,7 +2221,7 @@ function ItemFields({
             <Label className="text-xs">Meal</Label>
             <Select
               value={mealKind}
-              onValueChange={(v) => setMealKind(v as MealKind | typeof NONE)}
+              onValueChange={(v) => pickMealKind(v as MealKind | typeof NONE)}
             >
               <SelectTrigger size="sm" aria-label="Meal">
                 <SelectValue />
@@ -2213,10 +2261,37 @@ function ItemFields({
               </SelectContent>
             </Select>
           </div>
+          {/* A takeaway can be packed by one venue and eaten at another (a
+              packed lunch collected from last night's host at breakfast);
+              the item's locations are where it is eaten. */}
+          {mealProvision === "TAKEAWAY" ? (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs">Packed by</Label>
+              <Select value={mealProviderId} onValueChange={setMealProviderId}>
+                <SelectTrigger size="sm" aria-label="Packed by">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>
+                    {locationIds.length
+                      ? `${locationName(locationIds[0])} (where eaten)`
+                      : "Last night's lodging"}
+                  </SelectItem>
+                  {locations
+                    .filter((l) => l.tagged || l.id === mealProviderId)
+                    .map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {locationOptionLabel(l)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      {selfDescribing ? null : (
+      {!fields.talk ? null : (
       /* Talk & presenters — content/speaker detail, sectioned off (like the
          Bookings panel) since it only applies to presentation-style items. */
       <div className="space-y-3 rounded-md border p-3">
@@ -2394,6 +2469,9 @@ type StopDraft = {
   locationId: string; // NONE = free-text only
   label: string;
   dwellMinutes: string;
+  // A meal taken during the stop ("dinner on own at the services").
+  mealKind: MealKind | typeof NONE;
+  mealProvision: MealProvision | typeof NONE;
 };
 
 // The travel-leg form (GH #80): method + origin/destination (catalogued
@@ -2442,6 +2520,8 @@ function TravelFields({
       locationId: s.location?.id ?? NONE,
       label: s.label ?? "",
       dwellMinutes: s.dwellMinutes != null ? String(s.dwellMinutes) : "",
+      mealKind: s.mealKind ?? NONE,
+      mealProvision: s.mealProvision ?? NONE,
     })) ?? [],
   );
 
@@ -2449,7 +2529,7 @@ function TravelFields({
   // for its marker colour only on CREATE; an edit keeps whatever the item has.
   const travelCategoryId = initial
     ? (initial.categoryId ?? undefined)
-    : categories.find((c) => c.name === "Travel" && !c.system)?.id;
+    : categories.find((c) => c.kind === "TRAVEL")?.id;
 
   const timesInvalid =
     !!startTime &&
@@ -2488,6 +2568,9 @@ function TravelFields({
         locationId: s.locationId === NONE ? undefined : s.locationId,
         label: s.label.trim() || undefined,
         dwellMinutes: s.dwellMinutes.trim() || undefined,
+        mealKind: s.mealKind === NONE ? null : s.mealKind,
+        mealProvision:
+          s.mealKind === NONE || s.mealProvision === NONE ? null : s.mealProvision,
       })),
     };
     onSubmit(
@@ -2701,6 +2784,55 @@ function TravelFields({
                   className="w-24"
                 />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Meal</Label>
+                <Select
+                  value={s.mealKind}
+                  onValueChange={(v) =>
+                    patchStop(s.key, {
+                      mealKind: v as MealKind | typeof NONE,
+                      // A services stop meal is usually on own.
+                      mealProvision:
+                        v !== NONE && s.mealProvision === NONE ? "ON_OWN" : s.mealProvision,
+                    })
+                  }
+                >
+                  <SelectTrigger size="sm" aria-label="Meal at this stop">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>None</SelectItem>
+                    {MEAL_KINDS.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {MEAL_KIND_LABELS[k]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {s.mealKind !== NONE ? (
+                <div className="space-y-1">
+                  <Label className="text-xs">Provided</Label>
+                  <Select
+                    value={s.mealProvision}
+                    onValueChange={(v) =>
+                      patchStop(s.key, { mealProvision: v as MealProvision | typeof NONE })
+                    }
+                  >
+                    <SelectTrigger size="sm" aria-label="Stop meal provided">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Not set</SelectItem>
+                      {MEAL_PROVISIONS.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {MEAL_PROVISION_LABELS[p]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -2727,6 +2859,8 @@ function TravelFields({
                 locationId: NONE,
                 label: "",
                 dwellMinutes: "",
+                mealKind: NONE,
+                mealProvision: NONE,
               },
             ])
           }

@@ -23,7 +23,10 @@ import { cn } from "@/lib/utils";
 import { stepGate } from "@/lib/booking-workflow";
 import { formatDate, parseDateInput, toDateInput, todayUtc } from "@/lib/dates";
 import {
+  daysUntilDue,
   daysWaiting,
+  waitingAgeText,
+  waitingAgeTitle,
   isDue,
   stepDueDate,
   upcomingStep,
@@ -206,8 +209,8 @@ function useDoneSteps(lines: { key: string; progress: BookingProgressView }[]) {
 
 /**
  * Compact single-line progress: the upcoming step as a one-click chip led by
- * its owner ("Next for you: Sign agreement", "Next (venue): Confirm
- * availability · 12d" — clicking ticks it), then the status control (whole
+ * its owner ("Next for you: Sign agreement · due in 12d", "Next (venue): Confirm
+ * availability · waiting 12d" — clicking ticks it), then the status control (whole
  * ladder in its popover). A venue not engaged yet reads "Next: …". Read-only
  * chip for viewers.
  */
@@ -232,7 +235,12 @@ export function CompactProgress({
     ? waitingFromView(workflow.steps, progress, today, doneSet)
     : null;
   const next = waiting?.step ?? null;
-  const days = waiting?.since ? daysWaiting(waiting.since, today) : 0;
+  const age = waiting
+    ? waitingAgeText({
+        daysUntilDue: daysUntilDue(waiting.dueOn, today),
+        days: waiting.since ? daysWaiting(waiting.since, today) : null,
+      })
+    : null;
   // A step whose due date is still ahead isn't anyone's move yet.
   const due = isDue(waiting, today);
   // Owner-led once the booking exists; an untouched venue just shows "Next".
@@ -263,10 +271,16 @@ export function CompactProgress({
                 {ACTOR_PREFIX[waiting.actor]}:
               </span>{" "}
               {next.label}
-              {!due && waiting.dueOn ? (
-                <span className="opacity-70"> · from {formatDate(waiting.dueOn)}</span>
-              ) : days > 0 ? (
-                <span className="opacity-70"> · {days}d</span>
+              {age ? (
+                <span
+                  className="opacity-70"
+                  title={waitingAgeTitle({
+                    dueOn: waiting.dueOn ? toDateInput(waiting.dueOn) : null,
+                    since: waiting.since ? toDateInput(waiting.since) : null,
+                  })}
+                >
+                  {` · ${age}`}
+                </span>
               ) : null}
             </>
           ) : (

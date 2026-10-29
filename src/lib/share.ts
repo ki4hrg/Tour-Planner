@@ -118,7 +118,11 @@ export function redactDaysForShare(
         ...s,
         location: { id: s.location.id, name: s.location.name },
       }));
-      return { ...it, bookings, sites };
+      // The item's arrangement with its venue is booking-side state: only an
+      // audience that sees bookings sees it.
+      const confirmation = view.showBookings ? it.confirmation : null;
+      const confirmedOn = view.showBookings ? it.confirmedOn : null;
+      return { ...it, bookings, sites, confirmation, confirmedOn };
     }),
   }));
 }

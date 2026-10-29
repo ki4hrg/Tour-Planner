@@ -36,7 +36,7 @@ the reply asynchronously) would tear the stream down before the response is sent
 
 ### Tool inventory
 
-58 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
+59 tools, one `register*Tools` function per file in `src/lib/mcp/tools/`. Role is the
 minimum required (VIEWER = read, PLANNER = write). All `openWorldHint: false`.
 
 **trips.ts** — `list-trips` (V), `get-trip` (V, incl. booking-status counts),
@@ -47,7 +47,7 @@ Both writes take `currencies` + `defaultCurrency` (one of them; what new stays/b
 `get-itinerary` (V, the full day→item→site/booking tree, incl. each day's rough-plan
 `plannedLocations` + `cityRegion`), `add-day` (P),
 `update-day` (P, title + logistical/participant notes + primary location/city), `delete-day` (P, renumbers +
-recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P, `fixedTime` pins times reorders/shifts never move), `update-schedule-item` (P),
+recomputes dates + shifts stays in a txn; reports `collapsedStays`), `add-schedule-item` (P, `fixedTime` pins times reorders/shifts never move; `mealProviderId`, `confirmation`, stop meals), `update-schedule-item` (P),
 `delete-schedule-item` (P, renumbers `order` in a txn), `add-planned-location`
 (P, rough day→location assignment with no times — GH #9; idempotent per
 `(day, location)`), `remove-planned-location` (P, by `(dayId, locationId)`),
@@ -85,7 +85,9 @@ designation), `add-location-cost` (P), `update-location-cost` (P; both take
 engagements — GH #86), `merge-locations` (P, destructive: folds a duplicate into the
 kept location + deletes it; `dryRun` previews — see Location merge below).
 
-**contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P).
+**contacts.ts** — `search-contacts` (V), `create-contact` (P), `update-contact` (P),
+`merge-contacts` (P, destructive: folds a duplicate into the kept contact + deletes it;
+`dryRun` previews — see Contact merge below).
 Passing `locationIds` on a write REPLACES the linked-location set.
 
 **presentations.ts** — `list-presentations` (V), `get-presentation` (V, incl. the
@@ -349,10 +351,12 @@ npm test                          # vitest
   (DAY/WEEK/MONTH before trip start; negative = AFTER start, e.g. "Balance paid"
   once invoiced post-trip; both or neither — DB CHECK `booking_workflow_step_due`;
   set per step at `/admin/workflows` with a before/after select). `stepDueDate` /
-  `waitingOn(..., tripStartDate)` carry `dueOn`; `waitingView` adds `dueOn` + `due`.
-  A step that is not due yet is nobody's move: `isYourMove` requires `due`, the
-  owner line / `CompactProgress` chip / step strip read muted "Next for you: Finalized
-  · from 12 Mar 2027" instead of amber. `BookingProgressView.tripStartDate` feeds
+  `waitingOn(..., tripStartDate)` carry `dueOn`; `waitingView` adds `dueOn` +
+  `daysUntilDue` (negative = overdue) + `due`. A step that is not due yet is nobody's
+  move: `isYourMove` requires `due`, the owner line / `CompactProgress` chip / step
+  strip read muted "Next for you: Finalized · due in 45d" instead of amber. The time
+  half is `waitingAgeText`: "due in 45d" / "due today" / "3d overdue" with a due date,
+  else "waiting 110d" (days since the last tick). `BookingProgressView.tripStartDate` feeds
   the client controls — every `progressView(...)` call passes the trip's start.
 - **Bookings tab table**: rows arrive in booking-window order (default); the
   Sort (window / venue / first visit) and Group (none / status / visit type /
@@ -567,7 +571,7 @@ npm test                          # vitest
   `waitingOn`/`waitingView` (pure, unit-tested) give `{ step, actor, since }` —
   `since` = the latest tick, else `bookedOn ?? createdAt` — and days waiting
   against a passed-in `today`. Surfaces: `CompactProgress` / Progress view /
-  Location page lead with "Your move: …" (amber) vs "Waiting on venue: … · 12d"
+  Location page lead with "Next for you: … · 3d overdue" (amber) vs "Next (venue): … · waiting 12d"
   (muted, `waiting-note.tsx`); dashboard rows carry `waiting` (only for a booking
   that exists — pass `workflows: loadWorkflowCatalog()` to `buildDashboardRows`),
   feeding the "Your move" attention filter (trip dashboard + `/bookings`,
@@ -580,12 +584,42 @@ npm test                          # vitest
   the ICS LOCATION as "Room, Venue"; not in the WP export, whose stops are deduped
   per venue). `mealKind` (BREAKFAST/LUNCH/DINNER/REFRESHMENTS) marks an item a meal and
   `mealProvision` (VENUE / TAKEAWAY = packed by the venue / RESTAURANT / ON_OWN) how
-  it's provided — the form shows both for a meal-like category (`isMealCategoryName`)
-  and guesses the kind from the title (`guessMealKind`). `src/lib/meals.ts`
-  (`buildMealPlan`, unit-tested) feeds the overview **Meals** card: B/L/D per day
-  plus venue-provided counts per venue (a site-less venue meal falls back to the
-  previous night's lodging); an unset provision reads amber. All three copy through
-  templates and are on the MCP item tools.
+  it's provided — the form shows both for a MEAL-kind category (see Schedule-item
+  kinds) or an item already a meal. A blank meal is named after its meal
+  (`defaultMealTitle` — "Lunch", stored on save, web + MCP; the form fills the title
+  when the kind is picked). A TAKEAWAY packed by one venue and eaten at another (a
+  packed lunch collected from last night's host at breakfast) sets
+  `ScheduleItem.mealProviderId` ("Packed by"); the item's sites are where it's eaten,
+  and the packer's venue engagement lists it as a "Takeaway:" session. A meal at an
+  en-route travel stop ("dinner on own at the services") lives on the stop:
+  `TravelStop.mealKind` / `mealProvision` (travel form + MCP `travel.stops[]`).
+  `src/lib/meals.ts` (`buildMealPlan`, unit-tested) feeds the overview **Meals** card:
+  B/L/D per day plus venue-provided counts per venue (provider → item venue → a
+  site-less venue meal falls back to the previous night's lodging; `at` names where
+  it's eaten when that differs, incl. stop meals); an unset provision reads amber.
+  All copy through templates and are on the MCP item tools.
+- **Schedule-item kinds**: `ScheduleItemCategory.kind` (`ScheduleItemKind`: VISIT /
+  MEAL / PRESENTATION / TRAVEL / FREE / OTHER) decides which item-form sections show
+  (`kindFields` in `src/lib/schedule-kinds.ts`, unit-tested): MEAL → meal fields, no
+  talk; PRESENTATION/OTHER/uncategorized → talk & presenters; FREE (Free time /
+  Break) → times + notes only, needing neither title nor venue
+  (`isSelfDescribingKind`, the server identity check). A meal or talk already on an
+  item keeps its section whatever the category. `system` = built-in (Visit, Meal,
+  Presentation, Travel, Free time, Break): renamable / recolourable at
+  `/schedule-categories` but never deletable, kind fixed; admin-created categories
+  pick a kind. Never key behaviour off a category NAME (built-ins can be renamed).
+- **Item confirmation vs booking status**: the venue engagement's `BookingStatus`
+  covers the whole visit; each item at the venue tracks its OWN arrangement in
+  `ScheduleItem.confirmation` (`ItemConfirmation` REQUESTED | CONFIRMED, null = not
+  raised; `confirmedOn` dated on change) — "has the lunch time been agreed".
+  `ItemConfirmationControl` (`trips/item-confirmation.tsx`, calendar icon + "Time
+  unconfirmed" amber / "Time requested" / "Time confirmed" emerald, never a status
+  pill) sits on the item's title line in the itinerary editor and on each session in
+  the booking row ("2/3 times confirmed" in `coverageLine`); the venue's booking
+  progress beside the venue chip is labelled "Booking" (`VenueEngagementStatus
+  labelled`). `setItemConfirmation` action; MCP item tools take `confirmation`.
+  Instance state: resets through templates; stripped by `redactDaysForShare` for
+  audiences that don't see bookings.
 - **Category chip**: the itinerary editor + timeline always show an item's category
   chip (`scheduleItemPrimaryLabel(item, { categoryChip: true })`): an untitled item
   reads as its chip alone instead of a "Visit: Venue" heading. Text-only surfaces
@@ -620,6 +654,16 @@ npm test                          # vitest
   engagements into it).
   **When adding a new FK to `Location`, repoint it in `mergeLocations`** or the
   cascade on delete will silently drop that data.
+- **Contact merge**: `src/lib/contact-merge.ts`, same shape as the location merge —
+  web "Merge into…" in the Contact page's danger zone (`MergeContactPanel`) +
+  `merge-contacts` MCP tool, both preview first (`previewContactMerge`). Target wins;
+  source fills empty fields, notes concatenate, a differing source email/phone lands
+  as an "Also:" notes line (pure `mergeContactFields`, unit-tested). m2m links
+  (locations, item presenters, presentation default presenters) union; primary-contact
+  designations, booked-with bookings and notes repoint. **When adding a new relation
+  to `Contact`, repoint it in `mergeContacts`** or the delete's SetNull/cascade drops
+  it. Location ⇄ contact links are editable from both pages through
+  `src/lib/contact-links.ts`; unlinking a venue's primary contact clears it.
 - **Notes / contact log**: `Note` is a polymorphic contact-log entry attaching to
   **exactly one of** Location / Booking / Trip / Stay (DB CHECK
   `num_nonnulls(locationId, bookingId, tripId, stayId) = 1`), with method, linked
@@ -772,7 +816,8 @@ London and England are included, with correct `parentId` links).
 
 Per day: schedule items by `order` → item sites by `order` → skip travel legs →
 append planned locations not already present. Stops deduped by `locationId` (first
-occurrence wins). Travel legs are completely omitted (no locationId, no representation).
+occurrence wins, except a stop that so far only came from a meal item: a later
+non-meal visit there takes it over in place — the plugin may filter meals out). Travel legs are completely omitted (no locationId, no representation).
 
 ### Overnight resolution
 
@@ -793,8 +838,8 @@ plugin keys its day header off it. Export resolution order:
 
 ### Test fixture
 
-`tests/fixtures/tp-itinerary.json`: realistic Wesley-pilgrimage example (11 days,
-Salisbury→Epworth→Oxford→Bristol→London) matching the schema exactly.
+No committed TP-side fixture; `src/lib/itinerary-export.test.ts` covers the
+builder. The WP plugin's own fixture lives at `wp-pilgrimage/tests/fixtures/tp-itinerary.json`.
 
 ## Deploy
 

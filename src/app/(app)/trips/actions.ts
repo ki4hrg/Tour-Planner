@@ -6,11 +6,14 @@ import type {
   Prisma,
   TripStatus,
   BookingStatus,
+  ItemConfirmation,
   MealKind,
   MealProvision,
   ShareAudience,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { defaultMealTitle } from "@/lib/meals";
+import { isSelfDescribingKind } from "@/lib/schedule-kinds";
 import { foldSessionBookings } from "@/lib/session-booking-fold";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
@@ -131,6 +134,7 @@ const TEMPLATE_DAYS_SELECT = {
       room: true,
       mealKind: true,
       mealProvision: true,
+      mealProviderId: true,
       presentationId: true,
       presenters: { select: { id: true } },
       sites: { select: { locationId: true, order: true } },
@@ -149,6 +153,8 @@ const TEMPLATE_DAYS_SELECT = {
               locationId: true,
               label: true,
               dwellMinutes: true,
+              mealKind: true,
+              mealProvision: true,
               order: true,
             },
           },
@@ -665,7 +671,13 @@ export type TravelLegInputData = {
   fromLabel?: string;
   toLocationId?: string;
   toLabel?: string;
-  stops: { locationId?: string; label?: string; dwellMinutes?: number | string }[];
+  stops: {
+    locationId?: string;
+    label?: string;
+    dwellMinutes?: number | string;
+    mealKind?: MealKind | null;
+    mealProvision?: MealProvision | null;
+  }[];
 };
 
 export type ScheduleItemInputData = {
@@ -681,6 +693,10 @@ export type ScheduleItemInputData = {
   // Set ⇒ a meal; null clears. Omitted ⇒ untouched on update.
   mealKind?: MealKind | null;
   mealProvision?: MealProvision | null;
+  // Who packs a takeaway eaten elsewhere; null clears, omitted ⇒ untouched.
+  mealProviderId?: string | null;
+  // The item's own arrangement with its venue; omitted ⇒ untouched.
+  confirmation?: ItemConfirmation | null;
   presentationId?: string;
   presenterIds: string[];
   locationIds: string[];
@@ -689,9 +705,9 @@ export type ScheduleItemInputData = {
   travel?: TravelLegInputData | null;
 };
 
-// A schedule item must be identifiable: it needs a title or at least one
-// location — unless its category is a self-describing built-in (Free time /
-// Break), which legitimately carries only times + notes, or it's a travel
+// A schedule item must be identifiable: it needs a title, a meal kind (its
+// default name) or at least one location — unless its category is FREE
+// (Free time / Break), which legitimately carries only times + notes, or it's a travel
 // span (its identity is the route). `hasExistingLeg` covers updates that
 // leave an item's persisted leg untouched (travel undefined). Returns an
 // error message when the item is under-specified, else null.
@@ -699,15 +715,17 @@ async function identityError(
   d: ReturnType<typeof scheduleItemSchema.parse>,
   hasExistingLeg = false,
 ): Promise<string | null> {
-  if (d.title || d.locationIds.length > 0 || d.travel || hasExistingLeg)
+  if (d.title || d.mealKind || d.locationIds.length > 0 || d.travel || hasExistingLeg)
     return null;
   const selfDescribing = d.categoryId
-    ? (
-        await prisma.scheduleItemCategory.findUnique({
-          where: { id: d.categoryId },
-          select: { system: true },
-        })
-      )?.system
+    ? isSelfDescribingKind(
+        (
+          await prisma.scheduleItemCategory.findUnique({
+            where: { id: d.categoryId },
+            select: { kind: true },
+          })
+        )?.kind,
+      )
     : false;
   return selfDescribing
     ? null
@@ -719,7 +737,11 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     categoryId: d.categoryId || null,
     // Omitted ⇒ untouched on update (a travel edit or quick time fix doesn't
     // round-trip it); "" clears. Nullable on create, so undefined is fine there.
-    title: d.title === undefined ? undefined : d.title || null,
+    // A blank meal takes its meal as its name ("Lunch").
+    title:
+      d.title === undefined
+        ? undefined
+        : d.title || defaultMealTitle(d.title, d.mealKind) || null,
     startTime: d.startTime || null,
     endTime: d.endTime || null,
     notes: d.notes || null,
@@ -731,6 +753,14 @@ function toItemScalars(d: ReturnType<typeof scheduleItemSchema.parse>) {
     // A meal's provision only means something on a meal.
     mealKind: d.mealKind,
     mealProvision: d.mealKind === null ? null : d.mealProvision,
+    // A provider only means something for a takeaway.
+    mealProviderId:
+      d.mealKind === null || (d.mealProvision !== undefined && d.mealProvision !== "TAKEAWAY")
+        ? null
+        : d.mealProviderId,
+    ...(d.confirmation !== undefined
+      ? { confirmation: d.confirmation, confirmedOn: d.confirmation ? todayUtc() : null }
+      : {}),
     presentationId: d.presentationId || null,
   };
 }
@@ -781,6 +811,7 @@ export async function addScheduleItem(
         dayId,
         order: insertAt + 1,
         ...toItemScalars(parsed.data),
+        title: parsed.data.title || defaultMealTitle(parsed.data.title, parsed.data.mealKind),
         presenters: { connect: parsed.data.presenterIds.map((id) => ({ id })) },
         sites: {
           create: effectiveLocationIds(parsed.data).map((locationId, i) => ({
@@ -945,6 +976,26 @@ export async function updateScheduleItem(
     ok: true,
     message: ["Saved.", shiftNote, overlapNote].filter(Boolean).join(" "),
   };
+}
+
+// One item's own arrangement with its venue (the lunch time agreed) — kept
+// apart from the venue engagement's booking status. Null clears.
+export async function setItemConfirmation(
+  itemId: string,
+  confirmation: ItemConfirmation | null,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  const item = await prisma.scheduleItem.findUnique({
+    where: { id: itemId },
+    select: { day: { select: { tripId: true } } },
+  });
+  if (!item) return { error: "Item not found." };
+  await prisma.scheduleItem.update({
+    where: { id: itemId },
+    data: { confirmation, confirmedOn: confirmation ? todayUtc() : null },
+  });
+  revalidateTrip(item.day.tripId);
+  return { ok: true };
 }
 
 export async function deleteScheduleItem(itemId: string): Promise<FormState> {

@@ -6,6 +6,13 @@ import { prisma } from "@/lib/db";
 import { assertRole } from "@/lib/authz";
 import { type FormState, zodErrorMessage } from "@/lib/forms";
 import { contactSchema, type ContactInput } from "@/lib/validators/contact";
+import { linkContactLocation, unlinkContactLocation } from "@/lib/contact-links";
+import {
+  ContactMergeError,
+  mergeContacts,
+  previewContactMerge,
+  type ContactMergePreview,
+} from "@/lib/contact-merge";
 
 function parse(formData: FormData) {
   return contactSchema.safeParse({
@@ -79,4 +86,63 @@ export async function deleteContact(formData: FormData): Promise<void> {
   await prisma.contact.delete({ where: { id } });
   revalidatePath("/contacts");
   redirect("/contacts");
+}
+
+// --- Contact ⇄ Location links (the Contact page side) ---
+
+export async function linkLocationToContact(
+  contactId: string,
+  locationId: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!contactId || !locationId) return { error: "Pick a location." };
+  await linkContactLocation(contactId, locationId);
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Linked." };
+}
+
+// Also clears the venue's primary designation when it was this contact.
+export async function unlinkLocationFromContact(
+  contactId: string,
+  locationId: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  if (!contactId || !locationId) return { error: "Missing location." };
+  await unlinkContactLocation(contactId, locationId);
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath(`/locations/${locationId}`);
+  return { ok: true, message: "Unlinked." };
+}
+
+// --- Merge a duplicate into another contact ---
+
+// What folding `sourceId` into `targetId` would move — shown before confirming.
+export async function previewMergeContact(
+  sourceId: string,
+  targetId: string,
+): Promise<{ preview?: ContactMergePreview; error?: string }> {
+  await assertRole("PLANNER");
+  try {
+    return { preview: await previewContactMerge(sourceId, targetId) };
+  } catch (err) {
+    if (err instanceof ContactMergeError) return { error: err.message };
+    throw err;
+  }
+}
+
+export async function mergeContact(
+  sourceId: string,
+  targetId: string,
+): Promise<FormState> {
+  await assertRole("PLANNER");
+  try {
+    const { source, target } = await mergeContacts(sourceId, targetId);
+    // Repoints locations, bookings, presenters and notes app-wide.
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Merged “${source.name}” into “${target.name}”.` };
+  } catch (err) {
+    if (err instanceof ContactMergeError) return { error: err.message };
+    throw err;
+  }
 }

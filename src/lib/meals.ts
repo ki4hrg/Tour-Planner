@@ -44,6 +44,16 @@ export function guessMealKind(title: string | null | undefined): MealKind | null
   return null;
 }
 
+// A meal's default name is its meal ("Lunch"): a blank title on a meal item
+// takes the kind's label. Null when not a meal or already titled.
+export function defaultMealTitle(
+  title: string | null | undefined,
+  mealKind: MealKind | null | undefined,
+): string | null {
+  if (title?.trim() || !mealKind) return null;
+  return MEAL_KIND_LABELS[mealKind];
+}
+
 // "Lunch · On own" — the meal fact a row shows beside its title.
 export function mealText(item: {
   mealKind: MealKind | null;
@@ -64,7 +74,20 @@ export type MealItemLike = {
   startTime: string | null;
   mealKind: MealKind | null;
   mealProvision: MealProvision | null;
+  // Who packs a takeaway eaten elsewhere (loaded by the caller's query).
+  mealProvider?: { id: string; name: string } | null;
   sites: { location: { id: string; name: string } }[];
+  // A travel leg's en-route stops can carry a meal ("dinner on own at the
+  // services").
+  travel?: {
+    stops: {
+      id: string;
+      location: { id: string; name: string } | null;
+      label: string | null;
+      mealKind: MealKind | null;
+      mealProvision: MealProvision | null;
+    }[];
+  } | null;
 };
 
 export type MealDayLike = {
@@ -77,6 +100,11 @@ export type MealDayLike = {
 
 export type MealEntry = {
   itemId: string;
+  // Set when the meal is taken at an en-route travel stop.
+  stopId?: string;
+  // Where it is eaten when that isn't the provider (a takeaway from last
+  // night's host eaten at the next site; the services on a coach leg).
+  at?: string | null;
   kind: MealKind;
   provision: MealProvision | null;
   // Who provides it: the item's venue; a site-less venue meal (a packed
@@ -141,25 +169,56 @@ export function buildMealPlan(
 
   const out = days.map((day, i) => {
     const meals: MealEntry[] = [];
-    for (const item of day.items) {
-      if (!item.mealKind) continue;
-      const site = item.sites[0]?.location ?? null;
-      const venue = site
-        ? { id: site.id, name: site.name }
-        : isVenueProvided(item.mealProvision)
-          ? (lodgingVenue(days[i - 1]?.id) ?? lodgingVenue(day.id))
-          : null;
-      meals.push({ itemId: item.id, kind: item.mealKind, provision: item.mealProvision, venue });
+    const count = (
+      entry: MealEntry,
+    ) => {
+      meals.push(entry);
       total++;
-      if (item.mealProvision) byProvision[item.mealProvision]++;
+      if (entry.provision) byProvision[entry.provision]++;
       else unset++;
-      if (venue && isVenueProvided(item.mealProvision)) {
+      const venue = entry.venue;
+      if (venue && isVenueProvided(entry.provision)) {
         const row =
           byVenue.get(venue.id) ??
           ({ venue, counts: zeroKinds(), total: 0 } satisfies VenueMealCount);
-        row.counts[item.mealKind]++;
+        row.counts[entry.kind]++;
         row.total++;
         byVenue.set(venue.id, row);
+      }
+    };
+    for (const item of day.items) {
+      const site = item.sites[0]?.location ?? null;
+      if (item.mealKind) {
+        // Provider: an explicit takeaway packer, else the item's venue, else
+        // (site-less venue meal) the previous night's lodging.
+        const provider =
+          item.mealProvision === "TAKEAWAY" && item.mealProvider ? item.mealProvider : null;
+        const venue = provider
+          ? provider
+          : site
+            ? { id: site.id, name: site.name }
+            : isVenueProvided(item.mealProvision)
+              ? (lodgingVenue(days[i - 1]?.id) ?? lodgingVenue(day.id))
+              : null;
+        count({
+          itemId: item.id,
+          kind: item.mealKind,
+          provision: item.mealProvision,
+          venue,
+          at: provider && site && site.id !== provider.id ? site.name : null,
+        });
+      }
+      for (const stop of item.travel?.stops ?? []) {
+        if (!stop.mealKind) continue;
+        count({
+          itemId: item.id,
+          stopId: stop.id,
+          kind: stop.mealKind,
+          provision: stop.mealProvision,
+          // A stop meal is never venue-served; it is where the coach pulls in.
+          venue: null,
+          at: stop.location?.name ?? stop.label,
+        });
       }
     }
     return {

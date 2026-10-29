@@ -4,7 +4,8 @@ import { prisma } from "@/lib/db";
 import { foldSessionBookings } from "@/lib/session-booking-fold";
 import type { SessionUser } from "@/lib/authz";
 import { hasRole } from "@/lib/authz";
-import { toDateInput, computeDayDate } from "@/lib/dates";
+import { toDateInput, computeDayDate, todayUtc } from "@/lib/dates";
+import { defaultMealTitle } from "@/lib/meals";
 import { timedInsertIndex } from "@/lib/schedule-order";
 import { travelLegCreateData } from "@/lib/travel";
 import { TRAVEL_LEG_INCLUDE } from "@/lib/trips";
@@ -31,6 +32,9 @@ const travelInputSchema = z.object({
         locationId: z.string().optional(),
         label: z.string().optional(),
         dwellMinutes: z.number().int().nonnegative().optional(),
+        // A meal taken during the stop ("dinner on own at the services").
+        mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).optional(),
+        mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).optional(),
       }),
     )
     .optional(),
@@ -43,7 +47,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "List Schedule Categories",
       description:
-        "List the configurable schedule-item categories (Visit, Presentation, Meal, Travel, Free time, Break…). Returns id, name, color, and whether it's a built-in system category. Use a category id with add-schedule-item / update-schedule-item (categoryId).",
+        "List the configurable schedule-item categories (Visit, Presentation, Meal, Travel, Free time, Break…). Returns id, name, color, kind (VISIT | MEAL | PRESENTATION | TRAVEL | FREE | OTHER — what the item is; FREE = Free time / Break, which needs neither title nor venue) and whether it's a built-in (system) category. Use a category id with add-schedule-item / update-schedule-item (categoryId).",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -63,6 +67,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
             name: true,
             color: true,
             sortOrder: true,
+            kind: true,
             system: true,
           },
         });
@@ -128,6 +133,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
                   },
                 },
                 travel: TRAVEL_LEG_INCLUDE,
+                mealProvider: { select: { id: true, name: true } },
                 bookings: {
                   select: {
                     id: true,
@@ -254,7 +260,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Add Schedule Item",
       description:
-        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it. `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own).",
+        "Add a timed item to a day's schedule. Requires the dayId (from get-itinerary). Provide a title and/or location IDs. Times use 24-hour HH:MM format. Categories like 'Visit', 'Meal', 'Presentation', 'Free time' can be set via categoryId. For travel between venues, pass `travel` (method + from/to location IDs or free-text labels + optional en-route stops) instead of locationIds — the item becomes a travel SPAN whose startTime/endTime are the depart/arrive times; do NOT create paired 'Depart'/'Arrive' items. Set fixedTime: true for times the group doesn't control (a public event, a timetabled train): reorders and time shifts never move a fixed item, and a ripple stops at it. `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed — separately from the venue booking's status; null clears.",
       inputSchema: {
         dayId: z.string(),
         title: z.string().optional(),
@@ -270,6 +276,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         room: z.string().optional(),
         mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullable().optional(),
         mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullable().optional(),
+        mealProviderId: z.string().nullable().optional(),
+        confirmation: z.enum(["REQUESTED", "CONFIRMED"]).nullable().optional(),
         travel: travelInputSchema.optional(),
       },
       annotations: {
@@ -294,6 +302,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       room,
       mealKind,
       mealProvision,
+      mealProviderId,
+      confirmation,
       travel,
     }) => {
       try {
@@ -322,7 +332,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               dayId,
               order: insertAt + 1,
               categoryId: categoryId || null,
-              title: title || null,
+              title: title || defaultMealTitle(title, mealKind),
               startTime: startTime || null,
               endTime: endTime || null,
               notes: notes || null,
@@ -331,6 +341,10 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
               room: room || null,
               mealKind: mealKind ?? null,
               mealProvision: mealKind ? (mealProvision ?? null) : null,
+              mealProviderId:
+                mealKind && mealProvision === "TAKEAWAY" ? (mealProviderId ?? null) : null,
+              confirmation: confirmation ?? null,
+              confirmedOn: confirmation ? todayUtc() : null,
               presentationId: presentationId || null,
               presenters: presenterIds?.length
                 ? { connect: presenterIds.map((id) => ({ id })) }
@@ -380,7 +394,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
     {
       title: "Update Schedule Item",
       description:
-        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples). `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). Pass mealKind: null to un-mark a meal; room: empty string clears the room.",
+        "Update a schedule item's title, times, locations, category, notes, or travel leg. Only include fields you want to change. Use get-itinerary to find item IDs. `travel` REPLACES the whole leg (method + endpoints + stops); pass travel: null to turn a travel item back into an ordinary one. `fixedTime` marks times the group doesn't control: reorders and time shifts in the web editor never move a fixed item (this tool sets times exactly as given and never ripples). `room` is where within the venue (\"Refectory\", \"Chapel\"). A meal sets `mealKind` (BREAKFAST, LUNCH, DINNER, REFRESHMENTS) and `mealProvision` (VENUE = served by the venue, TAKEAWAY = packed by the venue, RESTAURANT, ON_OWN = meal on own). Pass mealKind: null to un-mark a meal; room: empty string clears the room. A meal with no title is named after its meal (\"Lunch\"). A TAKEAWAY eaten somewhere other than where it was packed (a packed lunch collected from last night's host at breakfast) sets `mealProviderId` (the packing location) with the eating venue in locationIds. A meal taken at an en-route travel stop (dinner on own at the services) goes on that stop: travel.stops[].mealKind + mealProvision. `confirmation` (REQUESTED | CONFIRMED) tracks this item's own arrangement with its venue — e.g. the lunch time agreed — separately from the venue booking's status; null clears.",
       inputSchema: {
         itemId: z.string(),
         title: z.string().optional(),
@@ -395,6 +409,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         room: z.string().optional(),
         mealKind: z.enum(["BREAKFAST", "LUNCH", "DINNER", "REFRESHMENTS"]).nullable().optional(),
         mealProvision: z.enum(["VENUE", "TAKEAWAY", "RESTAURANT", "ON_OWN"]).nullable().optional(),
+        mealProviderId: z.string().nullable().optional(),
+        confirmation: z.enum(["REQUESTED", "CONFIRMED"]).nullable().optional(),
         travel: travelInputSchema.nullable().optional(),
       },
       annotations: {
@@ -418,6 +434,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
       room,
       mealKind,
       mealProvision,
+      mealProviderId,
+      confirmation,
       travel,
     }) => {
       try {
@@ -433,6 +451,7 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
           select: {
             dayId: true,
             title: true,
+            mealKind: true,
             travel: { select: { id: true } },
             _count: { select: { sites: true } },
           },
@@ -469,7 +488,8 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         const isTravel = travel !== undefined ? !!travel : !!existing.travel;
 
         const updateData: Record<string, unknown> = {};
-        if (title !== undefined) updateData.title = title || null;
+        if (title !== undefined)
+          updateData.title = title || defaultMealTitle(title, mealKind ?? existing.mealKind);
         if (categoryId !== undefined)
           updateData.categoryId = categoryId || null;
         if (startTime !== undefined) updateData.startTime = startTime || null;
@@ -479,8 +499,18 @@ export function registerItineraryTools(server: McpServer, user: SessionUser) {
         if (room !== undefined) updateData.room = room || null;
         if (mealKind !== undefined) updateData.mealKind = mealKind;
         if (mealProvision !== undefined) updateData.mealProvision = mealProvision;
-        // A provision only means something on a meal.
-        if (mealKind === null) updateData.mealProvision = null;
+        if (mealProviderId !== undefined) updateData.mealProviderId = mealProviderId;
+        // A provision only means something on a meal; a provider on a takeaway.
+        if (mealKind === null) {
+          updateData.mealProvision = null;
+          updateData.mealProviderId = null;
+        } else if (mealProvision !== undefined && mealProvision !== "TAKEAWAY") {
+          updateData.mealProviderId = null;
+        }
+        if (confirmation !== undefined) {
+          updateData.confirmation = confirmation;
+          updateData.confirmedOn = confirmation ? todayUtc() : null;
+        }
         if (presentationId !== undefined)
           updateData.presentationId = presentationId || null;
         if (presenterIds !== undefined) {

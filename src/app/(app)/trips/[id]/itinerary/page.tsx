@@ -47,6 +47,7 @@ export default async function ItineraryPage({
               },
               presenters: { select: { id: true, name: true } },
               travel: TRAVEL_LEG_INCLUDE,
+              mealProvider: { select: { id: true, name: true } },
               sites: {
                 orderBy: { order: "asc" },
                 include: {
@@ -74,7 +75,7 @@ export default async function ItineraryPage({
 
   const categories = await prisma.scheduleItemCategory.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, color: true, system: true },
+    select: { id: true, name: true, color: true, system: true, kind: true },
   });
 
   // Location picker defaults to locations tagged with this trip's type;

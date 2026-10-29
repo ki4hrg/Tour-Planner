@@ -35,6 +35,8 @@ export type TemplateTravelLeg = {
     locationId: string | null;
     label: string | null;
     dwellMinutes: number | null;
+    mealKind?: MealKind | null;
+    mealProvision?: MealProvision | null;
     order: number;
   }[];
 };
@@ -51,6 +53,7 @@ export type TemplateScheduleItem = {
   room?: string | null;
   mealKind?: MealKind | null;
   mealProvision?: MealProvision | null;
+  mealProviderId?: string | null;
   presentationId: string | null;
   // This occurrence's speakers — carried over only when duplicating a trip
   // (see InstantiateOptions.presenters); a template resets them.
@@ -101,6 +104,7 @@ export type InstantiatedScheduleItem = {
   room?: string | null;
   mealKind?: MealKind | null;
   mealProvision?: MealProvision | null;
+  mealProviderId?: string | null;
   presentationId: string | null; // catalog link survives; presenters reset unless asked for
   presenters?: { connect: { id: string }[] };
   sites: { create: InstantiatedItemLocation[] };
@@ -277,6 +281,9 @@ export function instantiateDays(
               room: item.room ?? null,
               mealKind: item.mealKind ?? null,
               mealProvision: item.mealProvision ?? null,
+              mealProviderId: item.mealProviderId ?? null,
+              // Per-item venue confirmation is instance state: it resets
+              // (the column defaults null), like bookings.
               // The shared catalog link survives; the per-occurrence speaker
               // override is reset (next trip assigns its own — like bookings).
               presentationId: item.presentationId,
@@ -319,6 +326,8 @@ export function instantiateDays(
                               locationId: s.locationId,
                               label: s.label,
                               dwellMinutes: s.dwellMinutes,
+                              mealKind: s.mealKind ?? null,
+                              mealProvision: s.mealProvision ?? null,
                               order: sk,
                             })),
                         },

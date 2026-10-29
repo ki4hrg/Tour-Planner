@@ -21,6 +21,7 @@ import {
   previewLocationMerge,
   type LocationMergePreview,
 } from "@/lib/location-merge";
+import { linkContactLocation, unlinkContactLocation } from "@/lib/contact-links";
 import { setBookedVia } from "@/lib/booked-via.server";
 
 function parseLocation(formData: FormData) {
@@ -242,11 +243,9 @@ export async function linkContactToLocation(formData: FormData): Promise<void> {
   const locationId = String(formData.get("locationId") ?? "");
   const contactId = String(formData.get("contactId") ?? "");
   if (!locationId || !contactId) return;
-  await prisma.location.update({
-    where: { id: locationId },
-    data: { contacts: { connect: { id: contactId } } },
-  });
+  await linkContactLocation(contactId, locationId);
   revalidatePath(`/locations/${locationId}`);
+  revalidatePath(`/contacts/${contactId}`);
 }
 
 export async function unlinkContactFromLocation(formData: FormData): Promise<void> {
@@ -254,22 +253,10 @@ export async function unlinkContactFromLocation(formData: FormData): Promise<voi
   const locationId = String(formData.get("locationId") ?? "");
   const contactId = String(formData.get("contactId") ?? "");
   if (!locationId || !contactId) return;
-  // Unlinking the primary contact also clears its designation — the primary
-  // must always be one of the linked contacts.
-  const current = await prisma.location.findUnique({
-    where: { id: locationId },
-    select: { primaryContactId: true },
-  });
-  await prisma.location.update({
-    where: { id: locationId },
-    data: {
-      contacts: { disconnect: { id: contactId } },
-      ...(current?.primaryContactId === contactId
-        ? { primaryContact: { disconnect: true } }
-        : {}),
-    },
-  });
+  // Also clears the primary designation when it was this contact.
+  await unlinkContactLocation(contactId, locationId);
   revalidatePath(`/locations/${locationId}`);
+  revalidatePath(`/contacts/${contactId}`);
 }
 
 // Designate (or clear) the go-to contact for a venue. Passing no/blank
@@ -290,6 +277,7 @@ export async function setPrimaryContact(formData: FormData): Promise<void> {
       : { primaryContact: { disconnect: true } },
   });
   revalidatePath(`/locations/${locationId}`);
+  if (contactId) revalidatePath(`/contacts/${contactId}`);
 }
 
 // --- Host Site ---

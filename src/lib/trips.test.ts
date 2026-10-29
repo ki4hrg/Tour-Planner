@@ -42,6 +42,9 @@ function item(
     room: null,
     mealKind: null,
     mealProvision: null,
+    mealProviderId: null,
+    confirmation: null,
+    confirmedOn: null,
     presentationId: null,
     presentation: null,
     presenters: [],
@@ -221,8 +224,8 @@ describe("travel labels (GH #80)", () => {
         fromLocation: { id: "a", name: "Old Sarum" },
         toLocation: { id: "b", name: "Bristol" },
         stops: [
-          { id: "s1", location: null, label: "M5 services", dwellMinutes: 15, order: 0 },
-          { id: "s2", location: { id: "st", name: "Stonehenge" }, label: null, dwellMinutes: null, order: 1 },
+          { id: "s1", location: null, label: "M5 services", dwellMinutes: 15, mealKind: null, mealProvision: null, order: 0 },
+          { id: "s2", location: { id: "st", name: "Stonehenge" }, label: null, dwellMinutes: null, mealKind: null, mealProvision: null, order: 1 },
         ],
       }),
     );

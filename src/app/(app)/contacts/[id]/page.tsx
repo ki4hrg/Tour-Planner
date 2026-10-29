@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/authz";
@@ -14,6 +13,8 @@ import { EditableSection } from "@/components/editable-section";
 import { ContactForm } from "../contact-form";
 import { updateContact, deleteContact } from "../actions";
 import { BackLink } from "@/components/back-link";
+import { ContactLocationsManager } from "../contact-locations-manager";
+import { MergeContactPanel } from "../merge-contact-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +32,30 @@ export default async function ContactDetailPage({
     include: {
       locations: {
         orderBy: { name: "asc" },
-        include: { region: { select: { name: true } } },
+        select: { id: true, name: true, region: { select: { name: true } } },
       },
+      primaryForLocations: { select: { id: true } },
     },
   });
   if (!contact) notFound();
+
+  const linkedIds = new Set(contact.locations.map((l) => l.id));
+  // Link picker: live locations not linked yet. Merge picker: every other
+  // contact.
+  const [availableLocations, mergeCandidates] = canEdit
+    ? await Promise.all([
+        prisma.location.findMany({
+          where: { archivedAt: null },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, region: { select: { name: true } } },
+        }),
+        prisma.contact.findMany({
+          where: { id: { not: id } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, organization: true },
+        }),
+      ])
+    : [[], []];
 
   return (
     <div className="space-y-6">
@@ -63,7 +83,12 @@ export default async function ContactDetailPage({
                 <dt className="text-muted-foreground">Email</dt>
                 <dd className="break-all">
                   {contact.email ? (
-                    <a href={`mailto:${contact.email}`} className="link-quiet">
+                    <a
+                      href={`mailto:${contact.email}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-quiet"
+                    >
                       {contact.email}
                     </a>
                   ) : (
@@ -100,23 +125,24 @@ export default async function ContactDetailPage({
             Locations served ({contact.locations.length})
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-sm">
-          {contact.locations.length ? (
-            <ul className="space-y-1">
-              {contact.locations.map((l) => (
-                <li key={l.id}>
-                  <Link href={`/locations/${l.id}`} className="link-quiet">
-                    {l.name}
-                  </Link>
-                  {l.region ? (
-                    <span className="text-muted-foreground"> · {l.region.name}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground">No locations.</p>
-          )}
+        <CardContent>
+          <ContactLocationsManager
+            contactId={contact.id}
+            linked={contact.locations.map((l) => ({
+              id: l.id,
+              name: l.name,
+              region: l.region?.name ?? null,
+            }))}
+            available={availableLocations
+              .filter((l) => !linkedIds.has(l.id))
+              .map((l) => ({
+                id: l.id,
+                name: l.name,
+                detail: l.region?.name ?? null,
+              }))}
+            primaryForIds={contact.primaryForLocations.map((l) => l.id)}
+            canEdit={canEdit}
+          />
         </CardContent>
       </Card>
 
@@ -127,7 +153,7 @@ export default async function ContactDetailPage({
               Danger zone
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <form id="delete-contact-form" action={deleteContact}>
               <input type="hidden" name="id" value={contact.id} />
               <ConfirmButton
@@ -140,6 +166,17 @@ export default async function ContactDetailPage({
                 Delete contact
               </ConfirmButton>
             </form>
+            <div className="border-t pt-4">
+              <MergeContactPanel
+                contactId={contact.id}
+                contactName={contact.name}
+                candidates={mergeCandidates.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  detail: c.organization,
+                }))}
+              />
+            </div>
           </CardContent>
         </Card>
       ) : null}

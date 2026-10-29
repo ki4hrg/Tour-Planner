@@ -11,6 +11,7 @@ function parse(formData: FormData) {
   return scheduleItemCategorySchema.safeParse({
     name: formData.get("name"),
     color: formData.get("color") || undefined,
+    kind: formData.get("kind") || undefined,
     sortOrder: formData.get("sortOrder") ?? "",
   });
 }
@@ -23,10 +24,10 @@ export async function createCategory(
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const { name, color, sortOrder } = parsed.data;
+  const { name, color, kind, sortOrder } = parsed.data;
   try {
     await prisma.scheduleItemCategory.create({
-      data: { name, color: color || null, sortOrder: sortOrder ?? 0 },
+      data: { name, color: color || null, kind, sortOrder: sortOrder ?? 0 },
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -51,18 +52,22 @@ export async function updateCategory(
     where: { id },
     select: { system: true },
   });
-  if (existing?.system) {
-    return { error: "Built-in categories can't be edited." };
-  }
+  if (!existing) return { error: "Category not found." };
 
   const parsed = parse(formData);
   if (!parsed.success) return { error: zodErrorMessage(parsed.error) };
 
-  const { name, color, sortOrder } = parsed.data;
+  const { name, color, kind, sortOrder } = parsed.data;
   try {
     await prisma.scheduleItemCategory.update({
       where: { id },
-      data: { name, color: color || null, sortOrder: sortOrder ?? 0 },
+      // A built-in can be renamed / recoloured, but its kind is fixed.
+      data: {
+        name,
+        color: color || null,
+        sortOrder: sortOrder ?? 0,
+        ...(existing.system ? {} : { kind }),
+      },
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -79,7 +84,7 @@ export async function deleteCategory(formData: FormData): Promise<void> {
   await assertRole("ADMIN");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  // Built-ins (Free time / Break) are protected from deletion.
+  // Built-ins (Visit, Meal, Free time…) are protected from deletion.
   const existing = await prisma.scheduleItemCategory.findUnique({
     where: { id },
     select: { system: true },

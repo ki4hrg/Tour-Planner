@@ -222,8 +222,8 @@ describe("instantiateDays", () => {
                 toLocationId: null,
                 toLabel: "Bristol",
                 stops: [
-                  { locationId: null, label: "M5 services", dwellMinutes: 15, order: 5 },
-                  { locationId: "locS", label: null, dwellMinutes: null, order: 2 },
+                  { locationId: null, label: "M5 services", dwellMinutes: 15, mealKind: null, mealProvision: null, order: 5 },
+                  { locationId: "locS", label: null, dwellMinutes: null, mealKind: null, mealProvision: null, order: 2 },
                 ],
               },
             }),
@@ -240,8 +240,8 @@ describe("instantiateDays", () => {
     });
     // Stops sort by source order, then renumber.
     expect(created.travel?.create.stops.create).toEqual([
-      { locationId: "locS", label: null, dwellMinutes: null, order: 0 },
-      { locationId: null, label: "M5 services", dwellMinutes: 15, order: 1 },
+      { locationId: "locS", label: null, dwellMinutes: null, mealKind: null, mealProvision: null, order: 0 },
+      { locationId: null, label: "M5 services", dwellMinutes: 15, mealKind: null, mealProvision: null, order: 1 },
     ]);
     // Items without a leg omit the key entirely.
     const plain = instantiateDays(

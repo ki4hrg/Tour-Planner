@@ -6,6 +6,9 @@ import {
   stepGateError,
   upcomingStep,
   waitingOn,
+  waitingAgeText,
+  waitingAgeTitle,
+  daysUntilDue,
   daysWaiting,
   waitingView,
   waitingFromView,
@@ -182,6 +185,7 @@ describe("daysWaiting / waitingView", () => {
       since: "2026-10-15",
       days: 12,
       dueOn: null,
+      daysUntilDue: null,
       due: true,
     });
     expect(
@@ -196,9 +200,40 @@ describe("daysWaiting / waitingView", () => {
     const step = { ...steps[1] };
     const w = (dueOn: Date | null) =>
       waitingView({ step, actor: "US", since: null, dueOn }, d("2026-10-27"));
-    expect(w(d("2027-03-01"))).toMatchObject({ dueOn: "2027-03-01", due: false });
-    expect(w(d("2026-10-27"))).toMatchObject({ dueOn: "2026-10-27", due: true });
-    expect(w(d("2026-10-01"))).toMatchObject({ due: true });
+    expect(w(d("2027-03-01"))).toMatchObject({
+      dueOn: "2027-03-01",
+      daysUntilDue: 125,
+      due: false,
+    });
+    expect(w(d("2026-10-27"))).toMatchObject({ dueOn: "2026-10-27", daysUntilDue: 0, due: true });
+    expect(w(d("2026-10-01"))).toMatchObject({ daysUntilDue: -26, due: true });
+  });
+});
+
+describe("waitingAgeText", () => {
+  it("counts down to a due date", () => {
+    expect(waitingAgeText({ daysUntilDue: 45, days: 110 })).toBe("due in 45d");
+    expect(waitingAgeText({ daysUntilDue: 0, days: 110 })).toBe("due today");
+    expect(waitingAgeText({ daysUntilDue: -3, days: 110 })).toBe("3d overdue");
+  });
+  it("falls back to time on the step without a due date", () => {
+    expect(waitingAgeText({ daysUntilDue: null, days: 110 })).toBe("waiting 110d");
+    expect(waitingAgeText({ daysUntilDue: null, days: 0 })).toBeNull();
+    expect(waitingAgeText({ daysUntilDue: null, days: null })).toBeNull();
+  });
+  it("titles the due date, else the wait's start", () => {
+    expect(waitingAgeTitle({ dueOn: "2027-03-12", since: "2026-10-01" })).toBe(
+      "Due Fri, 12 Mar 2027",
+    );
+    expect(waitingAgeTitle({ dueOn: null, since: "2026-10-01" })).toBe(
+      "Waiting since Thu, 1 Oct 2026",
+    );
+    expect(waitingAgeTitle({ dueOn: null, since: null })).toBeUndefined();
+  });
+  it("daysUntilDue is signed", () => {
+    expect(daysUntilDue(d("2026-10-30"), d("2026-10-27"))).toBe(3);
+    expect(daysUntilDue(d("2026-10-24"), d("2026-10-27"))).toBe(-3);
+    expect(daysUntilDue(null, d("2026-10-27"))).toBeNull();
   });
 });
 

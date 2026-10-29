@@ -43,7 +43,7 @@ export function ContactChannels({
         </ChannelLink>
       ) : null}
       {email ? (
-        <ChannelLink href={`mailto:${email}`} label={`Email ${email}`}>
+        <ChannelLink href={`mailto:${email}`} label={`Email ${email}`} external>
           <Mail className="size-3.5" />
         </ChannelLink>
       ) : null}

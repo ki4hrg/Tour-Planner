@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import { FileSignature } from "lucide-react";
 import type { VenueEngagementView } from "@/lib/venue-engagements";
 import { BookingStepStrip, CompactProgress } from "./booking-progress";
 
@@ -40,12 +41,26 @@ export function useVenueEngagementVia(
 }
 
 /** The venue's engagement status control, or nothing (no provider / not bookable). */
-export function VenueEngagementStatus({ locationId }: { locationId: string }) {
+export function VenueEngagementStatus({
+  locationId,
+  labelled = false,
+}: {
+  locationId: string;
+  // Lead with "Booking" where the row also shows an item's own status, so the
+  // venue's booking progress isn't mistaken for it.
+  labelled?: boolean;
+}) {
   const ctx = useContext(VenueEngagementsContext);
   const view = ctx?.engagements[locationId];
   if (!ctx || !view) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
+      {labelled ? (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <FileSignature className="size-3.5" aria-hidden />
+          Booking
+        </span>
+      ) : null}
       <CompactProgress
         target={{ tripId: ctx.tripId, locationId }}
         progress={view.progress}

@@ -8,6 +8,7 @@ import { isBookingOff, isBookingSecured } from "./booking";
 import { BOOKING_STATUS_LABELS, bookingStageText, bookingSubstatus } from "./trips";
 import { formatDate } from "./dates";
 import { formatMoney } from "./money";
+import { waitingAgeText } from "./booking-workflow";
 
 // Cross-trip booking dashboard (/bookings): the per-trip venue rows that
 // `buildDashboardRows` produces, regrouped by venue so a planner can see — and
@@ -116,14 +117,14 @@ export function isYourMove(row: {
   );
 }
 
-/** "Next for you: Sign agreement · 12d" / "Next (venue): Confirm availability · 3d".
+/** "Next for you: Sign agreement · due in 12d" / "Next (venue): Confirm
+ *  availability · waiting 3d" (the time half is `waitingAgeText`).
  *  Same prefixes as `ACTOR_PREFIX` in trips/waiting-note.tsx: the step label is
  *  the NEXT milestone, so "Your move: Menu chosen" read as already done. */
 export function waitingText(w: NonNullable<VenueBookingRow["waiting"]>): string {
   const who = w.actor === "US" ? "Next for you" : "Next (venue)";
-  // Not due yet: say when, instead of how long it has "waited".
-  if (!w.due && w.dueOn) return `${who}: ${w.stepLabel} · from ${formatDate(w.dueOn)}`;
-  return `${who}: ${w.stepLabel}${w.days ? ` · ${w.days}d` : ""}`;
+  const age = waitingAgeText(w);
+  return `${who}: ${w.stepLabel}${age ? ` · ${age}` : ""}`;
 }
 
 /** Same predicate as the single-trip dashboard's attention filter checkboxes. */

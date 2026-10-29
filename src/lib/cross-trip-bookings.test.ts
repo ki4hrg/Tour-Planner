@@ -421,6 +421,7 @@ describe("actionItems", () => {
       since: "2026-10-01",
       days,
       dueOn: null,
+      daysUntilDue: null,
       due: true,
     });
     const g = groupRowsByVenue(
@@ -452,7 +453,7 @@ describe("actionItems", () => {
       ["yourMove", "t1:loc-b"],
       ["yourMove", "t1:loc-a"],
     ]);
-    expect(items[1].text).toBe("Next for you: Sign agreement · 12d");
+    expect(items[1].text).toBe("Next for you: Sign agreement · waiting 12d");
     expect(
       rowMatchesFilters(g[0].rows[0].row, { ...NO_ATTENTION_FILTERS, yourMove: true }),
     ).toBe(true);
@@ -476,22 +477,25 @@ describe("actionItems", () => {
 });
 
 describe("isYourMove with step due dates", () => {
-  const wait = (due: boolean) => ({
+  const wait = (due: boolean, daysUntilDue: number | null = due ? -3 : 45) => ({
     stepId: "s",
     stepLabel: "Finalized",
     actor: "US" as const,
     since: "2026-10-01",
     days: 26,
-    dueOn: "2028-05-10",
+    dueOn: daysUntilDue == null ? null : "2028-05-10",
+    daysUntilDue,
     due,
   });
   it("is not our move while the step's due date is still ahead", () => {
     expect(isYourMove(row({ bookingId: "b", waiting: wait(false) }))).toBe(false);
     expect(isYourMove(row({ bookingId: "b", waiting: wait(true) }))).toBe(true);
   });
-  it("waitingText says when a not-yet-due step comes up", () => {
-    expect(waitingText(wait(false))).toBe("Next for you: Finalized · from Wed, 10 May 2028");
-    expect(waitingText(wait(true))).toBe("Next for you: Finalized · 26d");
+  it("waitingText counts down to the due date, else says how long it has waited", () => {
+    expect(waitingText(wait(false))).toBe("Next for you: Finalized · due in 45d");
+    expect(waitingText(wait(true, 0))).toBe("Next for you: Finalized · due today");
+    expect(waitingText(wait(true))).toBe("Next for you: Finalized · 3d overdue");
+    expect(waitingText(wait(true, null))).toBe("Next for you: Finalized · waiting 26d");
   });
 });
 
