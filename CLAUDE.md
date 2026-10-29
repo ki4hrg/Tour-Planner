@@ -627,7 +627,9 @@ npm test                          # vitest
   the next-step chip only when it's our due move) and names the venue atop the
   status popover. A free-choice block (multi-venue item/run) passes `hideIdle`
   (`isIdleEngagement`): its sites show a booking only once something happened on it
-  (not untouched PENDING, not NOT_NEEDED). Item rows keep drag + Edit inline; the
+  (not untouched PENDING, not NOT_NEEDED). A venue's booking shows once per day, on
+  its first non-block item there; an untitled visit is headed by its venue
+  (`venueFallback`). Item rows keep drag + Edit inline; the
   rest (move up/down/to day, delete) is one `⋯` menu at every width.
 - **Category chip**: the itinerary editor + timeline always show an item's category
   chip (`scheduleItemPrimaryLabel(item, { categoryChip: true })`): an untitled item
