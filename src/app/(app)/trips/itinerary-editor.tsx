@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Fragment,
   useContext,
   useId,
   useMemo,
@@ -53,11 +54,14 @@ import {
   timeToMinutes,
   minutesToTime,
   formatDuration,
+  computeScheduleGaps,
+  type ScheduleGap,
 } from "@/lib/schedule-gaps";
 import { overlappingItemIds } from "@/lib/schedule-shift";
 import {
   TRAVEL_METHOD_LABELS,
   effectivePresenters,
+  groupItemsByVenue,
   scheduleItemPrimaryLabel,
   travelDetailLine,
   type SerializedDay,
@@ -69,6 +73,8 @@ import {
   TimelineGroups,
   BookingPill,
   CategoryChip,
+  GapLine,
+  RunHeader,
   MealProvisionBadge,
   OvernightLine,
   RoomLabel,
@@ -621,6 +627,17 @@ function DayCard({
   const cityName = cities.find((c) => c.id === day.cityRegionId)?.name;
   // Items booked into a slot the previous item still occupies.
   const overlaps = useMemo(() => overlappingItemIds(day.items), [day.items]);
+  // The editor reads like the overview: venue runs under a venue header, with
+  // the free time between items.
+  const runs = useMemo(() => groupItemsByVenue(day.items), [day.items]);
+  const gapsAfter = useMemo(() => {
+    const m = new Map<string, ScheduleGap[]>();
+    for (const g of computeScheduleGaps(day.items)) {
+      m.set(g.afterItemId, [...(m.get(g.afterItemId) ?? []), g]);
+    }
+    return m;
+  }, [day.items]);
+  const itemIndex = new Map(day.items.map((it, i) => [it.id, i]));
 
   const moveItem = (itemIndex: number, dir: -1 | 1) => {
     const target = itemIndex + dir;
@@ -925,46 +942,71 @@ function DayCard({
             No items.
           </p>
         ) : canEdit ? (
-          <ol className="relative ml-2 space-y-1.5 border-l-2 border-border/60">
-            {day.items.map((item, si) => (
-              <ItemRow
-                key={item.id}
-                tripId={day.tripId}
-                dayId={day.id}
-                item={item}
-                // A venue's booking shows once a day, on its first item there
-                // (a free-choice block may hide it, so it doesn't count).
-                bookingShownEarlier={
-                  new Set(
-                    day.items
-                      .slice(0, si)
-                      .filter((prev) => !prev.isBlock)
-                      .flatMap((prev) => prev.sites.map((x) => x.locationId)),
-                  )
-                }
-                index={si}
-                total={day.items.length}
-                dropLine={
-                  itemLineAt === si
-                    ? "before"
-                    : itemLineAt === day.items.length && si === day.items.length - 1
-                      ? "after"
-                      : null
-                }
-                dayOptions={dayOptions}
-                onMoveToDay={(toDayId) => onMoveItemTo(item.id, toDayId, Number.MAX_SAFE_INTEGER)}
-                overlapsPrevious={overlaps.has(item.id)}
-                paymentCounts={paymentCounts}
-                canEdit={canEdit}
-                categories={categories}
-                locations={locations}
-                contacts={contacts}
-                presentations={presentations}
-                onMove={moveItem}
-                onCreateLocation={onCreateLocation}
-                onCreateContact={onCreateContact}
-                onCreatePresentation={onCreatePresentation}
-              />
+          <ol className="relative ml-2 border-l-2 border-border/60">
+            {runs.map((run, ri) => (
+              <Fragment key={run.items[0].id}>
+                {run.venues.length > 0 ? (
+                  <li className={cn("pl-5", ri > 0 ? "pt-4" : "pt-0.5")}>
+                    <RunHeader
+                      run={run}
+                      linkVenues
+                      renderVenueExtra={(id, choice) => (
+                        <VenueEngagementStatus
+                          locationId={id}
+                          name={run.venues.find((v) => v.id === id)?.name}
+                          hideIdle={choice}
+                        />
+                      )}
+                    />
+                  </li>
+                ) : ri > 0 ? (
+                  <li aria-hidden className="h-3" />
+                ) : null}
+                {run.items.map((item) => {
+                  const si = itemIndex.get(item.id) ?? 0;
+                  return (
+                    <Fragment key={item.id}>
+                      <ItemRow
+                        tripId={day.tripId}
+                        dayId={day.id}
+                        item={item}
+                        index={si}
+                        total={day.items.length}
+                        dropLine={
+                          itemLineAt === si
+                            ? "before"
+                            : itemLineAt === day.items.length && si === day.items.length - 1
+                              ? "after"
+                              : null
+                        }
+                        dayOptions={dayOptions}
+                        onMoveToDay={(toDayId) =>
+                          onMoveItemTo(item.id, toDayId, Number.MAX_SAFE_INTEGER)
+                        }
+                        overlapsPrevious={overlaps.has(item.id)}
+                        paymentCounts={paymentCounts}
+                        canEdit={canEdit}
+                        categories={categories}
+                        locations={locations}
+                        contacts={contacts}
+                        presentations={presentations}
+                        onMove={moveItem}
+                        onCreateLocation={onCreateLocation}
+                        onCreateContact={onCreateContact}
+                        onCreatePresentation={onCreatePresentation}
+                      />
+                      {/* Free time lines up under the titles. */}
+                      {gapsAfter.get(item.id)?.map((g, gi) => (
+                        <GapLine
+                          key={gi}
+                          gap={g}
+                          className="pl-[calc(1.25rem+3.5rem+0.5rem)] sm:pl-[calc(1.25rem+6.5rem+7rem+1rem)]"
+                        />
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </Fragment>
             ))}
           </ol>
         ) : (
@@ -1222,7 +1264,6 @@ function ItemRow({
   tripId,
   dayId,
   item,
-  bookingShownEarlier,
   index,
   total,
   dropLine,
@@ -1243,9 +1284,6 @@ function ItemRow({
   tripId: string;
   dayId: string;
   item: SerializedScheduleItem;
-  // Venues already shown on an earlier item this day: their booking (one per
-  // venue for the whole trip) isn't repeated on every session.
-  bookingShownEarlier: Set<string>;
   index: number;
   total: number;
   // Drop indicator for an item being dragged here (above / below this row).
@@ -1283,8 +1321,6 @@ function ItemRow({
     categoryChip: true,
     venueFallback: true,
   });
-  const limitationsFor = (locationId: string) =>
-    locations.find((l) => l.id === locationId)?.scheduleLimitations ?? null;
 
   // Deleting cascades the item's bookings and their payments, so that case
   // confirms; a plain item goes in one click with an Undo that re-creates it
@@ -1346,6 +1382,29 @@ function ItemRow({
   const requestRemove = () =>
     item.bookings.length > 0 ? setConfirmDelete(true) : remove();
   const otherDays = dayOptions.filter((d) => d.id !== dayId);
+
+  // The category column: the chip, or a travel span's method icon.
+  const chip = item.travel ? (
+    <TravelMethodIcon method={item.travel.method} className="size-4" />
+  ) : item.category ? (
+    <CategoryChip category={item.category} />
+  ) : null;
+  const travelDetail = item.travel ? travelDetailLine(item.travel) : null;
+  const showPresentation = item.presentation && !presentationIsPrimary;
+  // The quiet second line: where within the venue, the route, talk, people, notes.
+  const secondary = [
+    item.room ? <RoomLabel key="room" room={item.room} /> : null,
+    item.travel ? <span key="route">{travelDetail ?? "Route not set"}</span> : null,
+    showPresentation ? (
+      <span key="talk" className="italic">
+        {item.presentation?.title}
+      </span>
+    ) : null,
+    speakers.length ? (
+      <span key="who">{speakers.map((p) => p.name).join(", ")}</span>
+    ) : null,
+    item.notes ? <span key="notes">{item.notes}</span> : null,
+  ].filter(Boolean);
 
   return (
     // Anchor target for deep links from the day view's quick-edit ("All options →").
@@ -1423,126 +1482,75 @@ function ItemRow({
               )}
             </div>
           ) : (
-            <>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                {/* Fixed-width time gutter so category chips and titles align
-                    across rows whether or not an item carries an end time; wide
-                    enough for "13:30–14:30" plus a lock / overlap marker. */}
-                <time className="inline-flex w-[6.5rem] shrink-0 items-center gap-1 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
-                  {time}
-                  {item.fixedTime && item.startTime ? (
-                    <Lock
-                      className="size-3"
-                      aria-label="Fixed time"
-                    />
-                  ) : null}
-                  {overlapsPrevious ? (
-                    <AlertTriangle
-                      className="size-4 text-destructive"
-                      aria-label="Overlaps previous item"
-                    />
-                  ) : null}
-                </time>
-                {item.category ? <CategoryChip category={item.category} /> : null}
-                {item.isBlock ? (
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                    block
-                  </span>
+            // The overview's grid: time · category · what. The venue (and its
+            // booking) heads the run above, so a row carries only the item.
+            // <sm the chip column collapses and the chip sits before the title.
+            <div className="grid grid-cols-[3.5rem_1fr] items-baseline gap-x-2 sm:grid-cols-[6.5rem_7rem_1fr]">
+              <time className="flex flex-wrap items-center gap-1 font-mono text-xs leading-tight tabular-nums text-muted-foreground [overflow-wrap:anywhere]">
+                {time}
+                {item.fixedTime && item.startTime ? (
+                  <Lock className="size-3" aria-label="Fixed time" />
                 ) : null}
-                {primary ? <span className="font-medium">{primary}</span> : null}
-                <MealProvisionBadge
-                  item={{
-                    ...item,
-                    mealProvider: item.mealProviderId
-                      ? (locations.find((l) => l.id === item.mealProviderId) ?? null)
-                      : null,
-                  }}
-                />
-                {/* This item's own arrangement with its venue (the lunch time
-                    agreed, the meal actually taken there) — not the venue
-                    booking, whose status sits by the venue below. A free-choice
-                    block has nothing to arrange unless someone raised it. */}
-                {item.sites.length > 0 && (!item.isBlock || item.confirmation) ? (
-                  <ItemConfirmationControl
-                    itemId={item.id}
-                    confirmation={item.confirmation}
-                    confirmedOn={item.confirmedOn}
-                    canEdit={canEdit}
-                    compact
+                {overlapsPrevious ? (
+                  <AlertTriangle
+                    className="size-4 text-destructive"
+                    aria-label="Overlaps previous item"
                   />
                 ) : null}
-              </div>
-
-              {/* Member locations — the item's "where" (venue is never the
-                  heading). Each venue and its booking share one outlined
-                  capsule, so a status reads as that venue's. */}
-              {item.sites.length > 0 ? (
-                <div className="mt-1 flex flex-wrap items-start gap-x-2 gap-y-1">
-                  {item.sites.map((s, si) => {
-                    const limits = limitationsFor(s.locationId);
-                    return (
-                      <span key={s.id} className="inline-flex max-w-full flex-col gap-0.5">
-                        <span className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded border bg-muted/30 px-1.5 py-0.5">
-                          <Link
-                            href={`/locations/${s.locationId}`}
-                            className="text-xs text-muted-foreground link-quiet"
-                          >
-                            {s.location.name}
-                          </Link>
-                          {si === 0 && item.room ? <RoomLabel room={item.room} /> : null}
-                          {bookingShownEarlier.has(s.locationId) ? null : (
-                            <VenueEngagementStatus
-                              locationId={s.locationId}
-                              name={s.location.name}
-                              compact
-                              hideIdle={item.isBlock}
-                            />
-                          )}
-                        </span>
-                        {limits ? (
-                          <span
-                            className="max-w-xs truncate text-xs text-muted-foreground"
-                            title={limits}
-                          >
-                            {limits}
-                          </span>
-                        ) : null}
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : null}
-
-              {/* A travel item's "where" is its route. */}
-              {item.travel ? (
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <TravelMethodIcon
-                    method={item.travel.method}
-                    className="size-3.5 shrink-0"
+              </time>
+              <span className="hidden text-muted-foreground sm:block">{chip}</span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {chip ? <span className="sm:hidden">{chip}</span> : null}
+                  {primary ? (
+                    <span
+                      className={cn(
+                        "font-medium",
+                        item.travel && "italic text-muted-foreground",
+                      )}
+                    >
+                      {primary}
+                    </span>
+                  ) : null}
+                  {item.isBlock ? (
+                    <span className="text-xs text-muted-foreground">Free choice</span>
+                  ) : null}
+                  <MealProvisionBadge
+                    item={{
+                      ...item,
+                      mealProvider: item.mealProviderId
+                        ? (locations.find((l) => l.id === item.mealProviderId) ?? null)
+                        : null,
+                    }}
                   />
-                  <span>{travelDetailLine(item.travel) ?? "Route not set"}</span>
+                  {/* This item's own arrangement with its venue (the lunch time
+                      agreed, the meal actually taken there) — not the venue
+                      booking, which heads the run. A free-choice block has
+                      nothing to arrange unless someone raised it. */}
+                  {item.sites.length > 0 && (!item.isBlock || item.confirmation) ? (
+                    <ItemConfirmationControl
+                      itemId={item.id}
+                      confirmation={item.confirmation}
+                      confirmedOn={item.confirmedOn}
+                      canEdit={canEdit}
+                      compact
+                    />
+                  ) : null}
                 </div>
-              ) : null}
-
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                {item.presentation && !presentationIsPrimary ? (
-                  <span className="italic">· {item.presentation.title}</span>
+                {secondary.length > 0 ? (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    {secondary}
+                  </div>
                 ) : null}
-                {speakers.length ? (
-                  <span>· {speakers.map((p) => p.name).join(", ")}</span>
+                {item.bookings.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {item.bookings.map((b) => (
+                      <BookingPill key={b.id} booking={b} item={item} />
+                    ))}
+                  </div>
                 ) : null}
-                {item.notes ? <span>· {item.notes}</span> : null}
               </div>
-
-              {/* Booking pills — one per booking. */}
-              {item.bookings.length > 0 ? (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {item.bookings.map((b) => (
-                    <BookingPill key={b.id} booking={b} item={item} />
-                  ))}
-                </div>
-              ) : null}
-            </>
+            </div>
           )}
         </div>
 

@@ -627,15 +627,17 @@ npm test                          # vitest
   in the booking row ("2/3 confirmed" in `coverageLine`). Instance state: resets
   through templates; stripped by `redactDaysForShare` for audiences that don't see
   bookings. `setItemConfirmation` action; MCP item tools take `confirmation`.
-- **Venue booking on itinerary rows**: `VenueEngagementStatus` beside a venue. In
-  the editor row it is `compact` (booking icon, inside the venue's outlined capsule;
-  the next-step chip only when it's our due move) and names the venue atop the
-  status popover. A free-choice block (multi-venue item/run) passes `hideIdle`
-  (`isIdleEngagement`): its sites show a booking only once something happened on it
-  (not untouched PENDING, not NOT_NEEDED). A venue's booking shows once per day, on
-  its first non-block item there; an untitled visit is headed by its venue
-  (`venueFallback`). Item rows keep drag + Edit inline; the
-  rest (move up/down/to day, delete) is one `⋯` menu at every width.
+- **Itinerary editor layout**: the Itinerary tab reads like the overview's
+  itinerary — `groupItemsByVenue` runs under the shared `RunHeader` (venue name +
+  `VenueEngagementStatus` + schedule limits), free time as `GapLine`s, and each item
+  a time · category · title grid row (room / route / talk / people / notes on a
+  quiet second line) with drag + Edit inline and the rest (move up/down/to day,
+  delete) in one `⋯` menu. The route line + markers stay; inline edit forms take
+  the full row. `VenueEngagementStatus` names the venue atop its status popover
+  (`name`); a free-choice block (multi-venue run) passes `hideIdle`
+  (`isIdleEngagement`) so its sites show a booking only once something happened
+  on it (not untouched PENDING, not NOT_NEEDED). An untitled visit is headed by its
+  venue in the editor (`venueFallback`).
 - **Category chip**: the itinerary editor + timeline always show an item's category
   chip (`scheduleItemPrimaryLabel(item, { categoryChip: true })`): an untitled item
   reads as its chip alone instead of a "Visit: Venue" heading. Text-only surfaces
