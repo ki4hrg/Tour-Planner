@@ -57,16 +57,19 @@ export function VenueEngagementStatus({
     <span className="inline-flex flex-wrap items-center gap-1.5">
       {labelled ? (
         // The label travels with the chip it names when the row wraps.
-        <span className="inline-flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+        // Never wraps itself: the progress beside it shrinks and wraps instead.
+        <span className="inline-flex min-w-0 items-start gap-1.5">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap pt-0.5 text-xs text-muted-foreground">
             <FileSignature className="size-3.5" aria-hidden />
             Booking
           </span>
-          <CompactProgress
-            target={{ tripId: ctx.tripId, locationId }}
-            progress={view.progress}
-            canEdit={ctx.canEdit}
-          />
+          <span className="min-w-0">
+            <CompactProgress
+              target={{ tripId: ctx.tripId, locationId }}
+              progress={view.progress}
+              canEdit={ctx.canEdit}
+            />
+          </span>
         </span>
       ) : (
         <CompactProgress
